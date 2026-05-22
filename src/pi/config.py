@@ -18,4 +18,4 @@ CLEANBOOST_MACS = {
 # Game Settings
 MAX_ENERGY_GAUGE = 100.0  # Total energy needed to complete the task
 ENERGY_PER_BEACON = 2.5  # How much gauge fills per CleanBoost signal
-UI_REFRESH_RATE = 0.1  # UI updates 10 times a second
+UI_REFRESH_RATE = 0.5  # UI updates 2 times a second

@@ -2,7 +2,6 @@ import asyncio
 from logic.game_state import GameState
 from ui.cli_render import CLIRenderer
 
-# Toggle this to False when you deploy to the actual Raspberry Pi 5
 USE_MOCK_HARDWARE = True
 
 # Dynamically import the correct receiver
