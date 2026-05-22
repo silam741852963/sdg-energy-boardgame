@@ -54,6 +54,7 @@ class ControlPanel:
             "spin",
             "waterfall",
             "palm_tail",
+            "glitter",
         ]
 
     def update(self) -> bool:

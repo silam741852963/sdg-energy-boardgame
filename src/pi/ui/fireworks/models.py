@@ -22,6 +22,7 @@ class FireworkSpec:
     spin: bool = False
     waterfall: bool = False
     palm_tail: bool = False
+    glitter: bool = False
 
 
 FIREWORK_TYPES = [
@@ -63,42 +64,52 @@ def generate_spec(fw_type: str) -> FireworkSpec:
     )
 
     if fw_type == "Brocade":
-        spec.particle_count = 150  # Massive spider web
+        spec.particle_count = 150
         spec.has_trails = True
-        spec.gravity_mod = 0.3  # Floats nicely
-        spec.drag = 0.02
+        spec.palm_tail = True
+        spec.glitter = True
+        spec.gravity_mod = 0.5
+        spec.drag = 0.04
         spec.life_span = 120
         spec.speed_variance = 14.0
     elif fw_type == "Chrysanthemum":
-        spec.particle_count = 250  # Insane density
+        spec.particle_count = 350  # Increased for massive density
         spec.has_trails = True
-        spec.speed_variance = 30.0  # Explodes outward with brutal force
-        spec.drag = 0.18  # Instantly slams on the brakes to form a perfect sphere
-        spec.life_span = 80
+        spec.speed_variance = 40.0  # Explodes outward with brutal force
+        spec.drag = 0.20  # Slams on the brakes harder
+        spec.gravity_mod = (
+            0.05  # Almost zero gravity to keep the perfect spherical shape
+        )
+        spec.life_span = 90
     elif fw_type == "Comet":
         spec.burst = False
         spec.has_trails = True
-        spec.life_span = 120  # Lives long enough to fall back down
+        spec.palm_tail = True  # Gives the comet the thick, bright trail from the GIF
+        spec.life_span = 140
     elif fw_type == "Crossette":
-        spec.particle_count = 20
+        spec.particle_count = (
+            8  # Less is more! Fewer particles make the cross splits distinct
+        )
         spec.has_trails = True
         spec.split = True
-        spec.speed_variance = 12.0  # Fast moving cores before split
-        spec.life_span = 60
+        spec.speed_variance = 2.0  # Shoots out very fast and straight
+        spec.drag = 0.01  # Minimal drag before the split
+        spec.gravity_mod = 0.2  # Slight droop
+        spec.life_span = 70
     elif fw_type == "Pearls":
-        spec.burst = False  # Pearls are multiple-launch, they should not burst!
+        spec.burst = False
         spec.has_trails = False
         spec.life_span = 100
     elif fw_type == "Dragon Eggs":
         spec.particle_count = 100
         spec.crackle = True
         spec.speed_variance = 15.0
-        spec.life_span = 110  # Extra life to allow for the crackle delay
+        spec.life_span = 110
     elif fw_type == "Waterfall":
         spec.particle_count = 120
         spec.waterfall = True
         spec.has_trails = True
-        spec.gravity_mod = -0.1  # Literally hovers at apex before falling
+        spec.gravity_mod = -0.1
         spec.drag = 0.15
         spec.speed_variance = 20.0
         spec.life_span = 160
@@ -106,16 +117,16 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.particle_count = 40
         spec.swim = True
         spec.has_trails = True
-        spec.speed_variance = 8.0  # Slower initial speed so the swimming is obvious
+        spec.speed_variance = 8.0
         spec.drag = 0.08
         spec.life_span = 100
     elif fw_type == "Palm Tree":
         spec.particle_count = 20
         spec.palm_tail = True
         spec.has_trails = True
-        spec.speed_variance = 18.0  # Fronds shoot out far
-        spec.drag = 0.01  # Keeps its momentum
-        spec.gravity_mod = 0.8  # Arcs heavily
+        spec.speed_variance = 18.0
+        spec.drag = 0.01
+        spec.gravity_mod = 0.8
         spec.life_span = 100
     elif fw_type == "Peony":
         spec.particle_count = 120
@@ -135,7 +146,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.particle_count = 100
         spec.flicker = True
         spec.speed_variance = 10.0
-        spec.gravity_mod = 0.2  # Floats while blinking
+        spec.gravity_mod = 0.2
         spec.life_span = 120
     elif fw_type == "Tourbillion":
         spec.particle_count = 50
@@ -147,10 +158,10 @@ def generate_spec(fw_type: str) -> FireworkSpec:
     elif fw_type == "Willow":
         spec.particle_count = 120
         spec.has_trails = True
-        spec.speed_variance = 15.0  # Soft burst
-        spec.gravity_mod = 0.2  # Barely any gravity
+        spec.speed_variance = 15.0
+        spec.gravity_mod = 0.2
         spec.drag = 0.01
-        spec.life_span = 200  # Hangs in the sky forever
+        spec.life_span = 200
 
     return spec
 

@@ -42,15 +42,33 @@ class FireworkEngine:
         spec = forced_spec if forced_spec else get_random_preset()
 
         if spec.name in ["Comet", "Pearls"]:
-            num_shells = random.randint(8, 15)
-            for _ in range(num_shells):
-                off_vx = vx + random.uniform(-3.0, 3.0)
-                off_vy = vy + random.uniform(-4.0, 0.0)
-                off_vz = vz + random.uniform(-3.0, 3.0)
-                shell = Particle(
-                    sx, sy, sz, off_vx, off_vy, off_vz, spec, is_shell=True
-                )
-                self.shells.append(shell)
+            if spec.name == "Comet":
+                # BEAUTIFUL FAN BARRAGE: Calculates a perfect arcing spread for Comets
+                num_shells = 7
+                spread_width = 30.0
+                for i in range(num_shells):
+                    offset = -(spread_width / 2) + (
+                        i * (spread_width / (num_shells - 1))
+                    )
+                    off_vx = vx + offset
+                    # The center comets go higher than the outer comets
+                    off_vy = vy - (10.0 - abs(offset) * 0.5)
+                    off_vz = vz
+                    shell = Particle(
+                        sx, sy, sz, off_vx, off_vy, off_vz, spec, is_shell=True
+                    )
+                    self.shells.append(shell)
+            else:
+                # Pearls remain a random cluster barrage
+                num_shells = random.randint(8, 15)
+                for _ in range(num_shells):
+                    off_vx = vx + random.uniform(-3.0, 3.0)
+                    off_vy = vy + random.uniform(-4.0, 0.0)
+                    off_vz = vz + random.uniform(-3.0, 3.0)
+                    shell = Particle(
+                        sx, sy, sz, off_vx, off_vy, off_vz, spec, is_shell=True
+                    )
+                    self.shells.append(shell)
         else:
             shell = Particle(sx, sy, sz, vx, vy, vz, spec, is_shell=True)
             self.shells.append(shell)
@@ -105,10 +123,8 @@ class FireworkEngine:
 
         gui_captured_mouse = self.gui.update()
 
-        # Update Launch Logic to pass the customized spec
         if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and not gui_captured_mouse:
             if self.gui.visible:
-                # We use the exactly tuned spec from the GUI laboratory
                 custom_spec = copy.copy(self.gui.spec)
                 self.launch(pyxel.mouse_x, pyxel.mouse_y, forced_spec=custom_spec)
             else:
@@ -138,14 +154,31 @@ class FireworkEngine:
 
         for p in self.particles:
             p.update()
-            if p.spec.split and p.age == int(p.life * 0.5) and p.active:
+
+            if (
+                p.spec.split
+                and not p.is_split_child
+                and p.age == int(p.life * 0.5)
+                and p.active
+            ):
                 p.active = False
                 for i in range(4):
-                    angle = i * (math.pi / 2)
-                    nvx = p.vx + math.cos(angle) * 15
-                    nvy = p.vy + math.sin(angle) * 15
-                    new_p = Particle(p.x, p.y, p.z, nvx, nvy, p.vz, p.spec)
-                    new_p.spec.split = False
+                    # RIGID CROSSETTE LOGIC: math.pi/4 offsets the angles to create a perfect "X"
+                    angle = i * (math.pi / 2) + (math.pi / 4)
+
+                    nvx = (p.vx * 0.4) + math.cos(angle) * 6
+                    nvy = (p.vy * 0.4) + math.sin(angle) * 6
+                    nvz = p.vz * 0.4
+
+                    new_p = Particle(p.x, p.y, p.z, nvx, nvy, nvz, p.spec)
+
+                    # Mark this new particle as a child so it doesn't split again.
+                    new_p.is_split_child = True
+
+                    # Optional: Give the child particles a slightly shorter lifespan
+                    # so they burn out cleanly after splitting.
+                    new_p.life = p.life * 0.4
+
                     self.particles.append(new_p)
 
         self.particles = [p for p in self.particles if p.active]

@@ -13,7 +13,7 @@ class Particle:
         self.spec = spec
         self.is_shell = is_shell
         self.is_inner = is_inner
-
+        self.is_split_child = False
         self.gravity = 0.15 * (1.0 if is_shell else spec.gravity_mod)
         self.drag = 0.01 if is_shell else spec.drag
         self.age = 0
@@ -124,10 +124,16 @@ class Particle:
                 if factor1 > 0 and factor2 > 0:
                     trail_col = self.get_shade(factor1 - 0.3)
 
-                    # Palm tree tails draw extremely thick
-                    if self.is_shell and self.spec.palm_tail:
-                        pyxel.line(px1, py1, px2, py2, trail_col)
-                        pyxel.line(px1 + 1, py1, px2 + 1, py2, trail_col)
-                        pyxel.line(px1 - 1, py1, px2 - 1, py2, trail_col)
+                    # --- NEW GLITTER LOGIC ---
+                    if self.spec.glitter and random.random() < 0.4:
+                        # 40% chance to draw a bright twinkling spark instead of a line
+                        pyxel.pset(px1, py1, 71)  # 71 is pure white/silver
                     else:
-                        pyxel.line(px1, py1, px2, py2, trail_col)
+                        # Standard solid lines
+                        if self.is_shell and self.spec.palm_tail:
+                            pyxel.line(px1, py1, px2, py2, trail_col)
+                            pyxel.line(px1 + 1, py1, px2 + 1, py2, trail_col)
+                            pyxel.line(px1 - 1, py1, px2 - 1, py2, trail_col)
+                        else:
+                            pyxel.line(px1, py1, px2, py2, trail_col)
+                            pyxel.line(px1 + 1, py1, px2 + 1, py2, trail_col)
