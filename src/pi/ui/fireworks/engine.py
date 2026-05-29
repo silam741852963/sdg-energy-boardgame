@@ -12,8 +12,8 @@ from .config import (
     SCALE_Y,
 )
 from .physics import calculate_launch_velocity
-from .models import get_random_preset, COLORS
-from .particles import Particle
+from .models import get_random_preset, COLORS, load_drone_pattern, ASCII_COLOR_MAP
+from .particles import Particle, Drone
 from .lighting import LightingSystem, bake_particle_sprites
 from .gui import ControlPanel
 
@@ -31,8 +31,40 @@ class FireworkEngine:
 
         self.particles = []
         self.shells = []
+        self.drones = []
+
         self.lighting = LightingSystem()
         self.gui = ControlPanel()
+
+    def launch_drones(self):
+        pattern = load_drone_pattern("pattern.txt")
+        if not pattern:
+            return
+
+        spacing = self.gui.drone_spacing * SCALE_X
+        height = len(pattern)
+        width = max(len(row) for row in pattern)
+
+        start_x = -(width * spacing) / 2
+        start_y = self.gui.drone_altitude * SCALE_Y
+
+        for row_idx, row in enumerate(pattern):
+            for col_idx, char in enumerate(row):
+                char = char.upper()
+                if char in ASCII_COLOR_MAP:
+                    tx = start_x + (col_idx * spacing)
+                    ty = start_y + (row_idx * spacing)
+
+                    self.drones.append(
+                        Drone(
+                            target_x=tx,
+                            target_y=ty,
+                            target_z=0,
+                            color_name=ASCII_COLOR_MAP[char],
+                            radius=self.gui.drone_radius,
+                            intensity=self.gui.drone_intensity,
+                        )
+                    )
 
     def launch(self, target_px, target_py, forced_spec=None):
         tx = target_px - (SCREEN_WIDTH / 2)
@@ -44,7 +76,6 @@ class FireworkEngine:
 
         spec = forced_spec if forced_spec else get_random_preset()
 
-        # FIX 1: Change launching base! Rising Tail fires vertically from exactly below the target.
         if spec.name == "Rising Tail":
             sx = tx
             sz = tz
@@ -132,11 +163,17 @@ class FireworkEngine:
 
             for _ in range(count):
                 if spec.name == "Palm Tree":
-                    phi = random.uniform(math.pi, math.pi * 2.0)
+                    phi = random.uniform(math.pi * 0.8, math.pi * 2.2)
+                elif spec.name == "Rising Tail":
+                    phi = random.uniform(1.2 * math.pi, 1.8 * math.pi)
                 else:
                     phi = random.uniform(0, math.pi * 2)
 
-                costheta = random.uniform(-1, 1)
+                if spec.name == "Rising Tail":
+                    costheta = random.uniform(-0.6, 0.6)
+                else:
+                    costheta = random.uniform(-1, 1)
+
                 theta = math.acos(costheta)
 
                 if spec.name == "Peony":
@@ -158,7 +195,6 @@ class FireworkEngine:
                 pvy = speed * math.sin(theta) * math.sin(phi)
                 pvz = speed * math.cos(theta)
 
-                # FIX 2: Dynamic momentum alignment for the Rising Tail
                 if spec.name == "Rising Tail":
                     mag = math.sqrt(
                         shell.launch_vx**2 + shell.launch_vy**2 + shell.launch_vz**2
@@ -168,7 +204,6 @@ class FireworkEngine:
                         ny = shell.launch_vy / mag
                         nz = shell.launch_vz / mag
 
-                        # Compress the sphere and aggressively blast it forward in the launch direction
                         pvx = (pvx * 0.2) + (nx * speed * 1.5)
                         pvy = (pvy * 0.2) + (ny * speed * 1.5)
                         pvz = (pvz * 0.2) + (nz * speed * 1.5)
@@ -194,6 +229,23 @@ class FireworkEngine:
             pyxel.quit()
 
         gui_captured_mouse = self.gui.update()
+
+        # --- KEYBOARD SHORTCUTS ---
+        if pyxel.btnp(pyxel.KEY_D):
+            self.launch_drones()
+        if pyxel.btnp(pyxel.KEY_C):
+            for d in self.drones:
+                d.clear()
+
+        # --- GUI BUTTON SIGNALS ---
+        if self.gui.trigger_drones:
+            self.gui.trigger_drones = False
+            self.launch_drones()
+
+        if self.gui.clear_drones:
+            self.gui.clear_drones = False
+            for d in self.drones:
+                d.clear()
 
         if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and not gui_captured_mouse:
             if self.gui.visible:
@@ -248,6 +300,12 @@ class FireworkEngine:
 
         self.particles = [p for p in self.particles if p.active]
 
+        for d in self.drones:
+            d.update()
+
+        # Clean up dead drones
+        self.drones = [d for d in self.drones if d.active]
+
     def draw(self):
         self.lighting.draw_background()
         self.lighting.draw_reflections()
@@ -256,6 +314,9 @@ class FireworkEngine:
             s.draw(intensity=s.get_intensity())
         for p in self.particles:
             p.draw(intensity=p.get_intensity())
+
+        for d in self.drones:
+            d.draw()
 
         self.gui.draw()
 

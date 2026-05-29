@@ -14,7 +14,7 @@ class ControlPanel:
         self.scale_x = max(1, int(3 * SCALE_X))
         self.scale_y = max(1, int(3 * SCALE_Y))
 
-        self.width = int(900 * SCALE_X)
+        self.width = int(1350 * SCALE_X)
         self.item_height = int(30 * SCALE_Y)
 
         self.col1_x = int(20 * SCALE_X)
@@ -25,7 +25,8 @@ class ControlPanel:
             + int(50 * SCALE_Y)
         )
 
-        self.col2_x = int(450 * SCALE_X)
+        # Shifted Column 2 slightly left to make room
+        self.col2_x = int(420 * SCALE_X)
         self.num_start_y = int(100 * SCALE_Y)
 
         self.num_props = [
@@ -59,6 +60,23 @@ class ControlPanel:
             "palm_tail",
             "glitter",
         ]
+
+        # --- NEW: Pushed Column 3 safely to the right ---
+        self.col3_x = int(880 * SCALE_X)
+        self.drone_spacing = 30
+        self.drone_altitude = -120
+        self.drone_radius = 1.5
+        self.drone_intensity = 1.5
+
+        self.drone_props = [
+            ("drone_spacing", "spacing", 5, 5, 100),
+            ("drone_altitude", "altitude (y)", 20, -500, 500),
+            ("drone_radius", "dot size", 0.5, 0.5, 5.0),
+            ("drone_intensity", "brightness", 0.2, 0.2, 5.0),
+        ]
+
+        self.trigger_drones = False
+        self.clear_drones = False
 
     def update(self) -> bool:
         if pyxel.btnp(pyxel.KEY_TAB):
@@ -142,6 +160,42 @@ class ControlPanel:
                         setattr(self.spec, prop, not val)
                         return True
 
+                # --- UPDATED: Adjusted hitboxes for Column 3 Math ---
+                for i, (prop, disp, step, min_v, max_v) in enumerate(self.drone_props):
+                    y = self.num_start_y + i * self.item_height
+                    if (
+                        self.col3_x + int(180 * SCALE_X)
+                        <= mx
+                        < self.col3_x + int(220 * SCALE_X)
+                        and y <= my < y + self.item_height
+                    ):
+                        val = getattr(self, prop)
+                        setattr(self, prop, round(max(min_v, val - step), 2))
+                        return True
+
+                    if (
+                        self.col3_x + int(280 * SCALE_X)
+                        <= mx
+                        < self.col3_x + int(320 * SCALE_X)
+                        and y <= my < y + self.item_height
+                    ):
+                        val = getattr(self, prop)
+                        setattr(self, prop, round(min(max_v, val + step), 2))
+                        return True
+
+                btn_y = (
+                    self.num_start_y
+                    + len(self.drone_props) * self.item_height
+                    + int(30 * SCALE_Y)
+                )
+                if self.col3_x <= mx < self.col3_x + int(400 * SCALE_X):
+                    if btn_y <= my < btn_y + self.item_height:
+                        self.trigger_drones = True
+                        return True
+                    elif btn_y + self.item_height <= my < btn_y + self.item_height * 2:
+                        self.clear_drones = True
+                        return True
+
                 return True
 
         return False
@@ -203,14 +257,11 @@ class ControlPanel:
         self.draw_text_scaled(
             self.col2_x, int(60 * SCALE_Y), "--- 3. TWEAK PHYSICS ---", 121
         )
-
         for i, (prop, disp, step, min_v, max_v) in enumerate(self.num_props):
             y = self.num_start_y + i * self.item_height
             val = getattr(self.spec, prop)
-
             self.draw_text_scaled(self.col2_x, y, f"{disp}", 121)
             self.draw_text_scaled(self.col2_x + int(250 * SCALE_X), y, "[-]", 122)
-
             val_str = f"{val:.2f}" if isinstance(val, float) else f"{val}"
             self.draw_text_scaled(self.col2_x + int(300 * SCALE_X), y, val_str, 121)
             self.draw_text_scaled(self.col2_x + int(380 * SCALE_X), y, "[+]", 122)
@@ -221,13 +272,10 @@ class ControlPanel:
             "--- 4. ATTRIBUTES ---",
             121,
         )
-
         for i, prop in enumerate(self.bool_props):
             y = self.bool_start_y + i * self.item_height
             val = getattr(self.spec, prop)
-
             self.draw_text_scaled(self.col2_x, y, f"{prop}", 121)
-
             box_text = "[X]" if val else "[ ]"
             box_color = 51 if val else 123
             self.draw_text_scaled(
@@ -235,8 +283,33 @@ class ControlPanel:
             )
 
         self.draw_text_scaled(
+            self.col3_x, int(60 * SCALE_Y), "--- 5. DRONE SHOW ---", 121
+        )
+        for i, (prop, disp, step, min_v, max_v) in enumerate(self.drone_props):
+            y = self.num_start_y + i * self.item_height
+            val = getattr(self, prop)
+
+            self.draw_text_scaled(self.col3_x, y, f"{disp}", 121)
+            self.draw_text_scaled(self.col3_x + int(180 * SCALE_X), y, "[-]", 122)
+
+            val_str = f"{val:.2f}" if isinstance(val, float) else f"{val}"
+            self.draw_text_scaled(self.col3_x + int(220 * SCALE_X), y, val_str, 121)
+            self.draw_text_scaled(self.col3_x + int(280 * SCALE_X), y, "[+]", 122)
+
+        btn_y = (
+            self.num_start_y
+            + len(self.drone_props) * self.item_height
+            + int(30 * SCALE_Y)
+        )
+        # Added explicit hotkey text to the buttons!
+        self.draw_text_scaled(self.col3_x, btn_y, "[ LAUNCH DRONES ] (Key: D)", 51)
+        self.draw_text_scaled(
+            self.col3_x, btn_y + self.item_height, "[ CLEAR DRONES ] (Key: C)", 1
+        )
+
+        self.draw_text_scaled(
             int(20 * SCALE_X),
             pyxel.height - int(50 * SCALE_Y),
-            ">>> CLICK THE SKY OUTSIDE THIS PANEL TO LAUNCH! <<<",
+            ">>> CLICK THE SKY OUTSIDE THIS PANEL TO LAUNCH FIREWORKS! <<<",
             122,
         )

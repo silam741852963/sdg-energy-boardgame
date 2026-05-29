@@ -55,11 +55,11 @@ class Particle:
             trail_len = 8 if (self.is_shell and self.spec.palm_tail) else 5
 
             if self.spec.waterfall:
-                trail_len = 10
+                trail_len = 12
             if self.spec.name == "Rising Tail" and not self.is_shell:
-                trail_len = 15
-            if self.spec.name == "Willow" and not self.is_shell:
                 trail_len = 20
+            if self.spec.name == "Willow" and not self.is_shell:
+                trail_len = 25
 
             if len(self.history) > trail_len:
                 self.history.pop(0)
@@ -73,7 +73,7 @@ class Particle:
             self.vy += random.uniform(-1.0, 1.0)
 
         if self.spec.spin and not self.is_shell:
-            self.spin_angle += 1.2  # Faster spin
+            self.spin_angle += 1.2
             self.vx += math.cos(self.spin_angle) * 2.5
             self.vz += math.sin(self.spin_angle) * 2.5
             self.vy += random.uniform(-0.5, 0.5)
@@ -153,7 +153,6 @@ class Particle:
             121 if (self.is_shell and self.spec.palm_tail) else self.get_shade(factor)
         )
 
-        # FIX: Willow skips drawing the bright "head" entirely to simulate a pure light stripe!
         if self.spec.name != "Willow" or self.is_shell:
             draw_baked_particle(px, py, color, factor, intensity, self.spec.radius)
 
@@ -169,17 +168,13 @@ class Particle:
 
                 if factor1 > 0 and factor2 > 0:
                     trail_col = self.get_shade(factor1 - 0.3)
-
-                    # --- UPDATED: Realistic Particulate Scatter ---
                     scatter_radius = thickness + 3
 
-                    # 60% chance to drop colored embers floating near the trail
                     if random.random() < 0.6:
                         sx = px1 + random.uniform(-scatter_radius, scatter_radius)
                         sy = py1 + random.uniform(-scatter_radius, scatter_radius)
                         pyxel.pset(int(sx), int(sy), trail_col)
 
-                    # 15% chance to drop a pure bright white magnesium spark
                     if random.random() < 0.15:
                         sx = px1 + random.uniform(
                             -scatter_radius - 2, scatter_radius + 2
@@ -189,7 +184,6 @@ class Particle:
                         )
                         pyxel.pset(int(sx), int(sy), 121)
 
-                    # Main structural trail rendering
                     if self.spec.glitter and random.random() < 0.4:
                         pyxel.pset(px1, py1, 121)
                     else:
@@ -200,3 +194,61 @@ class Particle:
                         else:
                             for w in range(-thickness + 1, thickness + 1):
                                 pyxel.line(px1 + w, py1, px2 + w, py2, trail_col)
+
+
+class Drone:
+    def __init__(self, target_x, target_y, target_z, color_name, radius, intensity):
+        self.x = target_x + random.uniform(-150, 150)
+        self.y = 1000  # Spawn deep below screen
+        self.z = target_z + random.uniform(-50, 50)
+        self.tx = target_x
+        self.ty = target_y
+        self.tz = target_z
+
+        self.color_name = color_name
+        self.radius = radius
+        self.intensity = intensity
+        self.active = True
+        self.clearing = False  # Tracks if they are flying away
+
+        self.speed = random.uniform(0.02, 0.05)
+        self.wobble_offset = random.uniform(0, math.pi * 2)
+
+    def clear(self):
+        """Triggers the fly-away animation."""
+        if not self.clearing:
+            self.clearing = True
+            # Assign a random sky destination to scatter them
+            self.tx += random.uniform(-200, 200)
+            self.ty -= random.uniform(600, 1000)
+            self.tz += random.uniform(-100, 100)
+            self.speed = random.uniform(0.04, 0.08)  # Accelerate out of the screen!
+
+    def update(self):
+        if not self.active:
+            return
+
+        self.x += (self.tx - self.x) * self.speed
+        self.y += (self.ty - self.y) * self.speed
+        self.z += (self.tz - self.z) * self.speed
+
+        if not self.clearing:
+            dist = abs(self.tx - self.x) + abs(self.ty - self.y)
+            if dist < 15:
+                self.x += math.sin(pyxel.frame_count * 0.05 + self.wobble_offset) * 0.3
+                self.y += math.cos(pyxel.frame_count * 0.04 + self.wobble_offset) * 0.3
+        else:
+            # Fade out gracefully as they fly away
+            self.intensity *= 0.95
+            if self.intensity < 0.05 or self.y < -200:
+                self.active = False
+
+    def draw(self):
+        if not self.active:
+            return
+        px, py, factor = project_3d_to_2d(self.x, self.y, self.z)
+        if factor <= 0:
+            return
+
+        color_idx = COLOR_MAP.get(self.color_name, 121)
+        draw_baked_particle(px, py, color_idx, factor, self.intensity, self.radius)

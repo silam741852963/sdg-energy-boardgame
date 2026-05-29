@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import random
+import os
 
 
 @dataclass
@@ -60,6 +61,36 @@ COLORS = [
     "magenta",
     "pink",
 ]
+
+# --- RESTORED: Drone ASCII Color Mapping ---
+ASCII_COLOR_MAP = {
+    "R": "red",
+    "O": "orange",
+    "G": "gold",
+    "Y": "yellow",
+    "L": "lime",
+    "E": "green",
+    "C": "cyan",
+    "B": "blue",
+    "I": "indigo",
+    "V": "violet",
+    "M": "magenta",
+    "P": "pink",
+    "W": "silver",
+}
+
+
+def load_drone_pattern(filename="pattern.txt"):
+    """Reads the ASCII text file safely relative to the execution directory."""
+    filepath = os.path.join(os.getcwd(), filename)
+
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            # We strip the newline characters but KEEP the spaces!
+            return [line.rstrip("\r\n") for line in f.readlines()]
+    else:
+        print(f"WARNING: Could not find {filepath}. Using fallback pattern.")
+        return ["  W W W  ", " W W W W ", "  W W W  "]
 
 
 def generate_spec(fw_type: str) -> FireworkSpec:
@@ -122,7 +153,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
     elif fw_type == "Dragon Eggs":
         spec.particle_count = 120
         spec.crackle = True
-        spec.speed_variance = 10.0
+        spec.speed_variance = 7.0
         spec.life_span = 130
     elif fw_type == "Waterfall":
         spec.particle_count = 150
@@ -161,41 +192,38 @@ def generate_spec(fw_type: str) -> FireworkSpec:
     elif fw_type == "Pistil":
         spec.particle_count = 150
         spec.pistil = True
-        spec.speed_variance = 9.0
+        spec.speed_variance = 5.0
         spec.life_span = 100
-        spec.multicolor = 2
+        spec.multicolor = 1
     elif fw_type == "Rising Tail":
         spec.palm_tail = True
-        spec.particle_count = 80
-        spec.speed_variance = 7.0
-        spec.life_span = 80
-
-    # --- UPDATED: Strobe ---
+        spec.particle_count = 40
+        spec.speed_variance = 5.0
+        spec.drag = 0.005
+        spec.gravity_mod = 0.8
+        spec.radius = 2.0
+        spec.life_span = 120
+        spec.has_trails = True
     elif fw_type == "Strobe":
         spec.particle_count = 100
         spec.flicker = True
-        spec.speed_variance = 7.0
+        spec.speed_variance = 4.0
         spec.gravity_mod = 0.1
         spec.life_span = 140
-
-    # --- UPDATED: Tourbillion ---
     elif fw_type == "Tourbillion":
-        spec.particle_count = 30  # Fewer saucer clusters
-        spec.spin = True  # Tight corkscrew physics
+        spec.particle_count = 50
+        spec.spin = True
         spec.has_trails = True
-        spec.speed_variance = 8.0
-        spec.drag = 0.05  # High drag so they hover and spin locally
-        spec.gravity_mod = 0.1  # Float in the air
+        spec.speed_variance = 6.0
+        spec.drag = 0.02
         spec.life_span = 100
-
-    # --- UPDATED: Willow ---
     elif fw_type == "Willow":
         spec.particle_count = 120
         spec.has_trails = True
-        spec.speed_variance = 10.0  # Fast initial burst
-        spec.gravity_mod = 0.15  # Very slow, graceful droop
-        spec.drag = 0.06  # Slows down outward momentum quickly
-        spec.life_span = 200  # Hangs in the sky for a long time
+        spec.speed_variance = 10.0
+        spec.gravity_mod = 0.2
+        spec.drag = 0.01
+        spec.life_span = 220
 
     return spec
 
