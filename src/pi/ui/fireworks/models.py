@@ -9,6 +9,7 @@ class FireworkSpec:
     base_color: str
     variant: int
     speed_variance: float
+    radius: float
     gravity_mod: float
     drag: float
     has_trails: bool
@@ -23,6 +24,8 @@ class FireworkSpec:
     waterfall: bool = False
     palm_tail: bool = False
     glitter: bool = False
+    multicolor: int = 1
+    intensity: float = 1.0
 
 
 FIREWORK_TYPES = [
@@ -43,24 +46,37 @@ FIREWORK_TYPES = [
     "Willow",
 ]
 
-COLORS = ["red", "orange", "yellow", "green", "blue", "indigo", "violet"]
+COLORS = [
+    "red",
+    "orange",
+    "gold",
+    "yellow",
+    "lime",
+    "green",
+    "cyan",
+    "blue",
+    "indigo",
+    "violet",
+    "magenta",
+    "pink",
+]
 
 
 def generate_spec(fw_type: str) -> FireworkSpec:
     color = random.choice(COLORS)
     variant = random.choice([0, 1])
 
-    # Baseline defaults
     spec = FireworkSpec(
         name=fw_type,
         particle_count=random.randint(60, 90),
         base_color=color,
         variant=variant,
-        speed_variance=10.0,
-        gravity_mod=0.6,
-        drag=0.04,
+        speed_variance=7.0,
+        radius=1.0,
+        gravity_mod=0.5,
+        drag=0.03,
         has_trails=False,
-        life_span=60,
+        life_span=80,
     )
 
     if fw_type == "Brocade":
@@ -68,100 +84,118 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.has_trails = True
         spec.palm_tail = True
         spec.glitter = True
-        spec.gravity_mod = 0.5
-        spec.drag = 0.04
-        spec.life_span = 120
-        spec.speed_variance = 14.0
+        spec.gravity_mod = 0.4
+        spec.drag = 0.03
+        spec.life_span = 140
+        spec.speed_variance = 9.0
     elif fw_type == "Chrysanthemum":
-        spec.particle_count = 350  # Increased for massive density
+        spec.particle_count = 350
         spec.has_trails = True
-        spec.speed_variance = 40.0  # Explodes outward with brutal force
-        spec.drag = 0.20  # Slams on the brakes harder
-        spec.gravity_mod = (
-            0.05  # Almost zero gravity to keep the perfect spherical shape
-        )
-        spec.life_span = 90
+        spec.speed_variance = 22.0
+        spec.drag = 0.15
+        spec.gravity_mod = 0.05
+        spec.life_span = 80
     elif fw_type == "Comet":
         spec.burst = False
+        spec.life_span = 100
+        spec.gravity_mod = 0.1
+        spec.drag = 0.01
+        spec.variant = 1
+        spec.radius = 2.0
         spec.has_trails = True
-        spec.palm_tail = True  # Gives the comet the thick, bright trail from the GIF
-        spec.life_span = 140
+        spec.palm_tail = True
     elif fw_type == "Crossette":
-        spec.particle_count = (
-            8  # Less is more! Fewer particles make the cross splits distinct
-        )
+        spec.particle_count = 18
         spec.has_trails = True
         spec.split = True
-        spec.speed_variance = 2.0  # Shoots out very fast and straight
-        spec.drag = 0.01  # Minimal drag before the split
-        spec.gravity_mod = 0.2  # Slight droop
-        spec.life_span = 70
+        spec.speed_variance = 5.0
+        spec.drag = 0.01
+        spec.gravity_mod = 0.2
+        spec.life_span = 40
     elif fw_type == "Pearls":
         spec.burst = False
         spec.has_trails = False
-        spec.life_span = 100
+        spec.life_span = 120
+        spec.radius = 3.0
+        spec.intensity = 2.0
+        spec.multicolor = len(COLORS)
     elif fw_type == "Dragon Eggs":
-        spec.particle_count = 100
-        spec.crackle = True
-        spec.speed_variance = 15.0
-        spec.life_span = 110
-    elif fw_type == "Waterfall":
         spec.particle_count = 120
+        spec.crackle = True
+        spec.speed_variance = 10.0
+        spec.life_span = 130
+    elif fw_type == "Waterfall":
+        spec.particle_count = 150
         spec.waterfall = True
         spec.has_trails = True
-        spec.gravity_mod = -0.1
-        spec.drag = 0.15
-        spec.speed_variance = 20.0
-        spec.life_span = 160
+        spec.gravity_mod = 1.2
+        spec.drag = 0.10
+        spec.speed_variance = 12.0
+        spec.life_span = 180
     elif fw_type == "Flying Fish":
-        spec.particle_count = 40
+        spec.particle_count = 60
         spec.swim = True
         spec.has_trails = True
-        spec.speed_variance = 8.0
-        spec.drag = 0.08
-        spec.life_span = 100
+        spec.speed_variance = 5.0
+        spec.drag = 0.04
+        spec.gravity_mod = 0.05
+        spec.radius = 1.5
+        spec.life_span = 30
     elif fw_type == "Palm Tree":
-        spec.particle_count = 20
+        spec.particle_count = 12
         spec.palm_tail = True
         spec.has_trails = True
-        spec.speed_variance = 18.0
-        spec.drag = 0.01
-        spec.gravity_mod = 0.8
-        spec.life_span = 100
-    elif fw_type == "Peony":
-        spec.particle_count = 120
-        spec.speed_variance = 12.0
+        spec.speed_variance = 7.0
+        spec.drag = 0.02
         spec.life_span = 70
+        spec.gravity_mod = 1
+        spec.radius = 3
+    elif fw_type == "Peony":
+        spec.particle_count = 200
+        spec.has_trails = False
+        spec.speed_variance = 18.0
+        spec.drag = 0.12
+        spec.gravity_mod = 0.05
+        spec.radius = 0.5
+        spec.life_span = 100
     elif fw_type == "Pistil":
         spec.particle_count = 150
         spec.pistil = True
-        spec.speed_variance = 14.0
-        spec.life_span = 80
+        spec.speed_variance = 9.0
+        spec.life_span = 100
+        spec.multicolor = 2
     elif fw_type == "Rising Tail":
         spec.palm_tail = True
         spec.particle_count = 80
-        spec.speed_variance = 10.0
-        spec.life_span = 70
+        spec.speed_variance = 7.0
+        spec.life_span = 80
+
+    # --- UPDATED: Strobe ---
     elif fw_type == "Strobe":
         spec.particle_count = 100
         spec.flicker = True
-        spec.speed_variance = 10.0
-        spec.gravity_mod = 0.2
-        spec.life_span = 120
+        spec.speed_variance = 7.0
+        spec.gravity_mod = 0.1
+        spec.life_span = 140
+
+    # --- UPDATED: Tourbillion ---
     elif fw_type == "Tourbillion":
-        spec.particle_count = 50
-        spec.spin = True
+        spec.particle_count = 30  # Fewer saucer clusters
+        spec.spin = True  # Tight corkscrew physics
         spec.has_trails = True
         spec.speed_variance = 8.0
-        spec.drag = 0.02
-        spec.life_span = 90
+        spec.drag = 0.05  # High drag so they hover and spin locally
+        spec.gravity_mod = 0.1  # Float in the air
+        spec.life_span = 100
+
+    # --- UPDATED: Willow ---
     elif fw_type == "Willow":
         spec.particle_count = 120
         spec.has_trails = True
-        spec.speed_variance = 15.0
-        spec.gravity_mod = 0.2
-        spec.drag = 0.01
-        spec.life_span = 200
+        spec.speed_variance = 10.0  # Fast initial burst
+        spec.gravity_mod = 0.15  # Very slow, graceful droop
+        spec.drag = 0.06  # Slows down outward momentum quickly
+        spec.life_span = 200  # Hangs in the sky for a long time
 
     return spec
 

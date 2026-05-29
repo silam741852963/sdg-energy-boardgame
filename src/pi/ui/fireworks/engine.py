@@ -2,9 +2,17 @@ import pyxel
 import random
 import math
 import copy
-from .config import SCREEN_WIDTH, SCREEN_HEIGHT, CUSTOM_PALETTE, FULLSCREEN, COLOR_MAP
+from .config import (
+    SCREEN_WIDTH,
+    SCREEN_HEIGHT,
+    CUSTOM_PALETTE,
+    FULLSCREEN,
+    COLOR_MAP,
+    SCALE_X,
+    SCALE_Y,
+)
 from .physics import calculate_launch_velocity
-from .models import get_random_preset
+from .models import get_random_preset, COLORS
 from .particles import Particle
 from .lighting import LightingSystem, bake_particle_sprites
 from .gui import ControlPanel
@@ -28,22 +36,28 @@ class FireworkEngine:
 
     def launch(self, target_px, target_py, forced_spec=None):
         tx = target_px - (SCREEN_WIDTH / 2)
-        clamped_py = max(350, min(target_py, SCREEN_HEIGHT - 300))
+        clamped_py = max(
+            int(350 * SCALE_Y), min(target_py, SCREEN_HEIGHT - int(300 * SCALE_Y))
+        )
         ty = clamped_py - (SCREEN_HEIGHT / 2)
         tz = random.uniform(-100, 100)
 
-        sx = random.uniform(-600, 600)
-        sy = SCREEN_HEIGHT / 2
-        sz = random.uniform(-100, 100)
-
-        gravity = 0.5
-        vx, vy, vz = calculate_launch_velocity((sx, sy, sz), (tx, ty, tz), gravity)
-
         spec = forced_spec if forced_spec else get_random_preset()
+
+        # FIX 1: Change launching base! Rising Tail fires vertically from exactly below the target.
+        if spec.name == "Rising Tail":
+            sx = tx
+            sz = tz
+        else:
+            sx = random.uniform(-600 * SCALE_X, 600 * SCALE_X)
+            sz = random.uniform(-100, 100)
+
+        sy = SCREEN_HEIGHT / 2
+        gravity = 0.3
+        vx, vy, vz = calculate_launch_velocity((sx, sy, sz), (tx, ty, tz), gravity)
 
         if spec.name in ["Comet", "Pearls"]:
             if spec.name == "Comet":
-                # BEAUTIFUL FAN BARRAGE: Calculates a perfect arcing spread for Comets
                 num_shells = 7
                 spread_width = 30.0
                 for i in range(num_shells):
@@ -51,23 +65,37 @@ class FireworkEngine:
                         i * (spread_width / (num_shells - 1))
                     )
                     off_vx = vx + offset
-                    # The center comets go higher than the outer comets
                     off_vy = vy - (10.0 - abs(offset) * 0.5)
                     off_vz = vz
                     shell = Particle(
                         sx, sy, sz, off_vx, off_vy, off_vz, spec, is_shell=True
                     )
                     self.shells.append(shell)
-            else:
-                # Pearls remain a random cluster barrage
-                num_shells = random.randint(8, 15)
-                for _ in range(num_shells):
-                    off_vx = vx + random.uniform(-3.0, 3.0)
-                    off_vy = vy + random.uniform(-4.0, 0.0)
-                    off_vz = vz + random.uniform(-3.0, 3.0)
-                    shell = Particle(
-                        sx, sy, sz, off_vx, off_vy, off_vz, spec, is_shell=True
+            elif spec.name == "Pearls":
+                num_shells = 7
+                spread_width = 12.0
+
+                mixed_colors = (
+                    random.sample(COLORS, min(spec.multicolor, len(COLORS)))
+                    if spec.multicolor > 1
+                    else [spec.base_color]
+                )
+
+                for i in range(num_shells):
+                    offset = -(spread_width / 2) + (
+                        i * (spread_width / (num_shells - 1))
                     )
+                    off_vx = vx + offset
+                    off_vy = vy - 4.0
+                    off_vz = vz
+
+                    p_spec = copy.copy(spec)
+                    p_spec.base_color = mixed_colors[i % len(mixed_colors)]
+
+                    shell = Particle(
+                        sx, sy, sz, off_vx, off_vy, off_vz, p_spec, is_shell=True
+                    )
+                    shell.particle_color = p_spec.base_color
                     self.shells.append(shell)
         else:
             shell = Particle(sx, sy, sz, vx, vy, vz, spec, is_shell=True)
@@ -83,38 +111,82 @@ class FireworkEngine:
             self.lighting.trigger_sky_flash(darkest_shade_idx)
 
         self.lighting.add_ground_reflection(
-            shell.x, shell.z, spec.life_span, self.lighting.sky_flash_color
+            shell.x,
+            shell.z,
+            spec.life_span,
+            self.lighting.sky_flash_color,
+            radius_mod=spec.radius,
         )
 
         layers = [False]
         if spec.pistil:
             layers.append(True)
 
+        color_pool = [spec.base_color]
+        if spec.multicolor > 1:
+            color_pool = random.sample(COLORS, min(spec.multicolor, len(COLORS)))
+
         for is_inner in layers:
             count = spec.particle_count // 2 if is_inner else spec.particle_count
             speed_mult = 0.4 if is_inner else 1.0
 
             for _ in range(count):
-                phi = random.uniform(0, math.pi * 2)
+                if spec.name == "Palm Tree":
+                    phi = random.uniform(math.pi, math.pi * 2.0)
+                else:
+                    phi = random.uniform(0, math.pi * 2)
+
                 costheta = random.uniform(-1, 1)
                 theta = math.acos(costheta)
 
-                speed = (
-                    random.uniform(spec.speed_variance * 1.5, spec.speed_variance * 2.5)
-                    * speed_mult
-                )
+                if spec.name == "Peony":
+                    speed = (
+                        random.uniform(
+                            spec.speed_variance * 1.2, spec.speed_variance * 1.6
+                        )
+                        * speed_mult
+                    )
+                else:
+                    speed = (
+                        random.uniform(
+                            spec.speed_variance * 0.8, spec.speed_variance * 1.6
+                        )
+                        * speed_mult
+                    )
+
                 pvx = speed * math.sin(theta) * math.cos(phi)
                 pvy = speed * math.sin(theta) * math.sin(phi)
                 pvz = speed * math.cos(theta)
 
-                pvx += shell.vx * 0.2
-                pvy += shell.vy * 0.2
-                pvz += shell.vz * 0.2
-                pvy -= random.uniform(1.0, 3.0)
+                # FIX 2: Dynamic momentum alignment for the Rising Tail
+                if spec.name == "Rising Tail":
+                    mag = math.sqrt(
+                        shell.launch_vx**2 + shell.launch_vy**2 + shell.launch_vz**2
+                    )
+                    if mag > 0:
+                        nx = shell.launch_vx / mag
+                        ny = shell.launch_vy / mag
+                        nz = shell.launch_vz / mag
+
+                        # Compress the sphere and aggressively blast it forward in the launch direction
+                        pvx = (pvx * 0.2) + (nx * speed * 1.5)
+                        pvy = (pvy * 0.2) + (ny * speed * 1.5)
+                        pvz = (pvz * 0.2) + (nz * speed * 1.5)
+
+                elif spec.name != "Peony":
+                    pvx += shell.vx * 0.2
+                    pvy += shell.vy * 0.2
+                    pvz += shell.vz * 0.2
+                    pvy -= random.uniform(0.5, 2.0)
 
                 p = Particle(
                     shell.x, shell.y, shell.z, pvx, pvy, pvz, spec, is_inner=is_inner
                 )
+
+                if spec.name == "Pistil" and is_inner:
+                    p.flicker = True
+
+                p.particle_color = random.choice(color_pool)
                 self.particles.append(p)
 
     def update(self):
@@ -137,8 +209,8 @@ class FireworkEngine:
             and random.random() < 0.05
         ):
             self.launch(
-                random.randint(400, SCREEN_WIDTH - 400),
-                random.randint(400, 700),
+                random.randint(int(400 * SCALE_X), SCREEN_WIDTH - int(400 * SCALE_X)),
+                random.randint(int(400 * SCALE_Y), int(700 * SCALE_Y)),
             )
 
         self.lighting.update()
@@ -154,7 +226,6 @@ class FireworkEngine:
 
         for p in self.particles:
             p.update()
-
             if (
                 p.spec.split
                 and not p.is_split_child
@@ -163,22 +234,16 @@ class FireworkEngine:
             ):
                 p.active = False
                 for i in range(4):
-                    # RIGID CROSSETTE LOGIC: math.pi/4 offsets the angles to create a perfect "X"
                     angle = i * (math.pi / 2) + (math.pi / 4)
 
-                    nvx = (p.vx * 0.4) + math.cos(angle) * 6
-                    nvy = (p.vy * 0.4) + math.sin(angle) * 6
+                    nvx = (p.vx * 0.4) + math.cos(angle) * 4
+                    nvy = (p.vy * 0.4) + math.sin(angle) * 4
                     nvz = p.vz * 0.4
 
                     new_p = Particle(p.x, p.y, p.z, nvx, nvy, nvz, p.spec)
-
-                    # Mark this new particle as a child so it doesn't split again.
                     new_p.is_split_child = True
-
-                    # Optional: Give the child particles a slightly shorter lifespan
-                    # so they burn out cleanly after splitting.
+                    new_p.particle_color = p.particle_color
                     new_p.life = p.life * 0.4
-
                     self.particles.append(new_p)
 
         self.particles = [p for p in self.particles if p.active]
@@ -188,9 +253,9 @@ class FireworkEngine:
         self.lighting.draw_reflections()
 
         for s in self.shells:
-            s.draw()
+            s.draw(intensity=s.get_intensity())
         for p in self.particles:
-            p.draw()
+            p.draw(intensity=p.get_intensity())
 
         self.gui.draw()
 
