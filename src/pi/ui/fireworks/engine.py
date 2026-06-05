@@ -12,14 +12,18 @@ from .config import (
     SCALE_Y,
 )
 from .physics import calculate_launch_velocity
-from .models import get_random_preset, COLORS, load_drone_pattern, ASCII_COLOR_MAP
-from .particles import Particle, Drone
+from .models import get_random_preset, COLORS
+from .particles import Particle
+from .drones import DroneManager
 from .lighting import LightingSystem, bake_particle_sprites
 from .gui import ControlPanel
+from .audio import AudioSystem
 
 
 class FireworkEngine:
     def __init__(self):
+        self.audio = AudioSystem()
+
         pyxel.init(SCREEN_WIDTH, SCREEN_HEIGHT, fps=60, title="3D Fireworks")
 
         if FULLSCREEN:
@@ -31,40 +35,12 @@ class FireworkEngine:
 
         self.particles = []
         self.shells = []
-        self.drones = []
+
+        # --- NEW: Hook up the modular Drone Manager ---
+        self.drone_manager = DroneManager()
 
         self.lighting = LightingSystem()
         self.gui = ControlPanel()
-
-    def launch_drones(self):
-        pattern = load_drone_pattern("pattern.txt")
-        if not pattern:
-            return
-
-        spacing = self.gui.drone_spacing * SCALE_X
-        height = len(pattern)
-        width = max(len(row) for row in pattern)
-
-        start_x = -(width * spacing) / 2
-        start_y = self.gui.drone_altitude * SCALE_Y
-
-        for row_idx, row in enumerate(pattern):
-            for col_idx, char in enumerate(row):
-                char = char.upper()
-                if char in ASCII_COLOR_MAP:
-                    tx = start_x + (col_idx * spacing)
-                    ty = start_y + (row_idx * spacing)
-
-                    self.drones.append(
-                        Drone(
-                            target_x=tx,
-                            target_y=ty,
-                            target_z=0,
-                            color_name=ASCII_COLOR_MAP[char],
-                            radius=self.gui.drone_radius,
-                            intensity=self.gui.drone_intensity,
-                        )
-                    )
 
     def launch(self, target_px, target_py, forced_spec=None):
         tx = target_px - (SCREEN_WIDTH / 2)
@@ -86,6 +62,8 @@ class FireworkEngine:
         sy = SCREEN_HEIGHT / 2
         gravity = 0.3
         vx, vy, vz = calculate_launch_velocity((sx, sy, sz), (tx, ty, tz), gravity)
+
+        self.audio.play_launch(sx)
 
         if spec.name in ["Comet", "Pearls"]:
             if spec.name == "Comet":
@@ -136,6 +114,8 @@ class FireworkEngine:
         spec = shell.spec
         if not spec.burst:
             return
+
+        self.audio.play_explosion(spec, shell.x, shell.y)
 
         if spec.base_color != "silver":
             darkest_shade_idx = COLOR_MAP[spec.base_color] + (spec.variant * 5) + 4
@@ -230,22 +210,24 @@ class FireworkEngine:
 
         gui_captured_mouse = self.gui.update()
 
-        # --- KEYBOARD SHORTCUTS ---
+        # --- KEYBOARD SHORTCUTS FOR DRONE TRANSITIONS ---
         if pyxel.btnp(pyxel.KEY_D):
-            self.launch_drones()
+            self.drone_manager.transition_to_pattern(0, self.gui, self.audio)
+        if pyxel.btnp(pyxel.KEY_RIGHT):
+            self.drone_manager.next_pattern(self.gui, self.audio)
+        if pyxel.btnp(pyxel.KEY_LEFT):
+            self.drone_manager.prev_pattern(self.gui, self.audio)
         if pyxel.btnp(pyxel.KEY_C):
-            for d in self.drones:
-                d.clear()
+            self.drone_manager.clear_all(self.audio)
 
         # --- GUI BUTTON SIGNALS ---
         if self.gui.trigger_drones:
             self.gui.trigger_drones = False
-            self.launch_drones()
+            self.drone_manager.transition_to_pattern(0, self.gui, self.audio)
 
         if self.gui.clear_drones:
             self.gui.clear_drones = False
-            for d in self.drones:
-                d.clear()
+            self.drone_manager.clear_all(self.audio)
 
         if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and not gui_captured_mouse:
             if self.gui.visible:
@@ -300,11 +282,8 @@ class FireworkEngine:
 
         self.particles = [p for p in self.particles if p.active]
 
-        for d in self.drones:
-            d.update()
-
-        # Clean up dead drones
-        self.drones = [d for d in self.drones if d.active]
+        # --- UPDATE DRONES ---
+        self.drone_manager.update()
 
     def draw(self):
         self.lighting.draw_background()
@@ -315,8 +294,8 @@ class FireworkEngine:
         for p in self.particles:
             p.draw(intensity=p.get_intensity())
 
-        for d in self.drones:
-            d.draw()
+        # --- DRAW DRONES ---
+        self.drone_manager.draw()
 
         self.gui.draw()
 

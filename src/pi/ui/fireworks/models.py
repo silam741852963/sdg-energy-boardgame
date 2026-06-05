@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 import random
-import os
 
 
 @dataclass
@@ -61,36 +60,6 @@ COLORS = [
     "magenta",
     "pink",
 ]
-
-# --- RESTORED: Drone ASCII Color Mapping ---
-ASCII_COLOR_MAP = {
-    "R": "red",
-    "O": "orange",
-    "G": "gold",
-    "Y": "yellow",
-    "L": "lime",
-    "E": "green",
-    "C": "cyan",
-    "B": "blue",
-    "I": "indigo",
-    "V": "violet",
-    "M": "magenta",
-    "P": "pink",
-    "W": "silver",
-}
-
-
-def load_drone_pattern(filename="pattern.txt"):
-    """Reads the ASCII text file safely relative to the execution directory."""
-    filepath = os.path.join(os.getcwd(), filename)
-
-    if os.path.exists(filepath):
-        with open(filepath, "r", encoding="utf-8") as f:
-            # We strip the newline characters but KEEP the spaces!
-            return [line.rstrip("\r\n") for line in f.readlines()]
-    else:
-        print(f"WARNING: Could not find {filepath}. Using fallback pattern.")
-        return ["  W W W  ", " W W W W ", "  W W W  "]
 
 
 def generate_spec(fw_type: str) -> FireworkSpec:
@@ -153,7 +122,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
     elif fw_type == "Dragon Eggs":
         spec.particle_count = 120
         spec.crackle = True
-        spec.speed_variance = 7.0
+        spec.speed_variance = 10.0
         spec.life_span = 130
     elif fw_type == "Waterfall":
         spec.particle_count = 150
@@ -192,7 +161,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
     elif fw_type == "Pistil":
         spec.particle_count = 150
         spec.pistil = True
-        spec.speed_variance = 5.0
+        spec.speed_variance = 9.0
         spec.life_span = 100
         spec.multicolor = 1
     elif fw_type == "Rising Tail":
