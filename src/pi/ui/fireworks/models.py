@@ -28,6 +28,104 @@ class FireworkSpec:
     update_behaviors: List[UpdateBehavior] = field(default_factory=list)
     draw_behaviors: List[DrawBehavior] = field(default_factory=list)
 
+    @property
+    def has_trails(self):
+        return any(isinstance(b, TrailBehavior) for b in self.draw_behaviors)
+
+    @has_trails.setter
+    def has_trails(self, value):
+        has = self.has_trails
+        if value and not has:
+            self.draw_behaviors.append(TrailBehavior())
+        elif not value and has:
+            self.draw_behaviors = [b for b in self.draw_behaviors if not isinstance(b, TrailBehavior)]
+
+    @property
+    def flicker(self):
+        return any(isinstance(b, FlickerBehavior) for b in self.draw_behaviors)
+
+    @flicker.setter
+    def flicker(self, value):
+        has = self.flicker
+        if value and not has:
+            self.draw_behaviors.append(FlickerBehavior())
+        elif not value and has:
+            self.draw_behaviors = [b for b in self.draw_behaviors if not isinstance(b, FlickerBehavior)]
+
+    @property
+    def crackle(self):
+        return any(isinstance(b, CrackleBehavior) for b in self.draw_behaviors)
+
+    @crackle.setter
+    def crackle(self, value):
+        has = self.crackle
+        if value and not has:
+            self.draw_behaviors.append(CrackleBehavior())
+        elif not value and has:
+            self.draw_behaviors = [b for b in self.draw_behaviors if not isinstance(b, CrackleBehavior)]
+
+    @property
+    def swim(self):
+        return any(isinstance(b, SwimBehavior) for b in self.update_behaviors)
+
+    @swim.setter
+    def swim(self, value):
+        has = self.swim
+        if value and not has:
+            self.update_behaviors.append(SwimBehavior())
+        elif not value and has:
+            self.update_behaviors = [b for b in self.update_behaviors if not isinstance(b, SwimBehavior)]
+
+    @property
+    def spin(self):
+        return any(isinstance(b, SpinBehavior) for b in self.update_behaviors)
+
+    @spin.setter
+    def spin(self, value):
+        has = self.spin
+        if value and not has:
+            self.update_behaviors.append(SpinBehavior())
+        elif not value and has:
+            self.update_behaviors = [b for b in self.update_behaviors if not isinstance(b, SpinBehavior)]
+
+    @property
+    def waterfall(self):
+        return any(isinstance(b, WaterfallBehavior) for b in self.update_behaviors)
+
+    @waterfall.setter
+    def waterfall(self, value):
+        has = self.waterfall
+        if value and not has:
+            self.update_behaviors.append(WaterfallBehavior())
+        elif not value and has:
+            self.update_behaviors = [b for b in self.update_behaviors if not isinstance(b, WaterfallBehavior)]
+
+    @property
+    def palm_tail(self):
+        for b in self.draw_behaviors:
+            if isinstance(b, TrailBehavior):
+                return b.palm_tail
+        return False
+
+    @palm_tail.setter
+    def palm_tail(self, value):
+        for b in self.draw_behaviors:
+            if isinstance(b, TrailBehavior):
+                b.palm_tail = value
+
+    @property
+    def glitter(self):
+        for b in self.draw_behaviors:
+            if isinstance(b, TrailBehavior):
+                return b.glitter
+        return False
+
+    @glitter.setter
+    def glitter(self, value):
+        for b in self.draw_behaviors:
+            if isinstance(b, TrailBehavior):
+                b.glitter = value
+
 
 from .config import FIREWORK_TYPES, COLORS
 
