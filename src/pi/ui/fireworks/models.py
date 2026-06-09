@@ -1,5 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import random
+from typing import List, Any
+
+from .strategies import LaunchStrategy, SingleLaunch, SpreadLaunch, MulticolorSpreadLaunch, BurstStrategy, SphericalBurst, PalmBurst, ConeBurst
+from .behaviors import UpdateBehavior, DrawBehavior, SwimBehavior, SpinBehavior, WaterfallBehavior, CrackleBehavior, FlickerBehavior, TrailBehavior
 
 
 @dataclass
@@ -12,54 +16,20 @@ class FireworkSpec:
     radius: float
     gravity_mod: float
     drag: float
-    has_trails: bool
     life_span: int
-    flicker: bool = False
-    swim: bool = False
-    split: bool = False
-    crackle: bool = False
     burst: bool = True
     pistil: bool = False
-    spin: bool = False
-    waterfall: bool = False
-    palm_tail: bool = False
-    glitter: bool = False
+    split: bool = False
     multicolor: int = 1
     intensity: float = 1.0
 
+    launch_strategy: LaunchStrategy = field(default_factory=SingleLaunch)
+    burst_strategy: BurstStrategy = field(default_factory=SphericalBurst)
+    update_behaviors: List[UpdateBehavior] = field(default_factory=list)
+    draw_behaviors: List[DrawBehavior] = field(default_factory=list)
 
-FIREWORK_TYPES = [
-    "Brocade",
-    "Chrysanthemum",
-    "Comet",
-    "Crossette",
-    "Pearls",
-    "Dragon Eggs",
-    "Waterfall",
-    "Flying Fish",
-    "Palm Tree",
-    "Peony",
-    "Pistil",
-    "Rising Tail",
-    "Strobe",
-    "Tourbillion",
-    "Willow",
-]
 
-COLORS = [
-    "red",
-    "orange",
-    "gold",
-    "yellow",
-    "lime",
-    "green",
-    "cyan",
-    "blue",
-    "indigo",
-    "violet",
-    "magenta",
-    "pink",
-]
+from .config import FIREWORK_TYPES, COLORS
 
 
 def generate_spec(fw_type: str) -> FireworkSpec:
@@ -71,30 +41,27 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         particle_count=random.randint(60, 90),
         base_color=color,
         variant=variant,
-        speed_variance=7.0,
+        speed_variance=7.5,
         radius=1.0,
         gravity_mod=0.5,
-        drag=0.03,
-        has_trails=False,
+        drag=0.05,
         life_span=80,
     )
 
     if fw_type == "Brocade":
         spec.particle_count = 150
-        spec.has_trails = True
-        spec.palm_tail = True
-        spec.glitter = True
         spec.gravity_mod = 0.4
-        spec.drag = 0.03
+        spec.drag = 0.06
         spec.life_span = 140
         spec.speed_variance = 9.0
+        spec.draw_behaviors.append(TrailBehavior(palm_tail=True, glitter=True))
     elif fw_type == "Chrysanthemum":
         spec.particle_count = 350
-        spec.has_trails = True
         spec.speed_variance = 22.0
         spec.drag = 0.15
         spec.gravity_mod = 0.05
         spec.life_span = 80
+        spec.draw_behaviors.append(TrailBehavior())
     elif fw_type == "Comet":
         spec.burst = False
         spec.life_span = 100
@@ -102,97 +69,100 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.drag = 0.01
         spec.variant = 1
         spec.radius = 2.0
-        spec.has_trails = True
-        spec.palm_tail = True
+        spec.launch_strategy = SpreadLaunch()
+        spec.draw_behaviors.append(TrailBehavior(palm_tail=True))
     elif fw_type == "Crossette":
         spec.particle_count = 18
-        spec.has_trails = True
         spec.split = True
-        spec.speed_variance = 5.0
-        spec.drag = 0.01
+        spec.speed_variance = 6.0
+        spec.drag = 0.04
         spec.gravity_mod = 0.2
         spec.life_span = 40
+        spec.draw_behaviors.append(TrailBehavior())
     elif fw_type == "Pearls":
         spec.burst = False
-        spec.has_trails = False
         spec.life_span = 120
         spec.radius = 3.0
         spec.intensity = 2.0
         spec.multicolor = len(COLORS)
+        spec.launch_strategy = MulticolorSpreadLaunch()
     elif fw_type == "Dragon Eggs":
         spec.particle_count = 120
-        spec.crackle = True
-        spec.speed_variance = 10.0
+        spec.speed_variance = 9.0
+        spec.drag = 0.06
         spec.life_span = 130
+        spec.draw_behaviors.append(CrackleBehavior())
     elif fw_type == "Waterfall":
         spec.particle_count = 150
-        spec.waterfall = True
-        spec.has_trails = True
         spec.gravity_mod = 1.2
-        spec.drag = 0.10
+        spec.drag = 0.08
         spec.speed_variance = 12.0
         spec.life_span = 180
+        spec.update_behaviors.append(WaterfallBehavior())
+        spec.draw_behaviors.append(TrailBehavior(trail_len=12))
     elif fw_type == "Flying Fish":
         spec.particle_count = 60
-        spec.swim = True
-        spec.has_trails = True
-        spec.speed_variance = 5.0
+        spec.speed_variance = 6.0
         spec.drag = 0.04
         spec.gravity_mod = 0.05
         spec.radius = 1.5
         spec.life_span = 30
+        spec.update_behaviors.append(SwimBehavior())
+        spec.draw_behaviors.append(TrailBehavior())
     elif fw_type == "Palm Tree":
         spec.particle_count = 12
-        spec.palm_tail = True
-        spec.has_trails = True
-        spec.speed_variance = 7.0
-        spec.drag = 0.02
+        spec.speed_variance = 7.5
+        spec.drag = 0.05
         spec.life_span = 70
         spec.gravity_mod = 1
         spec.radius = 3
+        spec.burst_strategy = PalmBurst()
+        spec.draw_behaviors.append(TrailBehavior(palm_tail=True))
     elif fw_type == "Peony":
         spec.particle_count = 200
-        spec.has_trails = False
         spec.speed_variance = 18.0
         spec.drag = 0.12
         spec.gravity_mod = 0.05
         spec.radius = 0.5
         spec.life_span = 100
+        spec.burst_strategy = SphericalBurst(speed_min=1.2, add_shell_velocity=False)
     elif fw_type == "Pistil":
         spec.particle_count = 150
         spec.pistil = True
         spec.speed_variance = 9.0
+        spec.drag = 0.06
         spec.life_span = 100
         spec.multicolor = 1
     elif fw_type == "Rising Tail":
-        spec.palm_tail = True
         spec.particle_count = 40
-        spec.speed_variance = 5.0
-        spec.drag = 0.005
+        spec.speed_variance = 6.0
+        spec.drag = 0.04
         spec.gravity_mod = 0.8
         spec.radius = 2.0
         spec.life_span = 120
-        spec.has_trails = True
+        spec.burst_strategy = ConeBurst()
+        spec.draw_behaviors.append(TrailBehavior(palm_tail=True, trail_len=20))
     elif fw_type == "Strobe":
         spec.particle_count = 100
-        spec.flicker = True
-        spec.speed_variance = 4.0
+        spec.speed_variance = 6.0
+        spec.drag = 0.04
         spec.gravity_mod = 0.1
         spec.life_span = 140
+        spec.draw_behaviors.append(FlickerBehavior())
     elif fw_type == "Tourbillion":
         spec.particle_count = 50
-        spec.spin = True
-        spec.has_trails = True
         spec.speed_variance = 6.0
-        spec.drag = 0.02
+        spec.drag = 0.04
         spec.life_span = 100
+        spec.update_behaviors.append(SpinBehavior())
+        spec.draw_behaviors.append(TrailBehavior())
     elif fw_type == "Willow":
         spec.particle_count = 120
-        spec.has_trails = True
-        spec.speed_variance = 10.0
+        spec.speed_variance = 8.0
         spec.gravity_mod = 0.2
-        spec.drag = 0.01
+        spec.drag = 0.02
         spec.life_span = 220
+        spec.draw_behaviors.append(TrailBehavior(trail_len=25))
 
     return spec
 

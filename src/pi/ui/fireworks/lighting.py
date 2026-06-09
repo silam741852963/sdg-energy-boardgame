@@ -134,7 +134,7 @@ def draw_baked_particle(px, py, color_idx, factor, intensity=1.0, radius=1.0):
 
             # 2. Draw sparse concentric rings instead of a solid circle to fake 50% transparency
             if halo_color != 121:
-                for r in range(2, glow_size + 1, 2):
+                for r in range(4, glow_size + 1, 4):
                     pyxel.circb(px, py, r, halo_color)
 
         pyxel.blt(px - 16, py - 16, bank, ix, iy, 32, 32, 0)

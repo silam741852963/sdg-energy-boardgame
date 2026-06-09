@@ -2,11 +2,15 @@ import math
 from .config import SCREEN_WIDTH, SCREEN_HEIGHT, FOV, VIEWER_DISTANCE
 
 
+HALF_SCREEN_WIDTH = SCREEN_WIDTH / 2
+HALF_SCREEN_HEIGHT = SCREEN_HEIGHT / 2
+
+
 def project_3d_to_2d(x, y, z):
     """Projects 3D coordinates to a 2D screen using perspective divide."""
     factor = FOV / (VIEWER_DISTANCE + z)
-    x_proj = x * factor + (SCREEN_WIDTH / 2)
-    y_proj = y * factor + (SCREEN_HEIGHT / 2)
+    x_proj = x * factor + HALF_SCREEN_WIDTH
+    y_proj = y * factor + HALF_SCREEN_HEIGHT
     return x_proj, y_proj, factor
 
 

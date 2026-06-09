@@ -176,7 +176,9 @@ class DroneManager:
 
         # Calculate width based ONLY on the actual drone boundaries
         width = max_c - min_c
-        start_x = -(width * spacing) / 2
+        h_spacing = spacing * 0.5
+        v_spacing = spacing
+        start_x = -(width * h_spacing) / 2
         start_y = altitude * SCALE_Y
 
         for row_idx, row in enumerate(grid):
@@ -184,8 +186,8 @@ class DroneManager:
                 char = char.upper()
                 if char in ASCII_COLOR_MAP:
                     # Offset by min_c so the visual pattern starts exactly at start_x
-                    tx = start_x + ((col_idx - min_c) * spacing)
-                    ty = start_y + (row_idx * spacing)
+                    tx = start_x + ((col_idx - min_c) * h_spacing)
+                    ty = start_y + (row_idx * v_spacing)
                     coords.append((tx, ty, 0, ASCII_COLOR_MAP[char]))
 
         return coords

@@ -93,7 +93,16 @@ class AudioSystem:
 
         is_far = y_position < -150
         is_large = spec.particle_count >= 150 or spec.radius >= 2.0
-        is_twinkle = spec.crackle or spec.flicker or spec.glitter
+        
+        from .behaviors import CrackleBehavior, FlickerBehavior, TrailBehavior
+        is_twinkle = False
+        for b in spec.draw_behaviors:
+            if isinstance(b, (CrackleBehavior, FlickerBehavior)):
+                is_twinkle = True
+                break
+            if isinstance(b, TrailBehavior) and b.glitter:
+                is_twinkle = True
+                break
 
         if is_twinkle:
             key = "twinkle_far" if is_far else "twinkle_near"

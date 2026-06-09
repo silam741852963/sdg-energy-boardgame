@@ -1,6 +1,6 @@
 import pyxel
-from .models import FIREWORK_TYPES, COLORS, generate_spec
-from .config import SCALE_X, SCALE_Y
+from .config import SCREEN_WIDTH, SCREEN_HEIGHT, SCALE_X, SCALE_Y, FIREWORK_TYPES, COLORS
+from .models import generate_spec
 
 
 class ControlPanel:
@@ -77,6 +77,7 @@ class ControlPanel:
 
         self.trigger_drones = False
         self.clear_drones = False
+        self.char_cache = {}
 
     def update(self) -> bool:
         if pyxel.btnp(pyxel.KEY_TAB):
@@ -200,22 +201,31 @@ class ControlPanel:
 
         return False
 
-    def draw_text_scaled(self, x, y, text, color):
-        w = len(text) * 4
-        h = 6
-        pyxel.images[2].rect(0, 0, w, h, 0)
-        pyxel.images[2].text(0, 0, text, color)
+    def get_char_pixels(self, char, color):
+        cache_key = (char, color)
+        if cache_key not in self.char_cache:
+            pyxel.images[2].rect(0, 0, 4, 6, 0)
+            pyxel.images[2].text(0, 0, char, color)
+            pixels = []
+            for j in range(6):
+                for i in range(4):
+                    if pyxel.images[2].pget(i, j) == color:
+                        pixels.append((i, j))
+            self.char_cache[cache_key] = pixels
+        return self.char_cache[cache_key]
 
-        for j in range(h):
-            for i in range(w):
-                if pyxel.images[2].pget(i, j) == color:
-                    pyxel.rect(
-                        x + i * self.scale_x,
-                        y + j * self.scale_y,
-                        self.scale_x,
-                        self.scale_y,
-                        color,
-                    )
+    def draw_text_scaled(self, x, y, text, color):
+        for idx, char in enumerate(text):
+            char_pixels = self.get_char_pixels(char, color)
+            char_x = x + idx * 4 * self.scale_x
+            for dx, dy in char_pixels:
+                pyxel.rect(
+                    char_x + dx * self.scale_x,
+                    y + dy * self.scale_y,
+                    self.scale_x,
+                    self.scale_y,
+                    color,
+                )
 
     def draw(self):
         if not self.visible:
@@ -310,6 +320,6 @@ class ControlPanel:
         self.draw_text_scaled(
             int(20 * SCALE_X),
             pyxel.height - int(50 * SCALE_Y),
-            ">>> CLICK THE SKY OUTSIDE THIS PANEL TO LAUNCH FIREWORKS! <<<",
+            ">>> CLICK SKY TO LAUNCH | TAB: LAB | M: TOGGLE SYSTEM METRICS <<<",
             122,
         )

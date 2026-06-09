@@ -1,5 +1,8 @@
 bleak==3.0.2
+dbus-fast==5.0.22
 markdown-it-py==4.2.0
 mdurl==0.1.2
+pygame==2.6.1
 Pygments==2.20.0
+pyxel==2.9.5
 rich==15.0.0

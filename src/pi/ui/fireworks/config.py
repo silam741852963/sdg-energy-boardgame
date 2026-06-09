@@ -78,3 +78,36 @@ COLOR_MAP = {
     "pink": 111,
     "silver": 121,
 }
+
+FIREWORK_TYPES = [
+    "Brocade",
+    "Chrysanthemum",
+    "Comet",
+    "Crossette",
+    "Pearls",
+    "Dragon Eggs",
+    "Waterfall",
+    "Flying Fish",
+    "Palm Tree",
+    "Peony",
+    "Pistil",
+    "Rising Tail",
+    "Strobe",
+    "Tourbillion",
+    "Willow",
+]
+
+COLORS = [
+    "red",
+    "orange",
+    "gold",
+    "yellow",
+    "lime",
+    "green",
+    "cyan",
+    "blue",
+    "indigo",
+    "violet",
+    "magenta",
+    "pink",
+]
