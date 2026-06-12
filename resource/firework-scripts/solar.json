@@ -3,493 +3,633 @@
     "events": [
         {
             "time": 0,
-            "type": "Flying Fish",
-            "color": "yellow",
-            "x": 239,
-            "y": 109
+            "type": "Rising Tail",
+            "color": "cyan",
+            "x": 194,
+            "y": 295
         },
         {
             "time": 0,
-            "type": "Flying Fish",
-            "color": "yellow",
-            "x": 1624,
-            "y": 219
+            "type": "Rising Tail",
+            "color": "cyan",
+            "x": 1779,
+            "y": 230
+        },
+        {
+            "time": 0.5,
+            "type": "Pearls",
+            "color": "gold",
+            "x": 160,
+            "y": 171
+        },
+        {
+            "time": 0.5,
+            "type": "Pearls",
+            "color": "green",
+            "x": 1719,
+            "y": 183
         },
         {
             "time": 1,
+            "type": "Tourbillion",
+            "color": "cyan",
+            "x": 236,
+            "y": 286
+        },
+        {
+            "time": 1,
+            "type": "Tourbillion",
+            "color": "cyan",
+            "x": 1608,
+            "y": 278
+        },
+        {
+            "time": 1.5,
             "type": "Pearls",
-            "color": "silver",
+            "color": "gold",
             "x": 164,
-            "y": 243
-        },
-        {
-            "time": 1,
-            "type": "Pearls",
-            "color": "silver",
-            "x": 1697,
-            "y": 228
-        },
-        {
-            "time": 2,
-            "type": "Comet",
-            "color": "yellow",
-            "x": 149,
-            "y": 234
-        },
-        {
-            "time": 2,
-            "type": "Comet",
-            "color": "yellow",
-            "x": 1736,
-            "y": 257
-        },
-        {
-            "time": 3,
-            "type": "Pearls",
-            "color": "silver",
-            "x": 169,
-            "y": 226
-        },
-        {
-            "time": 3,
-            "type": "Pearls",
-            "color": "yellow",
-            "x": 1705,
-            "y": 234
-        },
-        {
-            "time": 4,
-            "type": "Comet",
-            "color": "green",
-            "x": 299,
-            "y": 138
-        },
-        {
-            "time": 4,
-            "type": "Comet",
-            "color": "green",
-            "x": 1745,
-            "y": 152
-        },
-        {
-            "time": 5,
-            "type": "Pearls",
-            "color": "magenta",
-            "x": 226,
             "y": 212
         },
         {
-            "time": 5,
+            "time": 1.5,
+            "type": "Pearls",
+            "color": "orange",
+            "x": 1727,
+            "y": 154
+        },
+        {
+            "time": 2,
+            "type": "Dragon Eggs",
+            "color": "blue",
+            "x": 102,
+            "y": 100
+        },
+        {
+            "time": 2,
+            "type": "Dragon Eggs",
+            "color": "blue",
+            "x": 1730,
+            "y": 112
+        },
+        {
+            "time": 2.5,
             "type": "Pearls",
             "color": "red",
-            "x": 1653,
-            "y": 165
+            "x": 217,
+            "y": 155
         },
         {
-            "time": 6,
-            "type": "Comet",
-            "color": "blue",
-            "x": 152,
-            "y": 132
+            "time": 2.5,
+            "type": "Pearls",
+            "color": "orange",
+            "x": 1727,
+            "y": 244
         },
         {
-            "time": 6,
-            "type": "Comet",
-            "color": "blue",
-            "x": 1653,
+            "time": 3,
+            "type": "Crossette",
+            "color": "cyan",
+            "x": 260,
+            "y": 126
+        },
+        {
+            "time": 3,
+            "type": "Crossette",
+            "color": "cyan",
+            "x": 1614,
+            "y": 151
+        },
+        {
+            "time": 3.5,
+            "type": "Pearls",
+            "color": "green",
+            "x": 188,
+            "y": 233
+        },
+        {
+            "time": 3.5,
+            "type": "Pearls",
+            "color": "magenta",
+            "x": 1745,
+            "y": 175
+        },
+        {
+            "time": 4,
+            "type": "Crossette",
+            "color": "magenta",
+            "x": 143,
+            "y": 265
+        },
+        {
+            "time": 4,
+            "type": "Crossette",
+            "color": "magenta",
+            "x": 1673,
+            "y": 140
+        },
+        {
+            "time": 4.5,
+            "type": "Pearls",
+            "color": "magenta",
+            "x": 186,
+            "y": 194
+        },
+        {
+            "time": 4.5,
+            "type": "Pearls",
+            "color": "green",
+            "x": 1704,
+            "y": 206
+        },
+        {
+            "time": 5.106069758524125,
+            "type": "Crossette",
+            "color": "magenta",
+            "x": 572,
             "y": 143
         },
         {
-            "time": 7,
-            "type": "Pearls",
-            "color": "silver",
-            "x": 152,
-            "y": 193
+            "time": 5.162461766864062,
+            "type": "Crossette",
+            "color": "magenta",
+            "x": 1348,
+            "y": 143
         },
         {
-            "time": 7,
-            "type": "Pearls",
+            "time": 5.508693677397512,
+            "type": "Flying Fish",
+            "color": "red",
+            "x": 718,
+            "y": 279
+        },
+        {
+            "time": 5.545689736387031,
+            "type": "Flying Fish",
+            "color": "red",
+            "x": 1202,
+            "y": 279
+        },
+        {
+            "time": 6.108573173355517,
+            "type": "Dragon Eggs",
             "color": "orange",
-            "x": 1699,
-            "y": 240
+            "x": 1277,
+            "y": 146
         },
         {
-            "time": 8,
-            "type": "Flying Fish",
-            "color": "silver",
-            "x": 103,
-            "y": 267
-        },
-        {
-            "time": 8,
-            "type": "Flying Fish",
-            "color": "silver",
-            "x": 1661,
-            "y": 207
-        },
-        {
-            "time": 9,
-            "type": "Pearls",
-            "color": "green",
-            "x": 159,
-            "y": 234
-        },
-        {
-            "time": 9,
-            "type": "Pearls",
-            "color": "silver",
-            "x": 1732,
-            "y": 201
-        },
-        {
-            "time": 10.02487260837459,
-            "type": "Flying Fish",
-            "color": "green",
-            "x": 1395,
-            "y": 201
-        },
-        {
-            "time": 10.425880013832638,
-            "type": "Flying Fish",
-            "color": "green",
-            "x": 525,
-            "y": 201
-        },
-        {
-            "time": 11.196320198725727,
-            "type": "Brocade",
-            "color": "red",
-            "x": 563,
-            "y": 179
-        },
-        {
-            "time": 11.212917776717564,
-            "type": "Brocade",
-            "color": "red",
-            "x": 1357,
-            "y": 179
-        },
-        {
-            "time": 12.35482551422276,
-            "type": "Brocade",
+            "time": 6.19060588179082,
+            "type": "Dragon Eggs",
             "color": "orange",
-            "x": 353,
-            "y": 123
+            "x": 643,
+            "y": 146
         },
         {
-            "time": 12.380459450939984,
-            "type": "Brocade",
-            "color": "orange",
-            "x": 1567,
-            "y": 123
+            "time": 6.514923365607708,
+            "type": "Dragon Eggs",
+            "color": "magenta",
+            "x": 285,
+            "y": 295
         },
         {
-            "time": 13.138872075026,
-            "type": "Strobe",
-            "color": "yellow",
-            "x": 424,
-            "y": 189
+            "time": 6.5362663418657725,
+            "type": "Dragon Eggs",
+            "color": "magenta",
+            "x": 1635,
+            "y": 295
         },
         {
-            "time": 13.469537630163405,
-            "type": "Strobe",
-            "color": "yellow",
-            "x": 1496,
-            "y": 189
-        },
-        {
-            "time": 14.194753135671963,
-            "type": "Strobe",
-            "color": "yellow",
-            "x": 469,
-            "y": 246
-        },
-        {
-            "time": 14.338800429255505,
-            "type": "Strobe",
-            "color": "yellow",
-            "x": 1451,
-            "y": 246
-        },
-        {
-            "time": 15.227903600069277,
-            "type": "Crossette",
-            "color": "yellow",
-            "x": 1371,
-            "y": 230
-        },
-        {
-            "time": 15.405010098420059,
-            "type": "Crossette",
-            "color": "yellow",
-            "x": 549,
-            "y": 230
-        },
-        {
-            "time": 16.315297713282174,
-            "type": "Brocade",
-            "color": "silver",
-            "x": 654,
-            "y": 157
-        },
-        {
-            "time": 16.393187561611544,
-            "type": "Brocade",
-            "color": "silver",
-            "x": 1266,
-            "y": 157
-        },
-        {
-            "time": 17.227614090855756,
-            "type": "Crossette",
-            "color": "yellow",
-            "x": 272,
-            "y": 134
-        },
-        {
-            "time": 17.240692215295418,
-            "type": "Crossette",
-            "color": "yellow",
-            "x": 1648,
-            "y": 134
-        },
-        {
-            "time": 18.052013459908665,
-            "type": "Brocade",
-            "color": "yellow",
-            "x": 329,
-            "y": 173
-        },
-        {
-            "time": 18.201419569958148,
-            "type": "Brocade",
-            "color": "yellow",
-            "x": 1591,
-            "y": 173
-        },
-        {
-            "time": 19.392271032645752,
-            "type": "Brocade",
-            "color": "red",
-            "x": 217,
-            "y": 164
-        },
-        {
-            "time": 19.39481406411489,
-            "type": "Brocade",
-            "color": "red",
-            "x": 1703,
-            "y": 164
-        },
-        {
-            "time": 20,
-            "type": "Peony",
-            "color": "yellow",
-            "x": 960,
-            "y": 150
-        },
-        {
-            "time": 20.5,
-            "type": "Willow",
+            "time": 7.013447706369754,
+            "type": "Flying Fish",
             "color": "gold",
-            "x": 560,
-            "y": 100
-        },
-        {
-            "time": 20.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 1360,
-            "y": 100
-        },
-        {
-            "time": 21,
-            "type": "Peony",
-            "color": "yellow",
-            "x": 960,
-            "y": 150
-        },
-        {
-            "time": 21.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 560,
-            "y": 100
-        },
-        {
-            "time": 21.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 1360,
-            "y": 100
-        },
-        {
-            "time": 22,
-            "type": "Peony",
-            "color": "yellow",
-            "x": 960,
-            "y": 150
-        },
-        {
-            "time": 22.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 560,
-            "y": 100
-        },
-        {
-            "time": 22.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 1360,
-            "y": 100
-        },
-        {
-            "time": 23,
-            "type": "Peony",
-            "color": "yellow",
-            "x": 960,
-            "y": 150
-        },
-        {
-            "time": 23.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 560,
-            "y": 100
-        },
-        {
-            "time": 23.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 1360,
-            "y": 100
-        },
-        {
-            "time": 24,
-            "type": "Peony",
-            "color": "yellow",
-            "x": 960,
-            "y": 150
-        },
-        {
-            "time": 24.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 560,
-            "y": 100
-        },
-        {
-            "time": 24.5,
-            "type": "Willow",
-            "color": "gold",
-            "x": 1360,
-            "y": 100
-        },
-        {
-            "time": 25.25,
-            "type": "Chrysanthemum",
-            "color": "yellow",
-            "x": 1507,
-            "y": 51
-        },
-        {
-            "time": 26.07,
-            "type": "Chrysanthemum",
-            "color": "yellow",
-            "x": 589,
-            "y": 123
-        },
-        {
-            "time": 26.09,
-            "type": "Chrysanthemum",
-            "color": "yellow",
-            "x": 1125,
-            "y": 52
-        },
-        {
-            "time": 26.49,
-            "type": "Pistil",
-            "color": "yellow",
-            "x": 955,
+            "x": 1472,
             "y": 184
         },
         {
-            "time": 26.55,
-            "type": "Chrysanthemum",
-            "color": "yellow",
-            "x": 496,
-            "y": 145
+            "time": 7.03085539540285,
+            "type": "Flying Fish",
+            "color": "gold",
+            "x": 448,
+            "y": 184
         },
         {
-            "time": 26.78,
-            "type": "Palm Tree",
-            "color": "yellow",
-            "x": 461,
-            "y": 168
+            "time": 7.591984175777294,
+            "type": "Brocade",
+            "color": "magenta",
+            "x": 476,
+            "y": 247
         },
         {
-            "time": 27.0,
-            "type": "Palm Tree",
-            "color": "yellow",
-            "x": 1369,
-            "y": 72
+            "time": 7.6553085965336685,
+            "type": "Brocade",
+            "color": "magenta",
+            "x": 1444,
+            "y": 247
         },
         {
-            "time": 27.67,
-            "type": "Palm Tree",
-            "color": "yellow",
-            "x": 594,
-            "y": 66
+            "time": 8.112344135719908,
+            "type": "Dragon Eggs",
+            "color": "cyan",
+            "x": 261,
+            "y": 107
         },
         {
-            "time": 27.73,
-            "type": "Chrysanthemum",
-            "color": "yellow",
-            "x": 474,
-            "y": 144
+            "time": 8.138556829182965,
+            "type": "Dragon Eggs",
+            "color": "cyan",
+            "x": 1659,
+            "y": 107
         },
         {
-            "time": 28.29,
-            "type": "Pistil",
-            "color": "yellow",
-            "x": 656,
+            "time": 8.519290143238154,
+            "type": "Brocade",
+            "color": "cyan",
+            "x": 552,
+            "y": 100
+        },
+        {
+            "time": 8.699434836485688,
+            "type": "Brocade",
+            "color": "cyan",
+            "x": 1368,
+            "y": 100
+        },
+        {
+            "time": 9.068593171324087,
+            "type": "Strobe",
+            "color": "silver",
+            "x": 618,
+            "y": 219
+        },
+        {
+            "time": 9.107253075945318,
+            "type": "Strobe",
+            "color": "silver",
+            "x": 1302,
+            "y": 219
+        },
+        {
+            "time": 9.551143971726825,
+            "type": "Dragon Eggs",
+            "color": "gold",
+            "x": 1392,
+            "y": 114
+        },
+        {
+            "time": 9.55861114829282,
+            "type": "Dragon Eggs",
+            "color": "gold",
+            "x": 528,
+            "y": 114
+        },
+        {
+            "time": 10.002465459718369,
+            "type": "Brocade",
+            "color": "magenta",
+            "x": 309,
+            "y": 108
+        },
+        {
+            "time": 10.170609707642297,
+            "type": "Brocade",
+            "color": "magenta",
+            "x": 1611,
+            "y": 108
+        },
+        {
+            "time": 10.53578841976918,
+            "type": "Brocade",
+            "color": "gold",
+            "x": 760,
+            "y": 185
+        },
+        {
+            "time": 10.635469902625417,
+            "type": "Brocade",
+            "color": "gold",
+            "x": 1160,
+            "y": 185
+        },
+        {
+            "time": 11.102807001954298,
+            "type": "Dragon Eggs",
+            "color": "gold",
+            "x": 634,
+            "y": 203
+        },
+        {
+            "time": 11.172157804900383,
+            "type": "Dragon Eggs",
+            "color": "gold",
+            "x": 1286,
+            "y": 203
+        },
+        {
+            "time": 11.57724489636443,
+            "type": "Brocade",
+            "color": "orange",
+            "x": 266,
+            "y": 194
+        },
+        {
+            "time": 11.618371176030468,
+            "type": "Brocade",
+            "color": "orange",
+            "x": 1654,
+            "y": 194
+        },
+        {
+            "time": 12.088917345703566,
+            "type": "Brocade",
+            "color": "green",
+            "x": 1362,
             "y": 138
         },
         {
-            "time": 28.56,
-            "type": "Pistil",
-            "color": "yellow",
-            "x": 1247,
-            "y": 199
+            "time": 12.094887925247946,
+            "type": "Brocade",
+            "color": "green",
+            "x": 558,
+            "y": 138
         },
         {
-            "time": 28.74,
-            "type": "Pistil",
-            "color": "yellow",
-            "x": 846,
-            "y": 55
+            "time": 12.599827217099111,
+            "type": "Strobe",
+            "color": "blue",
+            "x": 1605,
+            "y": 232
         },
         {
-            "time": 28.94,
-            "type": "Pistil",
+            "time": 12.652363609772605,
+            "type": "Strobe",
+            "color": "blue",
+            "x": 315,
+            "y": 232
+        },
+        {
+            "time": 13.021497197711442,
+            "type": "Strobe",
+            "color": "red",
+            "x": 351,
+            "y": 256
+        },
+        {
+            "time": 13.032851601409998,
+            "type": "Strobe",
+            "color": "red",
+            "x": 1569,
+            "y": 256
+        },
+        {
+            "time": 13.528753395423255,
+            "type": "Brocade",
+            "color": "magenta",
+            "x": 422,
+            "y": 255
+        },
+        {
+            "time": 13.579777881629282,
+            "type": "Brocade",
+            "color": "magenta",
+            "x": 1498,
+            "y": 255
+        },
+        {
+            "time": 14.079977763000409,
+            "type": "Brocade",
+            "color": "cyan",
+            "x": 1270,
+            "y": 211
+        },
+        {
+            "time": 14.151316024845029,
+            "type": "Brocade",
+            "color": "cyan",
+            "x": 650,
+            "y": 211
+        },
+        {
+            "time": 14.531802831023796,
+            "type": "Dragon Eggs",
+            "color": "green",
+            "x": 382,
+            "y": 278
+        },
+        {
+            "time": 14.689682570548444,
+            "type": "Dragon Eggs",
+            "color": "green",
+            "x": 1538,
+            "y": 278
+        },
+        {
+            "time": 15,
+            "type": "Peony",
+            "color": "silver",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 15.3,
+            "type": "Willow",
+            "color": "gold",
+            "x": 1360,
+            "y": 100
+        },
+        {
+            "time": 15.6,
+            "type": "Brocade",
             "color": "yellow",
+            "x": 560,
+            "y": 120
+        },
+        {
+            "time": 16,
+            "type": "Peony",
+            "color": "orange",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 16.3,
+            "type": "Willow",
+            "color": "gold",
+            "x": 560,
+            "y": 100
+        },
+        {
+            "time": 16.6,
+            "type": "Brocade",
+            "color": "yellow",
+            "x": 1360,
+            "y": 120
+        },
+        {
+            "time": 17,
+            "type": "Peony",
+            "color": "silver",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 17.3,
+            "type": "Willow",
+            "color": "gold",
+            "x": 1360,
+            "y": 100
+        },
+        {
+            "time": 17.6,
+            "type": "Brocade",
+            "color": "yellow",
+            "x": 560,
+            "y": 120
+        },
+        {
+            "time": 18,
+            "type": "Peony",
+            "color": "blue",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 18.3,
+            "type": "Willow",
+            "color": "gold",
+            "x": 560,
+            "y": 100
+        },
+        {
+            "time": 18.6,
+            "type": "Brocade",
+            "color": "yellow",
+            "x": 1360,
+            "y": 120
+        },
+        {
+            "time": 19,
+            "type": "Peony",
+            "color": "orange",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 19.3,
+            "type": "Willow",
+            "color": "gold",
+            "x": 1360,
+            "y": 100
+        },
+        {
+            "time": 19.6,
+            "type": "Brocade",
+            "color": "yellow",
+            "x": 560,
+            "y": 120
+        },
+        {
+            "time": 20.35,
+            "type": "Pistil",
+            "color": "lime",
+            "x": 657,
+            "y": 190
+        },
+        {
+            "time": 20.41,
+            "type": "Waterfall",
+            "color": "silver",
+            "x": 1258,
+            "y": 138
+        },
+        {
+            "time": 20.47,
+            "type": "Waterfall",
+            "color": "gold",
+            "x": 1339,
+            "y": 132
+        },
+        {
+            "time": 20.53,
+            "type": "Waterfall",
+            "color": "silver",
+            "x": 929,
+            "y": 62
+        },
+        {
+            "time": 21.14,
+            "type": "Palm Tree",
+            "color": "yellow",
+            "x": 1168,
+            "y": 108
+        },
+        {
+            "time": 21.14,
+            "type": "Pistil",
+            "color": "lime",
+            "x": 1005,
+            "y": 91
+        },
+        {
+            "time": 21.36,
+            "type": "Chrysanthemum",
+            "color": "lime",
+            "x": 633,
+            "y": 137
+        },
+        {
+            "time": 21.68,
+            "type": "Pistil",
+            "color": "gold",
+            "x": 1400,
+            "y": 50
+        },
+        {
+            "time": 21.74,
+            "type": "Waterfall",
+            "color": "gold",
+            "x": 1476,
+            "y": 116
+        },
+        {
+            "time": 22.21,
+            "type": "Waterfall",
+            "color": "silver",
+            "x": 1148,
+            "y": 176
+        },
+        {
+            "time": 22.39,
+            "type": "Palm Tree",
+            "color": "lime",
+            "x": 1482,
+            "y": 101
+        },
+        {
+            "time": 22.6,
+            "type": "Chrysanthemum",
+            "color": "gold",
+            "x": 955,
+            "y": 67
+        },
+        {
+            "time": 23.17,
+            "type": "Pistil",
+            "color": "gold",
+            "x": 515,
+            "y": 93
+        },
+        {
+            "time": 23.99,
+            "type": "Chrysanthemum",
+            "color": "lime",
             "x": 1451,
-            "y": 60
+            "y": 99
         },
         {
-            "time": 29.15,
-            "type": "Pistil",
-            "color": "yellow",
-            "x": 1261,
-            "y": 180
-        },
-        {
-            "time": 29.3,
-            "type": "Pistil",
-            "color": "yellow",
-            "x": 758,
-            "y": 79
+            "time": 24.84,
+            "type": "Palm Tree",
+            "color": "silver",
+            "x": 1412,
+            "y": 148
         }
     ]
 }

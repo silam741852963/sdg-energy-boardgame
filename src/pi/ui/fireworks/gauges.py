@@ -1,4 +1,5 @@
 import pyxel
+import random
 from .config import SCREEN_WIDTH, SCREEN_HEIGHT, SCALE_X, SCALE_Y
 from config import GeneratorType, MAX_ENERGY_GAUGE
 
@@ -119,8 +120,19 @@ class GaugeManager:
                 border_col = 123 if st["dim"] else 121
                 fill_col = self.colors[gen]
                 
+                fill_pct = min(1.0, levels.get(gen, 0.0) / MAX_ENERGY_GAUGE)
+
+                # Add vibration and flashing effect when full
+                is_full = fill_pct >= 1.0
+                if is_full:
+                    x += random.randint(-3, 3)
+                    y += random.randint(-3, 3)
+                    if (pyxel.frame_count % 10) < 5:
+                        fill_col = self.colors[gen] + 5  # Use pastel variant of the main color
+                        border_col = fill_col
+
                 # Draw outer glow / shadow
-                if not st["dim"]:
+                if not st["dim"] or is_full:
                     pyxel.rectb(int(x-1), int(y-1), int(w+2), int(h+2), fill_col)
                 
                 # Draw border
@@ -128,14 +140,15 @@ class GaugeManager:
                 pyxel.rect(int(x+1), int(y+1), int(w-2), int(h-2), 0) # clear background
                 
                 # Draw fill
-                fill_pct = min(1.0, levels.get(gen, 0.0) / MAX_ENERGY_GAUGE)
                 if fill_pct > 0:
                     pyxel.rect(int(x + 2), int(y + 2), int((w - 4) * fill_pct), int(h - 4), fill_col)
                 
                 # Draw label
                 text = f"{gen.name} - {int(fill_pct*100)}%"
-                text_col = 122 if st["dim"] else 7
-                
+                text_col = 122 if st["dim"] and not is_full else 121 # 121 is pure white
+                if is_full and (pyxel.frame_count % 10) < 5:
+                    text_col = self.colors[gen] + 5 # Flash pastel variant
+
                 # Draw text above the gauge (significantly larger)
                 text_scale = st["scale"] * 3.0
                 self.draw_text_scaled(x + 10 * SCALE_X, y - 25 * SCALE_Y * st["scale"], text, text_col, text_scale)

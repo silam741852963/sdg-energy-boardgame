@@ -31,13 +31,13 @@ class AudioSystem:
         root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "..", ".."))
         self.audio_dir = os.path.join(root_dir, "resource", "audio")
 
-        self._load_sound("launch", "Firework_launch.ogg")
-        self._load_sound("blast_near", "Firework_blast.ogg")
-        self._load_sound("blast_far", "Firework_blast_far.ogg")
-        self._load_sound("large_blast_near", "Firework_large_blast.ogg")
-        self._load_sound("large_blast_far", "Firework_large_blast_far.ogg")
-        self._load_sound("twinkle_near", "Firework_twinkle.ogg")
-        self._load_sound("twinkle_far", "Firework_twinkle_far.ogg")
+        self._load_sound("launch", "Firework_launch.wav")
+        self._load_sound("blast_near", "Firework_blast.wav")
+        self._load_sound("blast_far", "Firework_blast_far.wav")
+        self._load_sound("large_blast_near", "Firework_large_blast.wav")
+        self._load_sound("large_blast_far", "Firework_large_blast_far.wav")
+        self._load_sound("twinkle_near", "Firework_twinkle.wav")
+        self._load_sound("twinkle_far", "Firework_twinkle_far.wav")
 
     def _load_sound(self, key, filename):
         if not self.enabled:
@@ -61,6 +61,7 @@ class AudioSystem:
         if os.path.exists(path):
             try:
                 pygame.mixer.music.load(path)
+                pygame.mixer.music.set_volume(0.4) # Tune background music volume (0.0 to 1.0)
                 pygame.mixer.music.play(-1)  # -1 loops the track indefinitely
             except Exception as e:
                 print(f"Failed to play music {filename}: {e}")
@@ -120,3 +121,31 @@ class AudioSystem:
             if channel:
                 channel.set_volume((1.0 - pan) * base_vol, pan * base_vol)
                 channel.play(self.sounds[key])
+
+    def play_success_chime(self):
+        if not self.enabled:
+            return
+        
+        # Play a loud launch and a twinkle to signify 100%
+        if "launch" in self.sounds:
+            channel1 = pygame.mixer.find_channel()
+            if channel1:
+                channel1.set_volume(1.0)
+                channel1.play(self.sounds["launch"])
+                
+        if "twinkle_near" in self.sounds:
+            channel2 = pygame.mixer.find_channel()
+            if channel2:
+                channel2.set_volume(1.0)
+                channel2.play(self.sounds["twinkle_near"])
+
+    def play_switch_sound(self):
+        if not self.enabled:
+            return
+        
+        # Play a soft, quick twinkle as a UI selection sound
+        if "twinkle_near" in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.3)
+                channel.play(self.sounds["twinkle_near"])

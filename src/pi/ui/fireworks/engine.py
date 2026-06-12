@@ -160,6 +160,9 @@ class FireworkEngine:
                 target_pattern = 4
                 
             if self.drone_manager.current_index != target_pattern:
+                # Play sound when transitioning to a different gauge/pattern (ignore startup)
+                if self.drone_manager.current_index != -1:
+                    self.audio.play_switch_sound()
                 self.drone_manager.transition_to_pattern(target_pattern, self.gui, self.audio)
 
             if self.is_mock:
@@ -186,6 +189,7 @@ class FireworkEngine:
                     if level >= 100.0:
                         if gen not in self.completed_gauges:
                             self.completed_gauges.add(gen)
+                            self.audio.play_success_chime()
                             
                             script_name = "success.json"
                             if gen == GeneratorType.WIND:
@@ -243,7 +247,13 @@ class FireworkEngine:
         self.firework_manager.update()
 
         # --- UPDATE DRONES ---
-        self.drone_manager.update()
+        fill_pct = 0.0
+        if self.game_state and self.game_state.active_generator and self.game_state.current_session:
+            from config import MAX_ENERGY_GAUGE
+            active_gen = self.game_state.active_generator
+            fill_pct = min(1.0, self.game_state.current_session.energy_levels.get(active_gen, 0.0) / MAX_ENERGY_GAUGE)
+
+        self.drone_manager.update(fill_pct)
         
         # --- UPDATE GAUGES / DRAIN LOGIC ---
         if self.game_state:

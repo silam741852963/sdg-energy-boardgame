@@ -45,6 +45,7 @@ class Drone:
 
         self.active = True
         self.clearing = False
+        self.activated = False
 
         self.speed = random.uniform(0.02, 0.04)
         self.wobble_offset = random.uniform(0, math.pi * 2)
@@ -62,6 +63,7 @@ class Drone:
         self.radius = radius
         self.intensity = intensity
         self.clearing = False
+        self.activated = False
 
         self.speed = random.uniform(0.02, 0.024)
 
@@ -91,8 +93,12 @@ class Drone:
         if not self.clearing:
             dist = abs(self.tx - self.x) + abs(self.ty - self.y)
             if dist < 15:
-                self.x += math.sin(pyxel.frame_count * 0.05 + self.wobble_offset) * 0.3
-                self.y += math.cos(pyxel.frame_count * 0.04 + self.wobble_offset) * 0.3
+                if self.activated:
+                    self.x += math.sin(pyxel.frame_count * 0.15 + self.wobble_offset) * 0.6
+                    self.y += math.cos(pyxel.frame_count * 0.12 + self.wobble_offset) * 0.6 - 0.5
+                else:
+                    self.x += math.sin(pyxel.frame_count * 0.05 + self.wobble_offset) * 0.3
+                    self.y += math.cos(pyxel.frame_count * 0.04 + self.wobble_offset) * 0.3
         else:
             self.intensity *= 0.99
 
@@ -106,24 +112,29 @@ class Drone:
         if factor <= 0:
             return
 
+        # Determine if we should pulse the glow
+        draw_intensity = self.intensity
+        if self.activated:
+            draw_intensity *= (1.5 + 0.5 * math.sin(pyxel.frame_count * 0.2 + self.wobble_offset))
+
         if self.color_blend < 1.0:
-            c1_idx = COLOR_MAP.get(self.prev_color, 121)
+            c1_idx = COLOR_MAP.get(self.prev_color, 121) if self.activated else 121
             draw_baked_particle(
                 px,
                 py,
                 c1_idx,
                 factor,
-                self.intensity * (1.0 - self.color_blend),
+                draw_intensity * (1.0 - self.color_blend),
                 self.radius,
             )
 
-            c2_idx = COLOR_MAP.get(self.target_color, 121)
+            c2_idx = COLOR_MAP.get(self.target_color, 121) if self.activated else 121
             draw_baked_particle(
-                px, py, c2_idx, factor, self.intensity * self.color_blend, self.radius
+                px, py, c2_idx, factor, draw_intensity * self.color_blend, self.radius
             )
         else:
-            color_idx = COLOR_MAP.get(self.target_color, 121)
-            draw_baked_particle(px, py, color_idx, factor, self.intensity, self.radius)
+            color_idx = COLOR_MAP.get(self.target_color, 121) if self.activated else 121
+            draw_baked_particle(px, py, color_idx, factor, draw_intensity, self.radius)
 
 
 class DroneManager:
@@ -232,7 +243,7 @@ class DroneManager:
             return
 
         if self.current_index == -1 and audio:
-            audio.play_music("ablic-theme.mp3")
+            audio.play_music("ablic-theme.wav")
 
         self.current_index = index
         target_coords = self._get_target_coords(
@@ -293,7 +304,21 @@ class DroneManager:
         if audio:
             audio.stop_music()
 
-    def update(self):
+    def update(self, fill_pct=0.0):
+        # The Ablic logo (index 0) should be fully colored from the beginning
+        if self.current_index == 0:
+            fill_pct = 1.0
+            
+        # Determine activation threshold based on x coordinates
+        if self.drones and fill_pct > 0.0:
+            active_drones = [d for d in self.drones if not d.clearing and d.active]
+            if active_drones:
+                min_tx = min(d.tx for d in active_drones)
+                max_tx = max(d.tx for d in active_drones)
+                threshold_x = min_tx + (max_tx - min_tx) * fill_pct
+                for d in active_drones:
+                    d.activated = d.tx <= threshold_x
+
         for d in self.drones:
             d.update()
         self.drones = [d for d in self.drones if d.active]
