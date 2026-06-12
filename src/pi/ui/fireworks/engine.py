@@ -88,6 +88,9 @@ class FireworkEngine:
         self.show_metrics = False
         self.fps_tracker = FPSTracker()
         self.cpu_tracker = CPUUsageTracker()
+        
+        self.last_interaction_time = time.time()
+        self.in_attract_mode = False
 
     def get_memory_usage(self):
         try:
@@ -127,6 +130,36 @@ class FireworkEngine:
         else:
             gui_captured_mouse = False
 
+        # --- ATTRACT MODE LOGIC ---
+        interaction_detected = False
+        if self.game_state and self.game_state.active_generator is not None:
+            interaction_detected = True
+        elif self.is_mock and (gui_captured_mouse or pyxel.btn(pyxel.MOUSE_BUTTON_LEFT)):
+            interaction_detected = True
+        elif pyxel.btnp(pyxel.KEY_1) or pyxel.btnp(pyxel.KEY_2) or pyxel.btnp(pyxel.KEY_3) or pyxel.btnp(pyxel.KEY_4) or pyxel.btnp(pyxel.KEY_0):
+            interaction_detected = True
+
+        if interaction_detected:
+            self.last_interaction_time = time.time()
+            if self.in_attract_mode:
+                self.in_attract_mode = False
+                self._restart_game()
+
+        if time.time() - self.last_interaction_time > 60.0:
+            if not self.in_attract_mode:
+                self.in_attract_mode = True
+                self._restart_game()
+                
+        if self.in_attract_mode:
+            # Randomly cycle drones every 10 seconds
+            if int(time.time()) % 10 == 0 and int(time.time() * 60) % 60 == 0:
+                random_pattern = random.randint(1, 4)
+                self.drone_manager.transition_to_pattern(random_pattern, self.gui, self.audio)
+            
+            # Occasionally spawn random fireworks
+            if random.random() < 0.02:
+                self.firework_manager.launch(random.randint(400, 1500), random.randint(100, 300))
+
         # --- HARDWARE STATE SYNC ---
         if self.game_state:
             if pyxel.btnp(pyxel.KEY_R):
@@ -142,11 +175,7 @@ class FireworkEngine:
                     self.last_seen_gen_after_completion = active_gen
                     
                 if active_gen != self.last_seen_gen_after_completion:
-                    if active_gen is not None:
-                        if not self.is_mock:
-                            self._restart_game()
-                    else:
-                        self.last_seen_gen_after_completion = None
+                    self._restart_game()
 
             active_gen = self.game_state.active_generator
             target_pattern = 0 # 0 is Ablic
@@ -273,9 +302,10 @@ class FireworkEngine:
         self.drone_manager.draw()
         
         # --- DRAW GAUGES ---
-        self.gauge_manager.draw()
+        if not self.in_attract_mode:
+            self.gauge_manager.draw()
 
-        if self.is_mock:
+        if self.is_mock and not self.in_attract_mode:
             self.gui.draw()
 
         if self.show_metrics:

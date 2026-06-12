@@ -7,7 +7,20 @@ from .config import COLORS
 from .lighting import draw_baked_particle
 
 class Particle:
-    def __init__(self, x, y, z, vx, vy, vz, spec, is_shell=False, is_inner=False):
+    _pool = []
+    
+    @classmethod
+    def create(cls, x, y, z, vx, vy, vz, spec, is_shell=False, is_inner=False):
+        if cls._pool:
+            p = cls._pool.pop()
+            p._init_state(x, y, z, vx, vy, vz, spec, is_shell, is_inner)
+            return p
+        else:
+            p = cls.__new__(cls)
+            p._init_state(x, y, z, vx, vy, vz, spec, is_shell, is_inner)
+            return p
+
+    def _init_state(self, x, y, z, vx, vy, vz, spec, is_shell=False, is_inner=False):
         self.x, self.y, self.z = x, y, z
         self.vx, self.vy, self.vz = vx, vy, vz
         self.launch_vx = vx

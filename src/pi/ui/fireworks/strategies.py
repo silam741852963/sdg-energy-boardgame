@@ -12,7 +12,7 @@ class LaunchStrategy:
 
 class SingleLaunch(LaunchStrategy):
     def apply(self, manager, sx, sy, sz, vx, vy, vz, spec):
-        shell = Particle(sx, sy, sz, vx, vy, vz, spec, is_shell=True)
+        shell = Particle.create(sx, sy, sz, vx, vy, vz, spec, is_shell=True)
         manager.shells.append(shell)
 
 
@@ -31,7 +31,7 @@ class SpreadLaunch(LaunchStrategy):
             off_vx = vx + offset
             off_vy = vy - (self.arc_height - abs(offset) * self.arc_mult)
             off_vz = vz
-            shell = Particle(sx, sy, sz, off_vx, off_vy, off_vz, spec, is_shell=True)
+            shell = Particle.create(sx, sy, sz, off_vx, off_vy, off_vz, spec, is_shell=True)
             manager.shells.append(shell)
 
 
@@ -58,7 +58,7 @@ class MulticolorSpreadLaunch(LaunchStrategy):
             p_spec = copy.copy(spec)
             p_spec.base_color = mixed_colors[i % len(mixed_colors)]
 
-            shell = Particle(sx, sy, sz, off_vx, off_vy, off_vz, p_spec, is_shell=True)
+            shell = Particle.create(sx, sy, sz, off_vx, off_vy, off_vz, p_spec, is_shell=True)
             shell.particle_color = p_spec.base_color
             manager.shells.append(shell)
 

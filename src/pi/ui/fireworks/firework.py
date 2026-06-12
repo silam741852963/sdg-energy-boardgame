@@ -73,7 +73,7 @@ class FireworkManager:
             for _ in range(count):
                 pvx, pvy, pvz = spec.burst_strategy.get_velocity(shell, speed_mult, spec)
 
-                p = Particle(
+                p = Particle.create(
                     shell.x, shell.y, shell.z, pvx, pvy, pvz, spec, is_inner=is_inner
                 )
 
@@ -95,6 +95,7 @@ class FireworkManager:
         self.shells = [s for s in self.shells if s.active]
 
         new_particles = []
+        alive_particles = []
         for p in self.particles:
             p.update()
             if (
@@ -111,16 +112,21 @@ class FireworkManager:
                     nvy = (p.vy * 0.4) + math.sin(angle) * 4
                     nvz = p.vz * 0.4
 
-                    new_p = Particle(p.x, p.y, p.z, nvx, nvy, nvz, p.spec)
+                    new_p = Particle.create(p.x, p.y, p.z, nvx, nvy, nvz, p.spec)
                     new_p.is_split_child = True
                     new_p.particle_color = p.particle_color
                     new_p.life = p.life * 0.4
                     new_particles.append(new_p)
 
-        if new_particles:
-            self.particles.extend(new_particles)
+            if p.active:
+                alive_particles.append(p)
+            else:
+                Particle._pool.append(p)
 
-        self.particles = [p for p in self.particles if p.active]
+        if new_particles:
+            alive_particles.extend(new_particles)
+
+        self.particles = alive_particles
 
     def draw(self):
         for s in self.shells:
