@@ -56,6 +56,7 @@ from .audio import AudioSystem
 from .firework import FireworkManager
 from .gauges import GaugeManager
 from .scripting import ScriptManager
+from .particles import Particle
 
 from config import GeneratorType
 
@@ -310,7 +311,7 @@ class FireworkEngine:
 
         if self.show_metrics:
             mw = int(250 * SCALE_X)
-            mh = int(160 * SCALE_Y)
+            mh = int(185 * SCALE_Y)
             mx = SCREEN_WIDTH - mw - int(20 * SCALE_X)
             my = int(20 * SCALE_Y)
             pyxel.rect(mx, my, mw, mh, 0)
@@ -351,6 +352,12 @@ class FireworkEngine:
                 mx + text_offset_x,
                 my + int(126 * SCALE_Y),
                 f"Drones: {len(self.drone_manager.drones)}",
+                121,
+            )
+            self.gui.draw_text_scaled(
+                mx + text_offset_x,
+                my + int(148 * SCALE_Y),
+                f"Pool: {len(Particle._pool)}/{Particle._POOL_MAX}",
                 121,
             )
 

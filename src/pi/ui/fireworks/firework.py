@@ -120,7 +120,7 @@ class FireworkManager:
 
             if p.active:
                 alive_particles.append(p)
-            else:
+            elif len(Particle._pool) < Particle._POOL_MAX:
                 Particle._pool.append(p)
 
         if new_particles:

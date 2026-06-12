@@ -122,7 +122,8 @@ def draw_baked_particle(px, py, color_idx, factor, intensity=1.0, radius=1.0):
         iy = (local_idx // sprites_per_row) * 32
 
         # VISUAL FIX: Draw a dim, dithered halo to simulate a soft glow drop-off
-        if radius > 1.2:
+        # Skip halo for dim/distant particles to save CPU
+        if radius > 1.2 and intensity > 0.4 and factor > 0.5:
             # 1. Force the halo to be the absolute darkest shade available
             if color_idx == 121:
                 halo_color = 123  # Dark Gray
@@ -132,9 +133,9 @@ def draw_baked_particle(px, py, color_idx, factor, intensity=1.0, radius=1.0):
 
             glow_size = int(12 * factor * radius)
 
-            # 2. Draw sparse concentric rings instead of a solid circle to fake 50% transparency
+            # 2. Draw sparse concentric rings (step=6 for performance)
             if halo_color != 121:
-                for r in range(4, glow_size + 1, 4):
+                for r in range(6, glow_size + 1, 6):
                     pyxel.circb(px, py, r, halo_color)
 
         pyxel.blt(px - 16, py - 16, bank, ix, iy, 32, 32, 0)

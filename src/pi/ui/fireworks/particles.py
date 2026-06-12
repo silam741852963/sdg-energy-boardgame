@@ -9,7 +9,19 @@ from .lighting import draw_baked_particle
 from .behaviors import TrailBehavior
 
 class Particle:
+    __slots__ = (
+        'x', 'y', 'z', 'vx', 'vy', 'vz',
+        'launch_vx', 'launch_vy', 'launch_vz',
+        'spec', 'is_shell', 'is_inner', 'is_split_child',
+        'gravity', 'drag', 'age', 'life', 'active',
+        'spin_angle', 'particle_color', 'flicker_offset',
+        'px', 'py', 'factor',
+        'update_behaviors', 'draw_behaviors',
+        'trail_len', 'is_palm_tail_shell', 'history',
+    )
+    
     _pool = []
+    _POOL_MAX = 2000
     
     @classmethod
     def create(cls, x, y, z, vx, vy, vz, spec, is_shell=False, is_inner=False):
@@ -75,7 +87,7 @@ class Particle:
             
         self.is_palm_tail_shell = self.is_shell and any(isinstance(b, TrailBehavior) and b.palm_tail for b in self.draw_behaviors)
         
-        self.history = collections.deque(maxlen=self.trail_len if self.trail_len > 0 else 1)
+        self.history = collections.deque(maxlen=max(1, self.trail_len))
 
     def update(self):
         if not self.active:

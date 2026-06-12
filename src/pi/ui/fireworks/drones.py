@@ -311,17 +311,29 @@ class DroneManager:
             
         # Determine activation threshold based on x coordinates
         if self.drones and fill_pct > 0.0:
-            active_drones = [d for d in self.drones if not d.clearing and d.active]
-            if active_drones:
-                min_tx = min(d.tx for d in active_drones)
-                max_tx = max(d.tx for d in active_drones)
+            min_tx = float('inf')
+            max_tx = float('-inf')
+            for d in self.drones:
+                if not d.clearing and d.active:
+                    if d.tx < min_tx:
+                        min_tx = d.tx
+                    if d.tx > max_tx:
+                        max_tx = d.tx
+            
+            if min_tx != float('inf'):
                 threshold_x = min_tx + (max_tx - min_tx) * fill_pct
-                for d in active_drones:
-                    d.activated = d.tx <= threshold_x
+                for d in self.drones:
+                    if not d.clearing and d.active:
+                        d.activated = d.tx <= threshold_x
 
+        # Update drones and cull dead ones in-place
+        alive_count = 0
         for d in self.drones:
             d.update()
-        self.drones = [d for d in self.drones if d.active]
+            if d.active:
+                self.drones[alive_count] = d
+                alive_count += 1
+        del self.drones[alive_count:]
 
     def draw(self):
         for d in self.drones:

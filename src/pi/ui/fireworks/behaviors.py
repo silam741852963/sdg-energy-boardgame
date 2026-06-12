@@ -58,34 +58,45 @@ class TrailBehavior(DrawBehavior):
         self.trail_len = trail_len
 
     def post_draw(self, particle):
-        if len(particle.history) > 1:
-            thickness = int(particle.spec.radius)
+        hist_len = len(particle.history)
+        if hist_len < 2:
+            return
+            
+        # Skip expensive scatter effects for dim/distant particles
+        intensity = particle.get_intensity()
+        skip_scatter = intensity < 0.3 or particle.factor < 0.4
+            
+        thickness = int(particle.spec.radius)
 
-            for i in range(1, len(particle.history)):
-                px1, py1, factor1 = particle.history[i - 1]
-                px2, py2, factor2 = particle.history[i]
+        for i in range(1, hist_len):
+            px1, py1, factor1 = particle.history[i - 1]
+            px2, py2, factor2 = particle.history[i]
 
-                if factor1 > 0 and factor2 > 0:
-                    trail_col = particle.get_shade(factor1 - 0.3)
-                    scatter_radius = thickness + 3
+            if factor1 <= 0 or factor2 <= 0:
+                continue
+                
+            trail_col = particle.get_shade(factor1 - 0.3)
+            
+            if not skip_scatter:
+                scatter_radius = thickness + 3
 
-                    if random.random() < 0.6:
-                        sx = px1 + random.uniform(-scatter_radius, scatter_radius)
-                        sy = py1 + random.uniform(-scatter_radius, scatter_radius)
-                        pyxel.pset(int(sx), int(sy), trail_col)
+                if random.random() < 0.4:
+                    sx = px1 + random.uniform(-scatter_radius, scatter_radius)
+                    sy = py1 + random.uniform(-scatter_radius, scatter_radius)
+                    pyxel.pset(int(sx), int(sy), trail_col)
 
-                    if random.random() < 0.15:
-                        sx = px1 + random.uniform(-scatter_radius - 2, scatter_radius + 2)
-                        sy = py1 + random.uniform(-scatter_radius - 2, scatter_radius + 2)
-                        pyxel.pset(int(sx), int(sy), 121)
+                if random.random() < 0.08:
+                    sx = px1 + random.uniform(-scatter_radius - 2, scatter_radius + 2)
+                    sy = py1 + random.uniform(-scatter_radius - 2, scatter_radius + 2)
+                    pyxel.pset(int(sx), int(sy), 121)
 
-                    if self.glitter and random.random() < 0.4:
-                        pyxel.pset(int(px1), int(py1), 121)
-                    else:
-                        if particle.is_shell and self.palm_tail:
-                            t_width = thickness + 1
-                            for w in range(-t_width, t_width + 1):
-                                pyxel.line(int(px1 + w), int(py1), int(px2 + w), int(py2), trail_col)
-                        else:
-                            for w in range(-thickness, thickness + 1):
-                                pyxel.line(int(px1 + w), int(py1), int(px2 + w), int(py2), trail_col)
+            if self.glitter and random.random() < 0.4:
+                pyxel.pset(int(px1), int(py1), 121)
+            else:
+                if particle.is_shell and self.palm_tail:
+                    t_width = thickness + 1
+                    for w in range(-t_width, t_width + 1):
+                        pyxel.line(int(px1 + w), int(py1), int(px2 + w), int(py2), trail_col)
+                else:
+                    for w in range(-thickness, thickness + 1):
+                        pyxel.line(int(px1 + w), int(py1), int(px2 + w), int(py2), trail_col)
