@@ -1,10 +1,12 @@
 import pyxel
 import math
 import random
+import collections
 from .physics import project_3d_to_2d
 from .config import COLOR_MAP
 from .config import COLORS
 from .lighting import draw_baked_particle
+from .behaviors import TrailBehavior
 
 class Particle:
     _pool = []
@@ -38,7 +40,6 @@ class Particle:
             spec.life_span if is_shell else spec.life_span * random.uniform(0.8, 1.2)
         )
         self.active = True
-        self.history = []
         self.spin_angle = random.uniform(0, math.pi * 2)
 
         self.particle_color = spec.base_color
@@ -55,13 +56,26 @@ class Particle:
         self.update_behaviors = [] if is_shell else spec.update_behaviors
         
         if is_shell and spec.burst:
-            from .behaviors import TrailBehavior
             if spec.name in ["Rising Tail", "Palm Tree"]:
                 self.draw_behaviors = [TrailBehavior(palm_tail=True, trail_len=8)]
             else:
                 self.draw_behaviors = [TrailBehavior(trail_len=5)]
         else:
             self.draw_behaviors = spec.draw_behaviors
+
+        # --- HOISTED CALCULATIONS ---
+        self.trail_len = 0
+        for b in self.draw_behaviors:
+            if isinstance(b, TrailBehavior):
+                self.trail_len = b.trail_len
+                break
+                
+        if self.is_shell and self.trail_len == 0:
+            self.trail_len = 5
+            
+        self.is_palm_tail_shell = self.is_shell and any(isinstance(b, TrailBehavior) and b.palm_tail for b in self.draw_behaviors)
+        
+        self.history = collections.deque(maxlen=self.trail_len if self.trail_len > 0 else 1)
 
     def update(self):
         if not self.active:
@@ -73,20 +87,8 @@ class Particle:
                 self.active = False
                 return
 
-        from .behaviors import TrailBehavior
-        trail_len = 0
-        for b in self.draw_behaviors:
-            if isinstance(b, TrailBehavior):
-                trail_len = b.trail_len
-                break
-                
-        if self.is_shell and trail_len == 0:
-            trail_len = 5
-            
-        if trail_len > 0:
+        if self.trail_len > 0:
             self.history.append((self.px, self.py, self.factor))
-            if len(self.history) > trail_len:
-                self.history.pop(0)
 
         for behavior in self.update_behaviors:
             behavior.update(self)
@@ -151,10 +153,7 @@ class Particle:
             if behavior.pre_draw(self):
                 return
 
-        from .behaviors import TrailBehavior
-        is_palm_tail_shell = self.is_shell and any(isinstance(b, TrailBehavior) and b.palm_tail for b in self.draw_behaviors)
-
-        color = 121 if is_palm_tail_shell else self.get_shade(self.factor)
+        color = 121 if self.is_palm_tail_shell else self.get_shade(self.factor)
 
         if self.spec.name != "Willow" or self.is_shell:
             draw_baked_particle(self.px, self.py, color, self.factor, intensity, self.spec.radius)
