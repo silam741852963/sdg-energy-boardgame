@@ -1,4 +1,5 @@
 import os
+import json
 import pyxel
 import math
 import random
@@ -145,15 +146,34 @@ class DroneManager:
         for f in files:
             filepath = os.path.join(pattern_dir, f)
             with open(filepath, "r", encoding="utf-8") as file:
-                grid = [line.rstrip("\r\n") for line in file.readlines()]
+                lines = [line.rstrip("\r\n") for line in file.readlines()]
+                
+                config = {}
+                grid = lines
+                
+                try:
+                    split_idx = lines.index("===")
+                    json_str = "\n".join(lines[:split_idx])
+                    config = json.loads(json_str)
+                    grid = lines[split_idx+1:]
+                except ValueError:
+                    pass
+                except json.JSONDecodeError as e:
+                    print(f"WARNING: Invalid JSON frontmatter in {f}: {e}")
+                    pass
+
                 name = "".join(filter(lambda x: not x.isdigit(), f))
                 name = name.replace(".txt", "").replace("-", " ").strip().title()
-                self.patterns.append({"name": name, "grid": grid})
+                self.patterns.append({"name": name, "grid": grid, "config": config})
 
         print(f"Loaded {len(self.patterns)} drone patterns.")
 
-    def _get_target_coords(self, grid, spacing, altitude):
+    def _get_target_coords(self, grid, config, default_spacing, default_altitude):
         coords = []
+        
+        spacing = config.get("spacing", default_spacing)
+        altitude = config.get("altitude", default_altitude)
+        legend = config.get("legend", {})
 
         # --- NEW: Find the True Bounding Box to guarantee perfect centering ---
         min_c = float("inf")
@@ -162,7 +182,7 @@ class DroneManager:
             first_char = -1
             last_char = -1
             for col_idx, char in enumerate(row):
-                if char.upper() in ASCII_COLOR_MAP:
+                if char in legend or char.upper() in ASCII_COLOR_MAP:
                     if first_char == -1:
                         first_char = col_idx
                     last_char = col_idx
@@ -183,12 +203,25 @@ class DroneManager:
 
         for row_idx, row in enumerate(grid):
             for col_idx, char in enumerate(row):
-                char = char.upper()
-                if char in ASCII_COLOR_MAP:
+                if char in legend or char.upper() in ASCII_COLOR_MAP:
                     # Offset by min_c so the visual pattern starts exactly at start_x
                     tx = start_x + ((col_idx - min_c) * h_spacing)
                     ty = start_y + (row_idx * v_spacing)
-                    coords.append((tx, ty, 0, ASCII_COLOR_MAP[char]))
+                    
+                    props = {}
+                    if char in legend:
+                        props = legend[char]
+                    else:
+                        props = {"color": ASCII_COLOR_MAP[char.upper()]}
+                        
+                    coords.append({
+                        "x": tx,
+                        "y": ty,
+                        "z": props.get("z", 0),
+                        "color": props.get("color", "silver"),
+                        "radius": props.get("radius", None),
+                        "intensity": props.get("intensity", None)
+                    })
 
         return coords
 
@@ -204,16 +237,22 @@ class DroneManager:
         self.current_index = index
         target_coords = self._get_target_coords(
             self.patterns[index]["grid"],
+            self.patterns[index].get("config", {}),
             gui.drone_spacing * SCALE_X,
             gui.drone_altitude,
         )
 
         available_drones = [d for d in self.drones if not d.clearing and d.active]
 
-        for i, (tx, ty, tz, c_name) in enumerate(target_coords):
+        for i, target in enumerate(target_coords):
+            tx, ty, tz = target["x"], target["y"], target["z"]
+            c_name = target["color"]
+            radius = target["radius"] if target["radius"] is not None else gui.drone_radius
+            intensity = target["intensity"] if target["intensity"] is not None else gui.drone_intensity
+            
             if i < len(available_drones):
                 available_drones[i].transition_to(
-                    tx, ty, tz, c_name, gui.drone_radius, gui.drone_intensity
+                    tx, ty, tz, c_name, radius, intensity
                 )
             else:
                 new_drone = Drone(
@@ -221,8 +260,8 @@ class DroneManager:
                     ty,
                     tz,
                     c_name,
-                    gui.drone_radius,
-                    gui.drone_intensity,
+                    radius,
+                    intensity,
                     spawn_y=1000,
                 )
                 self.drones.append(new_drone)

@@ -1,0 +1,19 @@
+{
+  "spacing": 50,
+  "altitude": -150,
+  "legend": {
+    "S": {"color": "yellow", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "H": {"color": "yellow", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "A": {"color": "yellow", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "K": {"color": "yellow", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "E": {"color": "yellow", "radius": 2.0, "intensity": 1.5, "z": 0}
+  }
+}
+===
+  S S S     H       H       A       K       K   E E E E E
+S       S   H       H     A   A     K     K     E
+S           H       H   A       A   K   K       E
+  S S S     H H H H H   A A A A A   K K         E E E E
+        S   H       H   A       A   K   K       E
+S       S   H       H   A       A   K     K     E
+  S S S     H       H   A       A   K       K   E E E E E

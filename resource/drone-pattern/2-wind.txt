@@ -1,0 +1,18 @@
+{
+  "spacing": 50,
+  "altitude": -150,
+  "legend": {
+    "W": {"color": "cyan", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "I": {"color": "cyan", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "N": {"color": "cyan", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "D": {"color": "cyan", "radius": 2.0, "intensity": 1.5, "z": 0}
+  }
+}
+===
+W           W       I I I       N           N       D D D D
+W           W         I         N N         N       D       D
+W           W         I         N   N       N       D       D
+W     W     W         I         N     N     N       D       D
+W   W   W   W         I         N       N   N       D       D
+W W       W W         I         N         N N       D       D
+W           W       I I I       N           N       D D D D

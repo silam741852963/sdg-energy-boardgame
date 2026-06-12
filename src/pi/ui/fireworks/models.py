@@ -1,9 +1,27 @@
 from dataclasses import dataclass, field
 import random
-from typing import List, Any
+from typing import List
 
-from .strategies import LaunchStrategy, SingleLaunch, SpreadLaunch, MulticolorSpreadLaunch, BurstStrategy, SphericalBurst, PalmBurst, ConeBurst
-from .behaviors import UpdateBehavior, DrawBehavior, SwimBehavior, SpinBehavior, WaterfallBehavior, CrackleBehavior, FlickerBehavior, TrailBehavior
+from .strategies import (
+    LaunchStrategy,
+    SingleLaunch,
+    SpreadLaunch,
+    MulticolorSpreadLaunch,
+    BurstStrategy,
+    SphericalBurst,
+    PalmBurst,
+    ConeBurst,
+)
+from .behaviors import (
+    UpdateBehavior,
+    DrawBehavior,
+    SwimBehavior,
+    SpinBehavior,
+    WaterfallBehavior,
+    CrackleBehavior,
+    FlickerBehavior,
+    TrailBehavior,
+)
 
 
 @dataclass
@@ -38,7 +56,9 @@ class FireworkSpec:
         if value and not has:
             self.draw_behaviors.append(TrailBehavior())
         elif not value and has:
-            self.draw_behaviors = [b for b in self.draw_behaviors if not isinstance(b, TrailBehavior)]
+            self.draw_behaviors = [
+                b for b in self.draw_behaviors if not isinstance(b, TrailBehavior)
+            ]
 
     @property
     def flicker(self):
@@ -50,7 +70,9 @@ class FireworkSpec:
         if value and not has:
             self.draw_behaviors.append(FlickerBehavior())
         elif not value and has:
-            self.draw_behaviors = [b for b in self.draw_behaviors if not isinstance(b, FlickerBehavior)]
+            self.draw_behaviors = [
+                b for b in self.draw_behaviors if not isinstance(b, FlickerBehavior)
+            ]
 
     @property
     def crackle(self):
@@ -62,7 +84,9 @@ class FireworkSpec:
         if value and not has:
             self.draw_behaviors.append(CrackleBehavior())
         elif not value and has:
-            self.draw_behaviors = [b for b in self.draw_behaviors if not isinstance(b, CrackleBehavior)]
+            self.draw_behaviors = [
+                b for b in self.draw_behaviors if not isinstance(b, CrackleBehavior)
+            ]
 
     @property
     def swim(self):
@@ -74,7 +98,9 @@ class FireworkSpec:
         if value and not has:
             self.update_behaviors.append(SwimBehavior())
         elif not value and has:
-            self.update_behaviors = [b for b in self.update_behaviors if not isinstance(b, SwimBehavior)]
+            self.update_behaviors = [
+                b for b in self.update_behaviors if not isinstance(b, SwimBehavior)
+            ]
 
     @property
     def spin(self):
@@ -86,7 +112,9 @@ class FireworkSpec:
         if value and not has:
             self.update_behaviors.append(SpinBehavior())
         elif not value and has:
-            self.update_behaviors = [b for b in self.update_behaviors if not isinstance(b, SpinBehavior)]
+            self.update_behaviors = [
+                b for b in self.update_behaviors if not isinstance(b, SpinBehavior)
+            ]
 
     @property
     def waterfall(self):
@@ -98,7 +126,9 @@ class FireworkSpec:
         if value and not has:
             self.update_behaviors.append(WaterfallBehavior())
         elif not value and has:
-            self.update_behaviors = [b for b in self.update_behaviors if not isinstance(b, WaterfallBehavior)]
+            self.update_behaviors = [
+                b for b in self.update_behaviors if not isinstance(b, WaterfallBehavior)
+            ]
 
     @property
     def palm_tail(self):
@@ -255,12 +285,12 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.update_behaviors.append(SpinBehavior())
         spec.draw_behaviors.append(TrailBehavior())
     elif fw_type == "Willow":
-        spec.particle_count = 120
+        spec.particle_count = 80
         spec.speed_variance = 8.0
         spec.gravity_mod = 0.2
         spec.drag = 0.02
         spec.life_span = 220
-        spec.draw_behaviors.append(TrailBehavior(trail_len=25))
+        spec.draw_behaviors.append(TrailBehavior(trail_len=12))
 
     return spec
 

@@ -1,7 +1,17 @@
+{
+  "spacing": 45,
+  "altitude": -150,
+  "legend": {
+    "C": {"color": "cyan", "radius": 4.5, "intensity": 2.5, "z": 0},
+    "c": {"color": "cyan", "radius": 1.0, "intensity": 1.0, "z": -25},
+    "W": {"color": "silver", "radius": 2.5, "intensity": 2.0, "z": 0}
+  }
+}
+===
       C                                                      
-     C C                                                     
+     c c                                                     
     C   C         W W     W W      W         W      W W      
-   C  C  C       W   W    W  W     W         W     W        
-  C  C C  C      W W W    W W      W         W     W         
- C    C    C     W   W    W  W     W         W     W        
+   c  c  c       W   W    W  W     W         W     W        
+  C  c c  C      W W W    W W      W         W     W         
+ c    c    c     W   W    W  W     W         W     W        
 C           C    W   W    W W      W W W     W      W W

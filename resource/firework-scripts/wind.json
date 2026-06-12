@@ -1,0 +1,495 @@
+{
+    "name": "Wind Symmetrical Show",
+    "events": [
+        {
+            "time": 0,
+            "type": "Crossette",
+            "color": "silver",
+            "x": 168,
+            "y": 149
+        },
+        {
+            "time": 0,
+            "type": "Crossette",
+            "color": "silver",
+            "x": 1694,
+            "y": 265
+        },
+        {
+            "time": 1,
+            "type": "Pearls",
+            "color": "silver",
+            "x": 243,
+            "y": 210
+        },
+        {
+            "time": 1,
+            "type": "Pearls",
+            "color": "green",
+            "x": 1707,
+            "y": 235
+        },
+        {
+            "time": 2,
+            "type": "Flying Fish",
+            "color": "yellow",
+            "x": 181,
+            "y": 267
+        },
+        {
+            "time": 2,
+            "type": "Flying Fish",
+            "color": "yellow",
+            "x": 1605,
+            "y": 177
+        },
+        {
+            "time": 3,
+            "type": "Pearls",
+            "color": "cyan",
+            "x": 219,
+            "y": 218
+        },
+        {
+            "time": 3,
+            "type": "Pearls",
+            "color": "yellow",
+            "x": 1749,
+            "y": 198
+        },
+        {
+            "time": 4,
+            "type": "Flying Fish",
+            "color": "silver",
+            "x": 165,
+            "y": 228
+        },
+        {
+            "time": 4,
+            "type": "Flying Fish",
+            "color": "silver",
+            "x": 1678,
+            "y": 254
+        },
+        {
+            "time": 5,
+            "type": "Pearls",
+            "color": "silver",
+            "x": 186,
+            "y": 171
+        },
+        {
+            "time": 5,
+            "type": "Pearls",
+            "color": "gold",
+            "x": 1744,
+            "y": 153
+        },
+        {
+            "time": 6,
+            "type": "Crossette",
+            "color": "blue",
+            "x": 171,
+            "y": 168
+        },
+        {
+            "time": 6,
+            "type": "Crossette",
+            "color": "blue",
+            "x": 1603,
+            "y": 273
+        },
+        {
+            "time": 7,
+            "type": "Pearls",
+            "color": "blue",
+            "x": 152,
+            "y": 194
+        },
+        {
+            "time": 7,
+            "type": "Pearls",
+            "color": "green",
+            "x": 1681,
+            "y": 183
+        },
+        {
+            "time": 8,
+            "type": "Crossette",
+            "color": "green",
+            "x": 228,
+            "y": 244
+        },
+        {
+            "time": 8,
+            "type": "Crossette",
+            "color": "green",
+            "x": 1752,
+            "y": 132
+        },
+        {
+            "time": 9,
+            "type": "Pearls",
+            "color": "cyan",
+            "x": 184,
+            "y": 244
+        },
+        {
+            "time": 9,
+            "type": "Pearls",
+            "color": "blue",
+            "x": 1657,
+            "y": 162
+        },
+        {
+            "time": 10.253214601128631,
+            "type": "Flying Fish",
+            "color": "cyan",
+            "x": 326,
+            "y": 244
+        },
+        {
+            "time": 10.413829231404852,
+            "type": "Flying Fish",
+            "color": "cyan",
+            "x": 1594,
+            "y": 244
+        },
+        {
+            "time": 11.024910403187109,
+            "type": "Brocade",
+            "color": "cyan",
+            "x": 174,
+            "y": 198
+        },
+        {
+            "time": 11.103326351189637,
+            "type": "Brocade",
+            "color": "cyan",
+            "x": 1746,
+            "y": 198
+        },
+        {
+            "time": 12.116328198889844,
+            "type": "Flying Fish",
+            "color": "cyan",
+            "x": 451,
+            "y": 220
+        },
+        {
+            "time": 12.374587057938472,
+            "type": "Flying Fish",
+            "color": "cyan",
+            "x": 1469,
+            "y": 220
+        },
+        {
+            "time": 13.358918808510547,
+            "type": "Brocade",
+            "color": "cyan",
+            "x": 249,
+            "y": 190
+        },
+        {
+            "time": 13.416903720913437,
+            "type": "Brocade",
+            "color": "cyan",
+            "x": 1671,
+            "y": 190
+        },
+        {
+            "time": 14.165969319183402,
+            "type": "Brocade",
+            "color": "yellow",
+            "x": 1360,
+            "y": 199
+        },
+        {
+            "time": 14.194115193310008,
+            "type": "Brocade",
+            "color": "yellow",
+            "x": 560,
+            "y": 199
+        },
+        {
+            "time": 15.281319722356903,
+            "type": "Crossette",
+            "color": "cyan",
+            "x": 199,
+            "y": 119
+        },
+        {
+            "time": 15.485200507845784,
+            "type": "Crossette",
+            "color": "cyan",
+            "x": 1721,
+            "y": 119
+        },
+        {
+            "time": 16.331881930063705,
+            "type": "Strobe",
+            "color": "green",
+            "x": 478,
+            "y": 199
+        },
+        {
+            "time": 16.48155575641631,
+            "type": "Strobe",
+            "color": "green",
+            "x": 1442,
+            "y": 199
+        },
+        {
+            "time": 17.050508049678786,
+            "type": "Crossette",
+            "color": "yellow",
+            "x": 450,
+            "y": 177
+        },
+        {
+            "time": 17.080139481794973,
+            "type": "Crossette",
+            "color": "yellow",
+            "x": 1470,
+            "y": 177
+        },
+        {
+            "time": 18.218155124600216,
+            "type": "Strobe",
+            "color": "cyan",
+            "x": 542,
+            "y": 168
+        },
+        {
+            "time": 18.403473184006963,
+            "type": "Strobe",
+            "color": "cyan",
+            "x": 1378,
+            "y": 168
+        },
+        {
+            "time": 19.111436777041142,
+            "type": "Crossette",
+            "color": "magenta",
+            "x": 1754,
+            "y": 234
+        },
+        {
+            "time": 19.321377697606568,
+            "type": "Crossette",
+            "color": "magenta",
+            "x": 166,
+            "y": 234
+        },
+        {
+            "time": 20,
+            "type": "Peony",
+            "color": "cyan",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 20.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 560,
+            "y": 100
+        },
+        {
+            "time": 20.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 1360,
+            "y": 100
+        },
+        {
+            "time": 21,
+            "type": "Peony",
+            "color": "cyan",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 21.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 560,
+            "y": 100
+        },
+        {
+            "time": 21.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 1360,
+            "y": 100
+        },
+        {
+            "time": 22,
+            "type": "Peony",
+            "color": "cyan",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 22.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 560,
+            "y": 100
+        },
+        {
+            "time": 22.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 1360,
+            "y": 100
+        },
+        {
+            "time": 23,
+            "type": "Peony",
+            "color": "cyan",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 23.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 560,
+            "y": 100
+        },
+        {
+            "time": 23.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 1360,
+            "y": 100
+        },
+        {
+            "time": 24,
+            "type": "Peony",
+            "color": "cyan",
+            "x": 960,
+            "y": 150
+        },
+        {
+            "time": 24.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 560,
+            "y": 100
+        },
+        {
+            "time": 24.5,
+            "type": "Willow",
+            "color": "gold",
+            "x": 1360,
+            "y": 100
+        },
+        {
+            "time": 25.46,
+            "type": "Pistil",
+            "color": "cyan",
+            "x": 1439,
+            "y": 161
+        },
+        {
+            "time": 25.46,
+            "type": "Chrysanthemum",
+            "color": "cyan",
+            "x": 1379,
+            "y": 100
+        },
+        {
+            "time": 25.8,
+            "type": "Palm Tree",
+            "color": "cyan",
+            "x": 901,
+            "y": 62
+        },
+        {
+            "time": 25.87,
+            "type": "Pistil",
+            "color": "cyan",
+            "x": 519,
+            "y": 174
+        },
+        {
+            "time": 26.07,
+            "type": "Pistil",
+            "color": "cyan",
+            "x": 1482,
+            "y": 124
+        },
+        {
+            "time": 26.76,
+            "type": "Pistil",
+            "color": "cyan",
+            "x": 518,
+            "y": 155
+        },
+        {
+            "time": 27.47,
+            "type": "Palm Tree",
+            "color": "cyan",
+            "x": 1295,
+            "y": 67
+        },
+        {
+            "time": 27.59,
+            "type": "Palm Tree",
+            "color": "cyan",
+            "x": 658,
+            "y": 143
+        },
+        {
+            "time": 27.78,
+            "type": "Pistil",
+            "color": "cyan",
+            "x": 475,
+            "y": 153
+        },
+        {
+            "time": 27.87,
+            "type": "Pistil",
+            "color": "cyan",
+            "x": 1031,
+            "y": 121
+        },
+        {
+            "time": 27.96,
+            "type": "Pistil",
+            "color": "cyan",
+            "x": 863,
+            "y": 157
+        },
+        {
+            "time": 28.21,
+            "type": "Pistil",
+            "color": "cyan",
+            "x": 627,
+            "y": 165
+        },
+        {
+            "time": 28.27,
+            "type": "Palm Tree",
+            "color": "cyan",
+            "x": 990,
+            "y": 71
+        },
+        {
+            "time": 29.29,
+            "type": "Chrysanthemum",
+            "color": "cyan",
+            "x": 1386,
+            "y": 76
+        },
+        {
+            "time": 29.35,
+            "type": "Chrysanthemum",
+            "color": "cyan",
+            "x": 735,
+            "y": 74
+        }
+    ]
+}
