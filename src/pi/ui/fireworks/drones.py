@@ -1,11 +1,10 @@
 import os
 import json
-import pyxel
 import math
 import random
 from .config import SCALE_X, SCALE_Y, COLOR_MAP
-from .lighting import draw_baked_particle
 from .physics import project_3d_to_2d
+from . import palette
 
 ASCII_COLOR_MAP = {
     "R": "red",
@@ -77,7 +76,7 @@ class Drone:
 
             self.speed = random.uniform(0.003, 0.01)
 
-    def update(self):
+    def update(self, frame_count):
         if not self.active:
             return
 
@@ -94,18 +93,18 @@ class Drone:
             dist = abs(self.tx - self.x) + abs(self.ty - self.y)
             if dist < 15:
                 if self.activated:
-                    self.x += math.sin(pyxel.frame_count * 0.15 + self.wobble_offset) * 0.6
-                    self.y += math.cos(pyxel.frame_count * 0.12 + self.wobble_offset) * 0.6 - 0.5
+                    self.x += math.sin(frame_count * 0.15 + self.wobble_offset) * 0.6
+                    self.y += math.cos(frame_count * 0.12 + self.wobble_offset) * 0.6 - 0.5
                 else:
-                    self.x += math.sin(pyxel.frame_count * 0.05 + self.wobble_offset) * 0.3
-                    self.y += math.cos(pyxel.frame_count * 0.04 + self.wobble_offset) * 0.3
+                    self.x += math.sin(frame_count * 0.05 + self.wobble_offset) * 0.3
+                    self.y += math.cos(frame_count * 0.04 + self.wobble_offset) * 0.3
         else:
             self.intensity *= 0.99
 
             if self.intensity < 0.02 or self.y < -1500:
                 self.active = False
 
-    def draw(self):
+    def gather_instances(self, instance_data, frame_count):
         if not self.active:
             return
         px, py, factor = project_3d_to_2d(self.x, self.y, self.z)
@@ -115,26 +114,32 @@ class Drone:
         # Determine if we should pulse the glow
         draw_intensity = self.intensity
         if self.activated:
-            draw_intensity *= (1.5 + 0.5 * math.sin(pyxel.frame_count * 0.2 + self.wobble_offset))
+            draw_intensity *= (1.5 + 0.5 * math.sin(frame_count * 0.2 + self.wobble_offset))
+
+        # Balance visual sizes between glowing and non-glowing drones
+        size_factor = 21.0 if self.activated else 19.0
+        min_size = 7.0 if self.activated else 6.5
+
+        # Compress the radius range to narrow size difference visually (e.g. 1.0 -> 1.5, 4.5 -> 2.55)
+        visual_radius = 1.5 + (self.radius - 1.0) * 0.3
 
         if self.color_blend < 1.0:
             c1_idx = COLOR_MAP.get(self.prev_color, 121) if self.activated else 121
-            draw_baked_particle(
-                px,
-                py,
-                c1_idx,
-                factor,
-                draw_intensity * (1.0 - self.color_blend),
-                self.radius,
-            )
+            c1 = palette.get_color(c1_idx)
+            size1 = max(min_size, factor * visual_radius * size_factor)
+            alpha1 = draw_intensity * (1.0 - self.color_blend)
+            instance_data.append((px, py, size1, c1[0], c1[1], c1[2], alpha1))
 
             c2_idx = COLOR_MAP.get(self.target_color, 121) if self.activated else 121
-            draw_baked_particle(
-                px, py, c2_idx, factor, draw_intensity * self.color_blend, self.radius
-            )
+            c2 = palette.get_color(c2_idx)
+            size2 = max(min_size, factor * visual_radius * size_factor)
+            alpha2 = draw_intensity * self.color_blend
+            instance_data.append((px, py, size2, c2[0], c2[1], c2[2], alpha2))
         else:
             color_idx = COLOR_MAP.get(self.target_color, 121) if self.activated else 121
-            draw_baked_particle(px, py, color_idx, factor, draw_intensity, self.radius)
+            c = palette.get_color(color_idx)
+            size = max(min_size, factor * visual_radius * size_factor)
+            instance_data.append((px, py, size, c[0], c[1], c[2], draw_intensity))
 
 
 class DroneManager:
@@ -304,7 +309,7 @@ class DroneManager:
         if audio:
             audio.stop_music()
 
-    def update(self, fill_pct=0.0):
+    def update(self, frame_count, fill_pct=0.0):
         # The Ablic logo (index 0) should be fully colored from the beginning
         if self.current_index == 0:
             fill_pct = 1.0
@@ -329,16 +334,19 @@ class DroneManager:
         # Update drones and cull dead ones in-place
         alive_count = 0
         for d in self.drones:
-            d.update()
+            d.update(frame_count)
             if d.active:
                 self.drones[alive_count] = d
                 alive_count += 1
         del self.drones[alive_count:]
 
-    def draw(self):
+    def draw(self, renderer, font, frame_count):
+        instance_data = []
         for d in self.drones:
-            d.draw()
+            d.gather_instances(instance_data, frame_count)
+        renderer.draw_particles(instance_data)
 
         if self.current_index != -1 and self.patterns:
             name = self.patterns[self.current_index]["name"]
-            pyxel.text(10, 10, f"DRONE SHOW: {name}", 121)
+            c = palette.get_color(121)
+            renderer.draw_text(int(20 * SCALE_X), int(20 * SCALE_Y), f"DRONE SHOW: {name}", font, c)

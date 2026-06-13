@@ -1,7 +1,7 @@
-import pyxel
+import pygame
 from .config import SCREEN_WIDTH, SCREEN_HEIGHT, SCALE_X, SCALE_Y, FIREWORK_TYPES, COLORS
 from .models import generate_spec
-
+from . import palette
 
 class ControlPanel:
     def __init__(self):
@@ -11,11 +11,13 @@ class ControlPanel:
         self.spec = generate_spec(self.selected_type)
         self.spec.base_color = self.selected_color
 
-        self.scale_x = max(1, int(3 * SCALE_X))
-        self.scale_y = max(1, int(3 * SCALE_Y))
-
         self.width = int(1350 * SCALE_X)
         self.item_height = int(30 * SCALE_Y)
+        
+        self.margin_x = int(40 * SCALE_X)
+        self.margin_top = int(50 * SCALE_Y)
+        self.margin_bottom = int(40 * SCALE_Y)
+        self.panel_height = SCREEN_HEIGHT - self.margin_top - self.margin_bottom
 
         self.col1_x = int(20 * SCALE_X)
         self.type_start_y = int(100 * SCALE_Y)
@@ -25,7 +27,6 @@ class ControlPanel:
             + int(50 * SCALE_Y)
         )
 
-        # Shifted Column 2 slightly left to make room
         self.col2_x = int(420 * SCALE_X)
         self.num_start_y = int(100 * SCALE_Y)
 
@@ -61,7 +62,6 @@ class ControlPanel:
             "glitter",
         ]
 
-        # --- NEW: Pushed Column 3 safely to the right ---
         self.col3_x = int(880 * SCALE_X)
         self.drone_spacing = 30
         self.drone_altitude = -120
@@ -77,17 +77,20 @@ class ControlPanel:
 
         self.trigger_drones = False
         self.clear_drones = False
-        self.char_cache = {}
 
-    def update(self) -> bool:
-        if pyxel.btnp(pyxel.KEY_TAB):
-            self.visible = not self.visible
+    def update(self, events, mouse_pos, mouse_click_left) -> bool:
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_TAB:
+                    self.visible = not self.visible
 
         if not self.visible:
             return False
 
-        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
-            mx, my = pyxel.mouse_x, pyxel.mouse_y
+        if mouse_click_left:
+            mx, my = mouse_pos
+            mx -= self.margin_x
+            my -= self.margin_top
 
             if mx < self.width:
                 for i, fw_type in enumerate(FIREWORK_TYPES):
@@ -161,7 +164,6 @@ class ControlPanel:
                         setattr(self.spec, prop, not val)
                         return True
 
-                # --- UPDATED: Adjusted hitboxes for Column 3 Math ---
                 for i, (prop, disp, step, min_v, max_v) in enumerate(self.drone_props):
                     y = self.num_start_y + i * self.item_height
                     if (
@@ -201,125 +203,117 @@ class ControlPanel:
 
         return False
 
-    def get_char_pixels(self, char, color):
-        cache_key = (char, color)
-        if cache_key not in self.char_cache:
-            pyxel.images[2].rect(0, 0, 4, 6, 0)
-            pyxel.images[2].text(0, 0, char, color)
-            pixels = []
-            for j in range(6):
-                for i in range(4):
-                    if pyxel.images[2].pget(i, j) == color:
-                        pixels.append((i, j))
-            self.char_cache[cache_key] = pixels
-        return self.char_cache[cache_key]
+    def draw(self, renderer, fonts):
+        renderer.set_blend_mode("alpha")
 
-    def draw_text_scaled(self, x, y, text, color):
-        for idx, char in enumerate(text):
-            char_pixels = self.get_char_pixels(char, color)
-            char_x = x + idx * 4 * self.scale_x
-            for dx, dy in char_pixels:
-                pyxel.rect(
-                    char_x + dx * self.scale_x,
-                    y + dy * self.scale_y,
-                    self.scale_x,
-                    self.scale_y,
-                    color,
-                )
-
-    def draw(self):
         if not self.visible:
-            self.draw_text_scaled(
-                int(20 * SCALE_X), int(20 * SCALE_Y), "Press TAB for Laboratory", 121
+            c = palette.get_color(121)
+            renderer.draw_text(
+                int(20 * SCALE_X), int(50 * SCALE_Y), "Press TAB for Laboratory", fonts["small"], c
             )
+            renderer.set_blend_mode("additive")
             return
 
-        pyxel.rect(0, 0, self.width, pyxel.height, 0)
-        pyxel.rectb(0, 0, self.width, pyxel.height, 122)
+        # Draw panel background (floating dashboard box)
+        renderer.draw_rect(self.margin_x, self.margin_top, self.width, self.panel_height, (0.0, 0.0, 0.0, 0.95), fill=True)
+        renderer.draw_rect(self.margin_x, self.margin_top, self.width, self.panel_height, palette.get_color(122), fill=False)
 
-        self.draw_text_scaled(
-            int(20 * SCALE_X),
-            int(20 * SCALE_Y),
+        mx_off = self.margin_x
+        my_off = self.margin_top
+
+        c_white = palette.get_color(121)
+        c_gray = palette.get_color(123)
+        c_green = palette.get_color(51)
+        c_red = palette.get_color(1)
+
+        renderer.draw_text(
+            mx_off + int(20 * SCALE_X),
+            my_off + int(20 * SCALE_Y),
             "[ FIREWORK LABORATORY ] (TAB to hide)",
-            121,
+            fonts["medium"],
+            c_white,
         )
 
-        self.draw_text_scaled(
-            self.col1_x, int(60 * SCALE_Y), "--- 1. BASE PRESET ---", 121
+        renderer.draw_text(
+            mx_off + self.col1_x, my_off + int(60 * SCALE_Y), "--- 1. BASE PRESET ---", fonts["small"], c_white
         )
         for i, fw_type in enumerate(FIREWORK_TYPES):
-            y = self.type_start_y + i * self.item_height
-            color = 121 if fw_type == self.selected_type else 123
+            y = my_off + self.type_start_y + i * self.item_height
+            color = c_white if fw_type == self.selected_type else c_gray
             prefix = "> " if fw_type == self.selected_type else "  "
-            self.draw_text_scaled(self.col1_x, y, f"{prefix}{fw_type}", color)
+            renderer.draw_text(mx_off + self.col1_x, y, f"{prefix}{fw_type}", fonts["small"], color)
 
-        self.draw_text_scaled(
-            self.col1_x, self.color_start_y - int(30 * SCALE_Y), "--- 2. COLOR ---", 121
+        renderer.draw_text(
+            mx_off + self.col1_x, my_off + self.color_start_y - int(30 * SCALE_Y), "--- 2. COLOR ---", fonts["small"], c_white
         )
         for i, c_name in enumerate(COLORS):
-            y = self.color_start_y + i * self.item_height
-            color = 121 if c_name == self.selected_color else 123
+            y = my_off + self.color_start_y + i * self.item_height
+            color = c_white if c_name == self.selected_color else c_gray
             prefix = "> " if c_name == self.selected_color else "  "
-            self.draw_text_scaled(
-                self.col1_x, y, f"{prefix}{c_name.capitalize()}", color
+            renderer.draw_text(
+                mx_off + self.col1_x, y, f"{prefix}{c_name.capitalize()}", fonts["small"], color
             )
 
-        self.draw_text_scaled(
-            self.col2_x, int(60 * SCALE_Y), "--- 3. TWEAK PHYSICS ---", 121
+        renderer.draw_text(
+            mx_off + self.col2_x, my_off + int(60 * SCALE_Y), "--- 3. TWEAK PHYSICS ---", fonts["small"], c_white
         )
         for i, (prop, disp, step, min_v, max_v) in enumerate(self.num_props):
-            y = self.num_start_y + i * self.item_height
+            y = my_off + self.num_start_y + i * self.item_height
             val = getattr(self.spec, prop)
-            self.draw_text_scaled(self.col2_x, y, f"{disp}", 121)
-            self.draw_text_scaled(self.col2_x + int(250 * SCALE_X), y, "[-]", 122)
+            renderer.draw_text(mx_off + self.col2_x, y, f"{disp}", fonts["small"], c_white)
+            renderer.draw_text(mx_off + self.col2_x + int(250 * SCALE_X), y, "[-]", fonts["small"], c_gray)
             val_str = f"{val:.2f}" if isinstance(val, float) else f"{val}"
-            self.draw_text_scaled(self.col2_x + int(300 * SCALE_X), y, val_str, 121)
-            self.draw_text_scaled(self.col2_x + int(380 * SCALE_X), y, "[+]", 122)
+            renderer.draw_text(mx_off + self.col2_x + int(300 * SCALE_X), y, val_str, fonts["small"], c_white)
+            renderer.draw_text(mx_off + self.col2_x + int(380 * SCALE_X), y, "[+]", fonts["small"], c_gray)
 
-        self.draw_text_scaled(
-            self.col2_x,
-            self.bool_start_y - int(30 * SCALE_Y),
+        renderer.draw_text(
+            mx_off + self.col2_x,
+            my_off + self.bool_start_y - int(30 * SCALE_Y),
             "--- 4. ATTRIBUTES ---",
-            121,
+            fonts["small"],
+            c_white,
         )
         for i, prop in enumerate(self.bool_props):
-            y = self.bool_start_y + i * self.item_height
+            y = my_off + self.bool_start_y + i * self.item_height
             val = getattr(self.spec, prop)
-            self.draw_text_scaled(self.col2_x, y, f"{prop}", 121)
+            renderer.draw_text(mx_off + self.col2_x, y, f"{prop}", fonts["small"], c_white)
             box_text = "[X]" if val else "[ ]"
-            box_color = 51 if val else 123
-            self.draw_text_scaled(
-                self.col2_x + int(300 * SCALE_X), y, box_text, box_color
+            box_color = c_green if val else c_gray
+            renderer.draw_text(
+                mx_off + self.col2_x + int(300 * SCALE_X), y, box_text, fonts["small"], box_color
             )
 
-        self.draw_text_scaled(
-            self.col3_x, int(60 * SCALE_Y), "--- 5. DRONE SHOW ---", 121
+        renderer.draw_text(
+            mx_off + self.col3_x, my_off + int(60 * SCALE_Y), "--- 5. DRONE SHOW ---", fonts["small"], c_white
         )
         for i, (prop, disp, step, min_v, max_v) in enumerate(self.drone_props):
-            y = self.num_start_y + i * self.item_height
+            y = my_off + self.num_start_y + i * self.item_height
             val = getattr(self, prop)
 
-            self.draw_text_scaled(self.col3_x, y, f"{disp}", 121)
-            self.draw_text_scaled(self.col3_x + int(180 * SCALE_X), y, "[-]", 122)
+            renderer.draw_text(mx_off + self.col3_x, y, f"{disp}", fonts["small"], c_white)
+            renderer.draw_text(mx_off + self.col3_x + int(180 * SCALE_X), y, "[-]", fonts["small"], c_gray)
 
             val_str = f"{val:.2f}" if isinstance(val, float) else f"{val}"
-            self.draw_text_scaled(self.col3_x + int(220 * SCALE_X), y, val_str, 121)
-            self.draw_text_scaled(self.col3_x + int(280 * SCALE_X), y, "[+]", 122)
+            renderer.draw_text(mx_off + self.col3_x + int(220 * SCALE_X), y, val_str, fonts["small"], c_white)
+            renderer.draw_text(mx_off + self.col3_x + int(280 * SCALE_X), y, "[+]", fonts["small"], c_gray)
 
         btn_y = (
             self.num_start_y
             + len(self.drone_props) * self.item_height
             + int(30 * SCALE_Y)
         )
-        # Added explicit hotkey text to the buttons!
-        self.draw_text_scaled(self.col3_x, btn_y, "[ LAUNCH DRONES ] (Key: D)", 51)
-        self.draw_text_scaled(
-            self.col3_x, btn_y + self.item_height, "[ CLEAR DRONES ] (Key: C)", 1
+        by = my_off + btn_y
+        renderer.draw_text(mx_off + self.col3_x, by, "[ LAUNCH DRONES ] (Key: D)", fonts["small"], c_green)
+        renderer.draw_text(
+            mx_off + self.col3_x, by + self.item_height, "[ CLEAR DRONES ] (Key: C)", fonts["small"], c_red
         )
 
-        self.draw_text_scaled(
-            int(20 * SCALE_X),
-            pyxel.height - int(50 * SCALE_Y),
+        renderer.draw_text(
+            mx_off + int(20 * SCALE_X),
+            SCREEN_HEIGHT - int(30 * SCALE_Y),
             ">>> CLICK SKY TO LAUNCH | TAB: LAB | M: TOGGLE SYSTEM METRICS <<<",
-            122,
+            fonts["small"],
+            c_gray,
         )
+
+        renderer.set_blend_mode("additive")

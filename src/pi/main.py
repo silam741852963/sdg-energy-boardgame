@@ -59,7 +59,7 @@ def main():
     bg_thread = threading.Thread(target=run_asyncio_thread, args=(state,), daemon=True)
     bg_thread.start()
 
-    # 3. Start Pyxel Engine in the Main Thread
+    # 3. Start ModernGL Engine in the Main Thread
     # Inject the game state into the engine so it can render UI/Gauges
     app = FireworkEngine(state, is_mock=USE_MOCK_HARDWARE)
     app.run()

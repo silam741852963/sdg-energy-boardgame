@@ -1,20 +1,16 @@
 import math
 import random
 import copy
-from .particles import Particle
+import numpy as np
 from .config import COLORS
-
 
 class LaunchStrategy:
     def apply(self, manager, sx, sy, sz, vx, vy, vz, spec):
         pass
 
-
 class SingleLaunch(LaunchStrategy):
     def apply(self, manager, sx, sy, sz, vx, vy, vz, spec):
-        shell = Particle.create(sx, sy, sz, vx, vy, vz, spec, is_shell=True)
-        manager.shells.append(shell)
-
+        manager.particle_system.spawn(sx, sy, sz, vx, vy, vz, spec, count=1, is_shell=True)
 
 class SpreadLaunch(LaunchStrategy):
     def __init__(self, num_shells=7, spread_width=30.0, arc_height=10.0, arc_mult=0.5):
@@ -31,9 +27,7 @@ class SpreadLaunch(LaunchStrategy):
             off_vx = vx + offset
             off_vy = vy - (self.arc_height - abs(offset) * self.arc_mult)
             off_vz = vz
-            shell = Particle.create(sx, sy, sz, off_vx, off_vy, off_vz, spec, is_shell=True)
-            manager.shells.append(shell)
-
+            manager.particle_system.spawn(sx, sy, sz, off_vx, off_vy, off_vz, spec, count=1, is_shell=True)
 
 class MulticolorSpreadLaunch(LaunchStrategy):
     def __init__(self, num_shells=7, spread_width=12.0):
@@ -58,15 +52,16 @@ class MulticolorSpreadLaunch(LaunchStrategy):
             p_spec = copy.copy(spec)
             p_spec.base_color = mixed_colors[i % len(mixed_colors)]
 
-            shell = Particle.create(sx, sy, sz, off_vx, off_vy, off_vz, p_spec, is_shell=True)
-            shell.particle_color = p_spec.base_color
-            manager.shells.append(shell)
-
+            manager.particle_system.spawn(
+                sx, sy, sz, off_vx, off_vy, off_vz, p_spec, count=1, is_shell=True, particle_color=p_spec.base_color
+            )
 
 class BurstStrategy:
     def get_velocity(self, shell, speed, spec):
         return 0, 0, 0
-
+        
+    def get_velocities(self, shell, speed, spec, count):
+        return np.zeros(count, dtype=np.float32), np.zeros(count, dtype=np.float32), np.zeros(count, dtype=np.float32)
 
 class SphericalBurst(BurstStrategy):
     def __init__(self, speed_min=0.8, add_shell_velocity=True):
@@ -96,6 +91,25 @@ class SphericalBurst(BurstStrategy):
 
         return pvx, pvy, pvz
 
+    def get_velocities(self, shell, speed, spec, count):
+        phi = np.random.uniform(0.0, 2.0 * np.pi, count)
+        costheta = np.random.uniform(-1.0, 1.0, count)
+        theta = np.arccos(costheta)
+        speeds = np.random.uniform(
+            spec.speed_variance * self.speed_min, spec.speed_variance * 1.6, count
+        ) * speed
+
+        pvx = speeds * np.sin(theta) * np.cos(phi)
+        pvy = speeds * np.sin(theta) * np.sin(phi)
+        pvz = speeds * np.cos(theta)
+
+        if self.add_shell_velocity:
+            pvx += shell.vx * 0.2
+            pvy += shell.vy * 0.2
+            pvz += shell.vz * 0.2
+            pvy -= np.random.uniform(0.5, 2.0, count)
+
+        return pvx, pvy, pvz
 
 class PalmBurst(BurstStrategy):
     def get_velocity(self, shell, speed, spec):
@@ -117,6 +131,24 @@ class PalmBurst(BurstStrategy):
 
         return pvx, pvy, pvz
 
+    def get_velocities(self, shell, speed, spec, count):
+        phi = np.random.uniform(np.pi * 0.8, np.pi * 2.2, count)
+        costheta = np.random.uniform(-1.0, 1.0, count)
+        theta = np.arccos(costheta)
+        speeds = np.random.uniform(
+            spec.speed_variance * 0.8, spec.speed_variance * 1.6, count
+        ) * speed
+
+        pvx = speeds * np.sin(theta) * np.cos(phi)
+        pvy = speeds * np.sin(theta) * np.sin(phi)
+        pvz = speeds * np.cos(theta)
+
+        pvx += shell.vx * 0.2
+        pvy += shell.vy * 0.2
+        pvz += shell.vz * 0.2
+        pvy -= np.random.uniform(0.5, 2.0, count)
+
+        return pvx, pvy, pvz
 
 class ConeBurst(BurstStrategy):
     def get_velocity(self, shell, speed, spec):
@@ -140,5 +172,29 @@ class ConeBurst(BurstStrategy):
             pvx = (pvx * 0.7) + (nx * speed * 0.9)
             pvy = (pvy * 0.7) + (ny * speed * 0.9)
             pvz = (pvz * 0.7) + (nz * speed * 0.9)
+
+        return pvx, pvy, pvz
+
+    def get_velocities(self, shell, speed, spec, count):
+        phi = np.random.uniform(0.6 * math.pi, 2.4 * math.pi, count)
+        costheta = np.random.uniform(-0.95, 0.95, count)
+        theta = np.arccos(costheta)
+        speeds = np.random.uniform(
+            spec.speed_variance * 0.8, spec.speed_variance * 1.6, count
+        ) * speed
+
+        pvx = speeds * np.sin(theta) * np.cos(phi)
+        pvy = speeds * np.sin(theta) * np.sin(phi)
+        pvz = speeds * np.cos(theta)
+
+        mag = math.sqrt(shell.launch_vx**2 + shell.launch_vy**2 + shell.launch_vz**2)
+        if mag > 0:
+            nx = shell.launch_vx / mag
+            ny = shell.launch_vy / mag
+            nz = shell.launch_vz / mag
+
+            pvx = (pvx * 0.7) + (nx * speeds * 0.9)
+            pvy = (pvy * 0.7) + (ny * speeds * 0.9)
+            pvz = (pvz * 0.7) + (nz * speeds * 0.9)
 
         return pvx, pvy, pvz

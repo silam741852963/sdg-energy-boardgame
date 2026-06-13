@@ -1,7 +1,7 @@
-import pyxel
 import random
 from .config import SCREEN_WIDTH, SCREEN_HEIGHT, SCALE_X, SCALE_Y
 from config import GeneratorType, MAX_ENERGY_GAUGE
+from . import palette
 
 class GaugeManager:
     def __init__(self, game_state=None):
@@ -18,46 +18,27 @@ class GaugeManager:
             GeneratorType.WIND: 61,    # Cyan
             GeneratorType.SOLAR: 31,   # Yellow
             GeneratorType.PIEZO: 11,   # Orange
-            GeneratorType.COIL: 71     # Blue (or Red, let's use Blue)
+            GeneratorType.COIL: 71     # Blue
         }
         
-        # Current animated state per generator: {gen: {"x": 0, "scale": 1.0, "alpha": 1.0}}
+        # Current animated state per generator: {gen: {"y": 0, "scale": 1.0, "alpha": 1.0}}
         self.state = {}
         for gen in self.generators:
-            self.state[gen] = {"y": SCREEN_HEIGHT / 2, "scale": 0.5, "dim": True}
-
-        self.char_cache = {}
-
-    def get_char_pixels(self, char, color):
-        cache_key = (char, color)
-        if cache_key not in self.char_cache:
-            pyxel.images[2].rect(0, 0, 4, 6, 0)
-            pyxel.images[2].text(0, 0, char, color)
-            pixels = []
-            for j in range(6):
-                for i in range(4):
-                    if pyxel.images[2].pget(i, j) == color:
-                        pixels.append((i, j))
-            self.char_cache[cache_key] = pixels
-        return self.char_cache[cache_key]
-
-    def draw_text_scaled(self, x, y, text, color, scale):
-        scale = max(1, int(scale))
-        for idx, char in enumerate(text):
-            char_pixels = self.get_char_pixels(char, color)
-            char_x = x + idx * 4 * scale
-            for dx, dy in char_pixels:
-                pyxel.rect(
-                    char_x + dx * scale,
-                    y + dy * scale,
-                    scale,
-                    scale,
-                    color,
-                )
+            self.state[gen] = {"y": SCREEN_HEIGHT / 2, "scale": 0.5, "dim": True, "level": 0.0}
 
     def update(self):
         if not self.game_state:
             return
+
+        # Smoothly animate energy level transitions
+        levels = self.game_state.current_session.energy_levels if self.game_state.current_session else {}
+        for gen in self.generators:
+            target_level = levels.get(gen, 0.0)
+            diff = target_level - self.state[gen]["level"]
+            if abs(diff) < 0.1:
+                self.state[gen]["level"] = target_level
+            else:
+                self.state[gen]["level"] += diff * 0.1
 
         active_gen = self.game_state.active_generator
         
@@ -73,16 +54,9 @@ class GaugeManager:
             if dist > 2: dist -= 4
             if dist < -2: dist += 4
             
-            # Vertical cylinder math:
-            # Active is at dist=0 -> center y.
-            # dist = 1 -> bottom (unselected), dist = -1 -> top (unselected)
-            # dist = 2 or -2 -> hidden behind
-            
-            # Keep all 3 cleanly on the screen
             base_y = SCREEN_HEIGHT - (110 * SCALE_Y)
             target_y = base_y + (dist * 75 * SCALE_Y)
             
-            # Hide the 4th one (dist == 2 or -2)
             if abs(dist) >= 2:
                 target_scale = 0.0
             else:
@@ -94,11 +68,12 @@ class GaugeManager:
             self.state[gen]["scale"] += (target_scale - self.state[gen]["scale"]) * 0.1
             self.state[gen]["dim"] = target_dim
 
-    def draw(self):
+    def draw(self, renderer, fonts, frame_count):
         if not self.game_state or not self.game_state.current_session:
             return
             
-        levels = self.game_state.current_session.energy_levels
+        # Set blend mode to alpha for UI layout
+        renderer.set_blend_mode("alpha")
         
         # Draw background gauges first, then foreground
         for pass_num in [0, 1]:
@@ -117,38 +92,55 @@ class GaugeManager:
                 x = (SCREEN_WIDTH / 2) - (w / 2)
                 y = st["y"] - (h / 2)
                 
-                border_col = 123 if st["dim"] else 121
-                fill_col = self.colors[gen]
+                border_col_idx = 123 if st["dim"] else 121
+                fill_col_idx = self.colors[gen]
                 
-                fill_pct = min(1.0, levels.get(gen, 0.0) / MAX_ENERGY_GAUGE)
+                fill_pct = min(1.0, st["level"] / MAX_ENERGY_GAUGE)
 
                 # Add vibration and flashing effect when full
                 is_full = fill_pct >= 1.0
                 if is_full:
                     x += random.randint(-3, 3)
                     y += random.randint(-3, 3)
-                    if (pyxel.frame_count % 10) < 5:
-                        fill_col = self.colors[gen] + 5  # Use pastel variant of the main color
-                        border_col = fill_col
+                    if (frame_count % 10) < 5:
+                        fill_col_idx = self.colors[gen] + 5  # Use pastel variant of the main color
+                        border_col_idx = fill_col_idx
 
                 # Draw outer glow / shadow
                 if not st["dim"] or is_full:
-                    pyxel.rectb(int(x-1), int(y-1), int(w+2), int(h+2), fill_col)
+                    # Renders a slightly larger outline in main/pastel color
+                    outer_col = palette.get_color(fill_col_idx)
+                    renderer.draw_rect(x-1, y-1, w+2, h+2, outer_col, fill=False)
                 
                 # Draw border
-                pyxel.rectb(int(x), int(y), int(w), int(h), border_col)
-                pyxel.rect(int(x+1), int(y+1), int(w-2), int(h-2), 0) # clear background
+                border_col = palette.get_color(border_col_idx)
+                renderer.draw_rect(x, y, w, h, border_col, fill=False)
+                
+                # Clear background (draw black rectangle inside)
+                renderer.draw_rect(x+1, y+1, w-2, h-2, (0.0, 0.0, 0.0, 1.0), fill=True)
                 
                 # Draw fill
                 if fill_pct > 0:
-                    pyxel.rect(int(x + 2), int(y + 2), int((w - 4) * fill_pct), int(h - 4), fill_col)
+                    fill_col = palette.get_color(fill_col_idx)
+                    renderer.draw_rect(x + 2, y + 2, (w - 4) * fill_pct, h - 4, fill_col, fill=True)
                 
                 # Draw label
                 text = f"{gen.name} - {int(fill_pct*100)}%"
-                text_col = 122 if st["dim"] and not is_full else 121 # 121 is pure white
-                if is_full and (pyxel.frame_count % 10) < 5:
-                    text_col = self.colors[gen] + 5 # Flash pastel variant
+                text_col_idx = 122 if st["dim"] and not is_full else 121
+                if is_full and (frame_count % 10) < 5:
+                    text_col_idx = self.colors[gen] + 5 # Flash pastel variant
 
-                # Draw text above the gauge (significantly larger)
-                text_scale = st["scale"] * 3.0
-                self.draw_text_scaled(x + 10 * SCALE_X, y - 25 * SCALE_Y * st["scale"], text, text_col, text_scale)
+                text_col = palette.get_color(text_col_idx)
+                
+                # Select font size based on scale
+                if st["scale"] > 0.8:
+                    font = fonts["large"]
+                    text_y = y - 48 * SCALE_Y
+                else:
+                    font = fonts["small"]
+                    text_y = y - 30 * SCALE_Y
+                
+                renderer.draw_text(x + 10 * SCALE_X, text_y, text, font, text_col)
+                
+        # Reset blend mode back to additive for particles
+        renderer.set_blend_mode("additive")

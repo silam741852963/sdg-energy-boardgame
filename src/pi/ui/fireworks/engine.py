@@ -1,9 +1,9 @@
-import pyxel
+import pygame
+import moderngl
 import random
 import copy
 import time
 import os
-
 
 class FPSTracker:
     def __init__(self):
@@ -43,20 +43,21 @@ class CPUUsageTracker:
 from .config import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
-    CUSTOM_PALETTE,
     FULLSCREEN,
     COLOR_MAP,
     SCALE_X,
     SCALE_Y,
 )
 from .drones import DroneManager
-from .lighting import LightingSystem, bake_particle_sprites
+from .lighting import LightingSystem
 from .gui import ControlPanel
 from .audio import AudioSystem
 from .firework import FireworkManager
 from .gauges import GaugeManager
 from .scripting import ScriptManager
 from .particles import Particle
+from .renderer import Renderer
+from . import palette
 
 from config import GeneratorType
 
@@ -66,18 +67,55 @@ class FireworkEngine:
         self.is_mock = is_mock
         self.audio = AudioSystem()
 
-        pyxel.init(SCREEN_WIDTH, SCREEN_HEIGHT, fps=60, title="3D Fireworks")
-
+        # Initialize Pygame and ModernGL
+        pygame.init()
+        pygame.font.init()
+        
+        flags = pygame.OPENGL | pygame.DOUBLEBUF
         if FULLSCREEN:
-            pyxel.fullscreen(True)
+            flags |= pygame.FULLSCREEN
+            # Get actual desktop size for native fullscreen to prevent centering/scaling issues
+            info = pygame.display.Info()
+            init_w = info.current_w if info.current_w > 0 else SCREEN_WIDTH
+            init_h = info.current_h if info.current_h > 0 else SCREEN_HEIGHT
+        else:
+            init_w, init_h = SCREEN_WIDTH, SCREEN_HEIGHT
+        
+        self.screen = pygame.display.set_mode((init_w, init_h), flags)
+        pygame.display.set_caption("3D Fireworks")
+        
+        # Hide OS cursor to prevent scaling/position mismatches and support custom retro cursor
+        pygame.mouse.set_visible(False)
+        self.mouse_pos = (960, 540)
+        
+        self.ctx = moderngl.create_context()
+        self.renderer = Renderer(self.ctx)
+        self.clock = pygame.time.Clock()
+        self.running = True
+        self.frame_count = 0
+        
+        # Load monospace system fonts for a retro/game/programming vibe
+        font_names = [
+            "jetbrainsmononerdfont",
+            "jetbrainsmononerdfontmono",
+            "caskaydiamononerdfont",
+            "caskaydiamononerdfontmono",
+            "monospace",
+            "liberationmono",
+            "dejavusansmono",
+            "courier"
+        ]
+        # Load fonts at their actual native target size (no longer halved/scaled 2.0x)
+        # to ensure crisp, clean outlines of all retro characters and symbols.
+        self.fonts = {
+            "small": pygame.font.SysFont(font_names, int(18 * SCALE_Y)),
+            "medium": pygame.font.SysFont(font_names, int(24 * SCALE_Y)),
+            "large": pygame.font.SysFont(font_names, int(36 * SCALE_Y)),
+            "xlarge": pygame.font.SysFont(font_names, int(48 * SCALE_Y)),
+        }
 
-        pyxel.colors[: len(CUSTOM_PALETTE)] = CUSTOM_PALETTE
-        bake_particle_sprites()
-        pyxel.mouse(True)
-
-        # --- NEW: Hook up the modular Drone Manager ---
+        # Hook up the modular Drone Manager
         self.drone_manager = DroneManager()
-
         self.lighting = LightingSystem()
         self.gui = ControlPanel()
 
@@ -116,28 +154,115 @@ class FireworkEngine:
             if hasattr(self, 'last_seen_gen_after_completion'):
                 delattr(self, 'last_seen_gen_after_completion')
 
-    def update(self):
-        if pyxel.btnp(pyxel.KEY_Q):
-            pyxel.quit()
-
-        if pyxel.btnp(pyxel.KEY_M):
-            self.show_metrics = not self.show_metrics
-
+    def update(self, events):
+        self.frame_count += 1
         self.fps_tracker.update()
         self.cpu_tracker.update()
 
+        # Get actual logical window size from Pygame
+        try:
+            win_w, win_h = pygame.display.get_window_size()
+        except AttributeError:
+            win_w, win_h = self.screen.get_size()
+
+        # 1. Map raw mouse coordinates in logical window space
+        raw_mx, raw_my = pygame.mouse.get_pos()
+
+        # 2. Calculate aspect ratio fitting in logical space (matching renderer.py end_frame)
+        target_aspect = 1920.0 / 1080.0
+        win_aspect = float(win_w) / float(win_h) if win_h > 0 else target_aspect
+        
+        if win_aspect > target_aspect:
+            # Pillarbox
+            w_fit = win_h * target_aspect
+            h_fit = win_h
+            offset_x = (win_w - w_fit) / 2.0
+            offset_y = 0.0
+        else:
+            # Letterbox
+            w_fit = win_w
+            h_fit = w_fit / target_aspect
+            offset_x = 0.0
+            offset_y = (win_h - h_fit) / 2.0
+            
+        scale_x = 1920.0 / w_fit if w_fit > 0 else 1.0
+        scale_y = 1080.0 / h_fit if h_fit > 0 else 1.0
+
+        # 3. Translate to 1920x1080 virtual space
+        mx = (raw_mx - offset_x) * scale_x
+        my = (raw_my - offset_y) * scale_y
+        mouse_pos = (int(mx), int(my))
+        self.mouse_pos = mouse_pos
+
+        mouse_clicked_left = False
+        click_pos = mouse_pos  # Fallback to current mouse position
+        
+        key_r_pressed = False
+        key_d_pressed = False
+        key_c_pressed = False
+        key_right_pressed = False
+        key_left_pressed = False
+        key_1_pressed = False
+        key_2_pressed = False
+        key_3_pressed = False
+        key_4_pressed = False
+        key_0_pressed = False
+        key_space_pressed = False
+        key_p_pressed = False
+
+        for event in events:
+            if event.type == pygame.QUIT:
+                self.running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    mouse_clicked_left = True
+                    click_x = (event.pos[0] - offset_x) * scale_x
+                    click_y = (event.pos[1] - offset_y) * scale_y
+                    click_pos = (int(click_x), int(click_y))
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    self.running = False
+                elif event.key == pygame.K_m:
+                    self.show_metrics = not self.show_metrics
+                elif event.key == pygame.K_r:
+                    key_r_pressed = True
+                elif event.key == pygame.K_d:
+                    key_d_pressed = True
+                elif event.key == pygame.K_c:
+                    key_c_pressed = True
+                elif event.key == pygame.K_RIGHT:
+                    key_right_pressed = True
+                elif event.key == pygame.K_LEFT:
+                    key_left_pressed = True
+                elif event.key == pygame.K_1:
+                    key_1_pressed = True
+                elif event.key == pygame.K_2:
+                    key_2_pressed = True
+                elif event.key == pygame.K_3:
+                    key_3_pressed = True
+                elif event.key == pygame.K_4:
+                    key_4_pressed = True
+                elif event.key == pygame.K_0:
+                    key_0_pressed = True
+                elif event.key == pygame.K_SPACE:
+                    key_space_pressed = True
+                elif event.key == pygame.K_p:
+                    key_p_pressed = True
+
         if self.is_mock:
-            gui_captured_mouse = self.gui.update()
+            gui_captured_mouse = self.gui.update(events, click_pos, mouse_clicked_left)
         else:
             gui_captured_mouse = False
+
+
 
         # --- ATTRACT MODE LOGIC ---
         interaction_detected = False
         if self.game_state and self.game_state.active_generator is not None:
             interaction_detected = True
-        elif self.is_mock and (gui_captured_mouse or pyxel.btn(pyxel.MOUSE_BUTTON_LEFT)):
+        elif self.is_mock and (gui_captured_mouse or pygame.mouse.get_pressed()[0]):
             interaction_detected = True
-        elif pyxel.btnp(pyxel.KEY_1) or pyxel.btnp(pyxel.KEY_2) or pyxel.btnp(pyxel.KEY_3) or pyxel.btnp(pyxel.KEY_4) or pyxel.btnp(pyxel.KEY_0):
+        elif key_1_pressed or key_2_pressed or key_3_pressed or key_4_pressed or key_0_pressed:
             interaction_detected = True
 
         if interaction_detected:
@@ -163,7 +288,7 @@ class FireworkEngine:
 
         # --- HARDWARE STATE SYNC ---
         if self.game_state:
-            if pyxel.btnp(pyxel.KEY_R):
+            if key_r_pressed:
                 self._restart_game()
                 
             active_gen = self.game_state.active_generator
@@ -190,27 +315,25 @@ class FireworkEngine:
                 target_pattern = 4
                 
             if self.drone_manager.current_index != target_pattern:
-                # Play sound when transitioning to a different gauge/pattern (ignore startup)
                 if self.drone_manager.current_index != -1:
                     self.audio.play_switch_sound()
                 self.drone_manager.transition_to_pattern(target_pattern, self.gui, self.audio)
 
             if self.is_mock:
-                # Keyboard simulation for testing
-                if pyxel.btnp(pyxel.KEY_1):
+                if key_1_pressed:
                     self.game_state.set_active_generator(GeneratorType.WIND)
-                elif pyxel.btnp(pyxel.KEY_2):
+                elif key_2_pressed:
                     self.game_state.set_active_generator(GeneratorType.SOLAR)
-                elif pyxel.btnp(pyxel.KEY_3):
+                elif key_3_pressed:
                     self.game_state.set_active_generator(GeneratorType.PIEZO)
-                elif pyxel.btnp(pyxel.KEY_4):
+                elif key_4_pressed:
                     self.game_state.set_active_generator(GeneratorType.COIL)
-                elif pyxel.btnp(pyxel.KEY_0):
+                elif key_0_pressed:
                     self.game_state.set_active_generator(None)
-                elif pyxel.btnp(pyxel.KEY_SPACE):
+                elif key_space_pressed:
                     if self.game_state.active_generator:
                         self.game_state.add_energy(self.game_state.active_generator, 10.0)
-                elif pyxel.btnp(pyxel.KEY_P):
+                elif key_p_pressed:
                     self.game_state.mock_paused = not self.game_state.mock_paused
 
             # Check each gauge independently to trigger fireworks
@@ -239,23 +362,38 @@ class FireworkEngine:
 
         # --- KEYBOARD SHORTCUTS FOR DRONE TRANSITIONS (Manual) ---
         if not self.game_state and self.is_mock:
-            if pyxel.btnp(pyxel.KEY_D):
+            if key_d_pressed:
                 self.drone_manager.transition_to_pattern(0, self.gui, self.audio)
-            if pyxel.btnp(pyxel.KEY_RIGHT):
+            if key_right_pressed:
                 self.drone_manager.next_pattern(self.gui, self.audio)
-            if pyxel.btnp(pyxel.KEY_LEFT):
+            if key_left_pressed:
                 self.drone_manager.prev_pattern(self.gui, self.audio)
-            if pyxel.btnp(pyxel.KEY_C):
+            if key_c_pressed:
                 self.drone_manager.clear_all(self.audio)
 
-        if self.is_mock and pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and not gui_captured_mouse:
-            if self.gui.visible:
-                custom_spec = copy.copy(self.gui.spec)
-                self.firework_manager.launch(
-                    pyxel.mouse_x, pyxel.mouse_y, forced_spec=custom_spec
-                )
-            else:
-                self.firework_manager.launch(pyxel.mouse_x, pyxel.mouse_y)
+        if self.is_mock and mouse_clicked_left and not gui_captured_mouse:
+            # Check if we clicked on any gauge to set it active
+            clicked_gauge = False
+            for gen in self.gauge_manager.generators:
+                st = self.gauge_manager.state[gen]
+                if st["scale"] > 0.1:
+                    w = 1200 * SCALE_X * st["scale"]
+                    h = 60 * SCALE_Y * st["scale"]
+                    x = (SCREEN_WIDTH / 2) - (w / 2)
+                    y = st["y"] - (h / 2)
+                    if x <= click_pos[0] <= x + w and y <= click_pos[1] <= y + h:
+                        self.game_state.set_active_generator(gen)
+                        clicked_gauge = True
+                        break
+
+            if not clicked_gauge:
+                if self.gui.visible:
+                    custom_spec = copy.copy(self.gui.spec)
+                    self.firework_manager.launch(
+                        click_pos[0], click_pos[1], forced_spec=custom_spec
+                    )
+                else:
+                    self.firework_manager.launch(click_pos[0], click_pos[1])
 
         is_completed = self.game_state and self.game_state.current_session and self.game_state.current_session.completed
 
@@ -273,7 +411,6 @@ class FireworkEngine:
             )
 
         self.lighting.update()
-
         self.firework_manager.update()
 
         # --- UPDATE DRONES ---
@@ -283,7 +420,7 @@ class FireworkEngine:
             active_gen = self.game_state.active_generator
             fill_pct = min(1.0, self.game_state.current_session.energy_levels.get(active_gen, 0.0) / MAX_ENERGY_GAUGE)
 
-        self.drone_manager.update(fill_pct)
+        self.drone_manager.update(self.frame_count, fill_pct)
         
         # --- UPDATE GAUGES / DRAIN LOGIC ---
         if self.game_state:
@@ -294,72 +431,50 @@ class FireworkEngine:
         self.script_manager.update()
 
     def draw(self):
-        self.lighting.draw_background()
-        self.lighting.draw_reflections()
+        # 1. Start frame (binds offscreen framebuffer and sets viewport to 1920x1080)
+        self.renderer.start_frame()
 
-        self.firework_manager.draw()
+        # 2. Clear background & reflections
+        self.lighting.draw_background(self.renderer)
+        self.lighting.draw_reflections(self.renderer)
 
-        # --- DRAW DRONES ---
-        self.drone_manager.draw()
+        # 3. Draw fireworks (using instanced renderer)
+        self.firework_manager.draw(self.renderer, self.frame_count)
+
+        # 4. Draw drones
+        self.drone_manager.draw(self.renderer, self.fonts["small"], self.frame_count)
         
-        # --- DRAW GAUGES ---
+        # 5. Draw gauges
         if not self.in_attract_mode:
-            self.gauge_manager.draw()
+            self.gauge_manager.draw(self.renderer, self.fonts, self.frame_count)
 
+        # 6. Draw laboratory GUI
         if self.is_mock and not self.in_attract_mode:
-            self.gui.draw()
+            self.gui.draw(self.renderer, self.fonts)
+            self.draw_cursor()
 
+        # 7. Metrics overlay
         if self.show_metrics:
             mw = int(250 * SCALE_X)
             mh = int(185 * SCALE_Y)
             mx = SCREEN_WIDTH - mw - int(20 * SCALE_X)
             my = int(20 * SCALE_Y)
-            pyxel.rect(mx, my, mw, mh, 0)
-            pyxel.rectb(mx, my, mw, mh, 122)
+            
+            self.renderer.set_blend_mode("alpha")
+            self.renderer.draw_rect(mx, my, mw, mh, (0.0, 0.0, 0.0, 0.95), fill=True)
+            self.renderer.draw_rect(mx, my, mw, mh, palette.get_color(122), fill=False)
 
             text_offset_x = int(15 * SCALE_X)
-            self.gui.draw_text_scaled(
-                mx + text_offset_x,
-                my + int(15 * SCALE_Y),
-                "[ SYSTEM METRICS ]",
-                121,
-            )
-            self.gui.draw_text_scaled(
-                mx + text_offset_x,
-                my + int(38 * SCALE_Y),
-                f"FPS: {self.fps_tracker.fps:.1f}",
-                121,
-            )
-            self.gui.draw_text_scaled(
-                mx + text_offset_x,
-                my + int(60 * SCALE_Y),
-                f"CPU: {self.cpu_tracker.cpu_usage:.1f}%",
-                121,
-            )
-            self.gui.draw_text_scaled(
-                mx + text_offset_x,
-                my + int(82 * SCALE_Y),
-                f"RAM: {self.get_memory_usage():.1f} MB",
-                121,
-            )
-            self.gui.draw_text_scaled(
-                mx + text_offset_x,
-                my + int(104 * SCALE_Y),
-                f"Particles: {len(self.firework_manager.particles)}",
-                121,
-            )
-            self.gui.draw_text_scaled(
-                mx + text_offset_x,
-                my + int(126 * SCALE_Y),
-                f"Drones: {len(self.drone_manager.drones)}",
-                121,
-            )
-            self.gui.draw_text_scaled(
-                mx + text_offset_x,
-                my + int(148 * SCALE_Y),
-                f"Pool: {len(Particle._pool)}/{Particle._POOL_MAX}",
-                121,
-            )
+            c_white = palette.get_color(121)
+            
+            self.renderer.draw_text(mx + text_offset_x, my + int(15 * SCALE_Y), "[ SYSTEM METRICS ]", self.fonts["small"], c_white)
+            self.renderer.draw_text(mx + text_offset_x, my + int(38 * SCALE_Y), f"FPS: {self.fps_tracker.fps:.1f}", self.fonts["small"], c_white)
+            self.renderer.draw_text(mx + text_offset_x, my + int(60 * SCALE_Y), f"CPU: {self.cpu_tracker.cpu_usage:.1f}%", self.fonts["small"], c_white)
+            self.renderer.draw_text(mx + text_offset_x, my + int(82 * SCALE_Y), f"RAM: {self.get_memory_usage():.1f} MB", self.fonts["small"], c_white)
+            self.renderer.draw_text(mx + text_offset_x, my + int(104 * SCALE_Y), f"Particles: {len(self.firework_manager.particles)}", self.fonts["small"], c_white)
+            self.renderer.draw_text(mx + text_offset_x, my + int(126 * SCALE_Y), f"Drones: {len(self.drone_manager.drones)}", self.fonts["small"], c_white)
+            self.renderer.draw_text(mx + text_offset_x, my + int(148 * SCALE_Y), f"Pool: {len(self.firework_manager.particle_system.free_indices)}/{self.firework_manager.particle_system.max_particles}", self.fonts["small"], c_white)
+            self.renderer.set_blend_mode("additive")
 
         is_completed = self.game_state and self.game_state.current_session and self.game_state.current_session.completed
         fireworks_done = len(self.script_manager.active_scripts) == 0 and len(self.firework_manager.shells) == 0 and len(self.firework_manager.particles) == 0
@@ -371,48 +486,119 @@ class FireworkEngine:
             ox = (SCREEN_WIDTH - overlay_w) // 2
             oy = (SCREEN_HEIGHT - overlay_h) // 2
             
-            pyxel.rect(ox, oy, overlay_w, overlay_h, 0)
-            pyxel.rectb(ox, oy, overlay_w, overlay_h, 122)
+            self.renderer.set_blend_mode("alpha")
+            self.renderer.draw_rect(ox, oy, overlay_w, overlay_h, (0.0, 0.0, 0.0, 0.95), fill=True)
+            self.renderer.draw_rect(ox, oy, overlay_w, overlay_h, palette.get_color(122), fill=False)
 
-            self.gui.draw_text_scaled(
-                ox + int(150 * SCALE_X),
+            # Center title: "=== GENERATOR CHARGED ==="
+            title_text = "=== GENERATOR CHARGED ==="
+            font_med = self.fonts["medium"]
+            tw, _ = font_med.size(title_text)
+            tx = ox + (overlay_w - tw) // 2
+            self.renderer.draw_text(
+                tx,
                 oy + int(40 * SCALE_Y),
-                "=== GENERATOR CHARGED ===",
-                51,
+                title_text,
+                font_med,
+                palette.get_color(51),
             )
             
-            self.gui.draw_text_scaled(
-                ox + int(120 * SCALE_X),
+            # Center subtitle: "--- TOP 5 FASTEST STUDENTS ---"
+            sub_text = "--- TOP 5 FASTEST STUDENTS ---"
+            font_small = self.fonts["small"]
+            sw, _ = font_small.size(sub_text)
+            sx = ox + (overlay_w - sw) // 2
+            self.renderer.draw_text(
+                sx,
                 oy + int(100 * SCALE_Y),
-                "--- TOP 5 FASTEST STUDENTS ---",
-                121,
+                sub_text,
+                font_small,
+                palette.get_color(121),
             )
+            
+            # Center leaderboard entries as a column block
+            col1_x = ox + int(130 * SCALE_X)
+            col2_x = ox + int(370 * SCALE_X)
             
             for i, rank in enumerate(self.game_state.rankings[:5]):
                 y_pos = oy + int(140 * SCALE_Y) + (i * int(40 * SCALE_Y))
-                self.gui.draw_text_scaled(
-                    ox + int(80 * SCALE_X),
+                self.renderer.draw_text(
+                    col1_x,
                     y_pos,
                     f"{i+1}. {rank.player_name}",
-                    122,
+                    font_small,
+                    palette.get_color(122),
                 )
-                self.gui.draw_text_scaled(
-                    ox + int(400 * SCALE_X),
+                self.renderer.draw_text(
+                    col2_x,
                     y_pos,
                     f"{rank.time_taken:.2f}s",
-                    51,
+                    font_small,
+                    palette.get_color(51),
                 )
                 
-            self.gui.draw_text_scaled(
-                ox + int(140 * SCALE_X),
+            # Center bottom text: "[ PRESS 'R' TO RESTART CHALLENGE ]"
+            restart_text = "[ PRESS 'R' TO RESTART CHALLENGE ]"
+            rw, _ = font_small.size(restart_text)
+            rx = ox + (overlay_w - rw) // 2
+            self.renderer.draw_text(
+                rx,
                 oy + overlay_h - int(60 * SCALE_Y),
-                "[ PRESS 'R' TO RESTART CHALLENGE ]",
-                121,
+                restart_text,
+                font_small,
+                palette.get_color(121),
             )
+            self.renderer.set_blend_mode("additive")
 
+        # 8. End frame (blits the offscreen framebuffer to the centered screen viewport)
+        try:
+            screen_w, screen_h = pygame.display.get_window_size()
+        except AttributeError:
+            screen_w, screen_h = self.screen.get_size()
+        self.renderer.end_frame(screen_w, screen_h)
+
+    def draw_cursor(self):
+        if not pygame.mouse.get_focused():
+            return
+        cx, cy = self.mouse_pos
+        c_white = palette.get_color(121)
+        c_border = palette.get_color(123)
+        
+        # Set blend mode to alpha for UI layout
+        self.renderer.set_blend_mode("alpha")
+        
+        # Draw a retro pixel arrow cursor
+        # Outer border
+        self.renderer.draw_line(cx, cy, cx, cy + 15, c_border)
+        self.renderer.draw_line(cx, cy, cx + 10, cy + 10, c_border)
+        self.renderer.draw_line(cx, cy + 15, cx + 3, cy + 12, c_border)
+        self.renderer.draw_line(cx + 10, cy + 10, cx + 5, cy + 10, c_border)
+        self.renderer.draw_line(cx + 3, cy + 12, cx + 5, cy + 17, c_border)
+        self.renderer.draw_line(cx + 5, cy + 10, cx + 7, cy + 15, c_border)
+        self.renderer.draw_line(cx + 5, cy + 17, cx + 7, cy + 15, c_border)
+        
+        # Inner Fill
+        for i in range(1, 10):
+            self.renderer.draw_line(cx + 1, cy + i, cx + i - 1, cy + i, c_white)
+        self.renderer.draw_line(cx + 1, cy + 10, cx + 3, cy + 10, c_white)
+        self.renderer.draw_line(cx + 1, cy + 11, cx + 2, cy + 11, c_white)
+        self.renderer.draw_line(cx + 2, cy + 12, cx + 3, cy + 12, c_white)
+        self.renderer.draw_line(cx + 3, cy + 13, cx + 4, cy + 13, c_white)
+        self.renderer.draw_line(cx + 4, cy + 14, cx + 5, cy + 14, c_white)
+        
+        self.renderer.set_blend_mode("additive")
 
     def run(self):
-        pyxel.run(self.update, self.draw)
+        while self.running:
+            events = pygame.event.get()
+            self.update(events)
+            if not self.running:
+                break
+            self.draw()
+            pygame.display.flip()
+            self.clock.tick(60)
+
+        pygame.quit()
 
 
 def run():

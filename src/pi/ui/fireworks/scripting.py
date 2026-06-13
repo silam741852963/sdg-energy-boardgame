@@ -16,8 +16,32 @@ class ScriptManager:
         with open(json_path, 'r') as f:
             data = json.load(f)
             
-        # Sort events by time just in case
-        events = sorted(data.get("events", []), key=lambda e: e.get("time", 0.0))
+        original_events = data.get("events", [])
+        events = []
+        
+        # Check if this is one of the 4 main shows (wind, solar, piezo, coil)
+        filename = os.path.basename(json_path).lower()
+        is_main_show = any(name in filename for name in ["wind", "solar", "piezo", "coil"])
+        
+        from .config import COLORS
+        import random
+        
+        for ev in original_events:
+            events.append(ev)
+            if is_main_show:
+                # Spawn 1 extra clone event for each event (doubling the show density)
+                for _ in range(1):
+                    clone = ev.copy()
+                    clone["time"] = max(0.0, ev.get("time", 0.0) + random.uniform(-0.4, 0.4))
+                    clone["x"] = max(100, min(1820, ev.get("x", 960) + random.randint(-200, 200)))
+                    clone["y"] = max(100, min(900, ev.get("y", 600) + random.randint(-120, 120)))
+                    # 40% chance to cycle to a new random color for more variety
+                    if random.random() < 0.4:
+                        clone["color"] = random.choice(COLORS)
+                    events.append(clone)
+            
+        # Sort events by time
+        events = sorted(events, key=lambda e: e.get("time", 0.0))
         
         self.active_scripts.append({
             "events": events,

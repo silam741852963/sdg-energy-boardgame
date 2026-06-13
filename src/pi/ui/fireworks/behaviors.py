@@ -1,6 +1,6 @@
 import math
 import random
-import pyxel
+from . import palette
 
 class UpdateBehavior:
     def update(self, particle):
@@ -25,29 +25,32 @@ class WaterfallBehavior(UpdateBehavior):
 
 
 class DrawBehavior:
-    def pre_draw(self, particle):
+    def pre_draw_gpu(self, particle, instance_data, frame_count):
         """Returns True if the draw is completely handled or should be skipped."""
         return False
         
-    def post_draw(self, particle):
+    def post_draw_gpu(self, particle, instance_data, frame_count):
         pass
 
 class CrackleBehavior(DrawBehavior):
-    def pre_draw(self, particle):
+    def pre_draw_gpu(self, particle, instance_data, frame_count):
         if particle.age > particle.life * 0.8:
-            pyxel.circ(
-                particle.px + random.randint(-3, 3), 
-                particle.py + random.randint(-3, 3), 
-                1, 121
-            )
+            cx = particle.px + random.randint(-3, 3)
+            cy = particle.py + random.randint(-3, 3)
+            color = palette.get_color(121)
+            instance_data.append((
+                cx, cy, 3.0 * particle.factor, 
+                color[0], color[1], color[2], 
+                particle.get_intensity()
+            ))
             return True
         elif particle.age > particle.life * 0.5:
             return True
         return False
 
 class FlickerBehavior(DrawBehavior):
-    def pre_draw(self, particle):
-        if (pyxel.frame_count + particle.flicker_offset) % 6 < 3:
+    def pre_draw_gpu(self, particle, instance_data, frame_count):
+        if (frame_count + particle.flicker_offset) % 6 < 3:
             return True
         return False
 
@@ -57,7 +60,7 @@ class TrailBehavior(DrawBehavior):
         self.glitter = glitter
         self.trail_len = trail_len
 
-    def post_draw(self, particle):
+    def post_draw_gpu(self, particle, instance_data, frame_count):
         hist_len = len(particle.history)
         if hist_len < 2:
             return
@@ -66,37 +69,40 @@ class TrailBehavior(DrawBehavior):
         intensity = particle.get_intensity()
         skip_scatter = intensity < 0.3 or particle.factor < 0.4
             
-        thickness = int(particle.spec.radius)
+        thickness = particle.spec.radius
 
-        for i in range(1, hist_len):
-            px1, py1, factor1 = particle.history[i - 1]
-            px2, py2, factor2 = particle.history[i]
-
-            if factor1 <= 0 or factor2 <= 0:
+        for i in range(hist_len):
+            hx, hy, hfactor = particle.history[i]
+            if hfactor <= 0:
                 continue
                 
-            trail_col = particle.get_shade(factor1 - 0.3)
+            # Fades out towards the tail (earlier elements are at index 0)
+            alpha_mult = 0.15 + 0.85 * (i / (hist_len - 1 if hist_len > 1 else 1))
+            size_mult = 0.5 + 0.5 * (i / (hist_len - 1 if hist_len > 1 else 1))
+            
+            trail_col_idx = 121 if particle.is_palm_tail_shell else particle.get_shade(hfactor - 0.3)
+            color = palette.get_color(trail_col_idx)
+            
+            size = max(2.0, hfactor * thickness * 8.0 * size_mult)
+            alpha = intensity * alpha_mult
+            
+            instance_data.append((hx, hy, size, color[0], color[1], color[2], alpha))
             
             if not skip_scatter:
-                scatter_radius = thickness + 3
+                scatter_radius = (thickness + 3) * hfactor
 
                 if random.random() < 0.4:
-                    sx = px1 + random.uniform(-scatter_radius, scatter_radius)
-                    sy = py1 + random.uniform(-scatter_radius, scatter_radius)
-                    pyxel.pset(int(sx), int(sy), trail_col)
+                    sx = hx + random.uniform(-scatter_radius, scatter_radius)
+                    sy = hy + random.uniform(-scatter_radius, scatter_radius)
+                    c = palette.get_color(trail_col_idx)
+                    instance_data.append((sx, sy, 3.0 * hfactor, c[0], c[1], c[2], alpha * 0.7))
 
                 if random.random() < 0.08:
-                    sx = px1 + random.uniform(-scatter_radius - 2, scatter_radius + 2)
-                    sy = py1 + random.uniform(-scatter_radius - 2, scatter_radius + 2)
-                    pyxel.pset(int(sx), int(sy), 121)
+                    sx = hx + random.uniform(-scatter_radius - 2, scatter_radius + 2)
+                    sy = hy + random.uniform(-scatter_radius - 2, scatter_radius + 2)
+                    c = palette.get_color(121)
+                    instance_data.append((sx, sy, 3.0 * hfactor, c[0], c[1], c[2], alpha * 0.7))
 
             if self.glitter and random.random() < 0.4:
-                pyxel.pset(int(px1), int(py1), 121)
-            else:
-                if particle.is_shell and self.palm_tail:
-                    t_width = thickness + 1
-                    for w in range(-t_width, t_width + 1):
-                        pyxel.line(int(px1 + w), int(py1), int(px2 + w), int(py2), trail_col)
-                else:
-                    for w in range(-thickness, thickness + 1):
-                        pyxel.line(int(px1 + w), int(py1), int(px2 + w), int(py2), trail_col)
+                c = palette.get_color(121)
+                instance_data.append((hx, hy, 3.0 * hfactor, c[0], c[1], c[2], alpha))
