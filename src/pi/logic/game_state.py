@@ -44,7 +44,7 @@ class GameState:
         ):
             self.active_generator = None
 
-        # Auto drain each gauge after 30s of no increase
+        # Auto drain each gauge after 55s of no increase
         if not self.current_session:
             return
 
@@ -53,7 +53,7 @@ class GameState:
             last_known = self._last_gauge_values.get(gen, 0.0)
 
             if current_val > last_known:
-                # Value went up — reset the 30s inactivity clock for this gauge
+                # Value went up — reset the 55s inactivity clock for this gauge
                 self._last_increase_time[gen] = current_time
                 self._last_gauge_values[gen] = current_val
             elif current_val < last_known:
@@ -61,10 +61,10 @@ class GameState:
                 self._last_gauge_values[gen] = current_val
             # else: value unchanged — do nothing with _last_gauge_values
 
-            # Only drain if gauge is above 0 AND the inactivity timer has started AND 30s have passed
+            # Only drain if gauge is above 0 AND the inactivity timer has started AND 55s have passed
             if gen in self._last_increase_time and current_val > 0.0:
                 idle_secs = current_time - self._last_increase_time[gen]
-                if idle_secs > 30.0:
+                if idle_secs > 55.0:
                     new_val = max(0.0, current_val - (5.0 * dt))
                     self.current_session.energy_levels[gen] = new_val
                     self._last_gauge_values[gen] = new_val

@@ -208,7 +208,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.radius = 1.5
         spec.intensity = 2.0
         spec.launch_strategy = SpreadLaunch()
-        spec.draw_behaviors.append(TrailBehavior(palm_tail=True, trail_len=25))
+        spec.draw_behaviors.append(TrailBehavior(palm_tail=True, trail_len=8))
     elif fw_type == "Crossette":
         # Crossette: splits into double the shooting stars
         spec.particle_count = 40
@@ -228,7 +228,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.intensity = 1.5
         spec.multicolor = len(COLORS)
         spec.launch_strategy = MulticolorSpreadLaunch()
-        spec.draw_behaviors.append(TrailBehavior(trail_len=30))
+        spec.draw_behaviors.append(TrailBehavior(trail_len=10))
     elif fw_type == "Dragon Eggs":
         # Dragon Eggs: massive wall of popping white crackles
         spec.particle_count = 250
@@ -300,7 +300,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.intensity = 2.5
         spec.life_span = 120
         spec.burst_strategy = ConeBurst()
-        spec.draw_behaviors.append(TrailBehavior(palm_tail=True, trail_len=20))
+        spec.draw_behaviors.append(TrailBehavior(palm_tail=True, trail_len=15))
     elif fw_type == "Strobe":
         # Strobe: blinking stars that leave small trails
         spec.particle_count = 200
@@ -328,7 +328,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.drag = 0.02
         spec.life_span = 250
         spec.radius = 1.5
-        spec.draw_behaviors.append(TrailBehavior(trail_len=30))
+        spec.draw_behaviors.append(TrailBehavior(trail_len=20))
 
     return spec
 
