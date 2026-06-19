@@ -82,10 +82,10 @@ class ParticleSystem:
         self.py = np.zeros(max_particles, dtype=np.float32)
         self.factor = np.zeros(max_particles, dtype=np.float32)
 
-        # History buffers for trails (Max trail length is 40)
-        self.history_x = np.zeros((max_particles, 40), dtype=np.float32)
-        self.history_y = np.zeros((max_particles, 40), dtype=np.float32)
-        self.history_factor = np.zeros((max_particles, 40), dtype=np.float32)
+        # History buffers for trails (Max trail length is 20)
+        self.history_x = np.zeros((max_particles, 20), dtype=np.float32)
+        self.history_y = np.zeros((max_particles, 20), dtype=np.float32)
+        self.history_factor = np.zeros((max_particles, 20), dtype=np.float32)
 
         # Store integer mapping of spec.name
         self.spec_name_type = np.zeros(max_particles, dtype=np.int8)
@@ -516,9 +516,9 @@ class ParticleSystem:
         if np.any(has_trail_mask):
             trail_indices_all = np.where(has_trail_mask)[0]
             num_trails = len(trail_indices_all)
-            J = np.arange(40)[None, :]
+            J = np.arange(20)[None, :]
             trail_len_all = self.trail_len[trail_indices_all]
-            valid_slot = J >= (40 - trail_len_all[:, None])
+            valid_slot = J >= (20 - trail_len_all[:, None])
             h_fact_all = self.history_factor[trail_indices_all, :]
             valid_factor = h_fact_all > 0.0
 
@@ -538,7 +538,7 @@ class ParticleSystem:
                 trail_len_sub = self.trail_len[sub_indices]
                 hist_len = np.minimum(age_sub, trail_len_sub)
 
-                i = j - (40 - hist_len)
+                i = j - (20 - hist_len)
                 denom = np.maximum(1.0, hist_len - 1.0)
                 alpha_mult = 0.15 + 0.85 * (i / denom)
                 size_mult = 0.5 + 0.5 * (i / denom)

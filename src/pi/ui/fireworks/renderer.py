@@ -27,6 +27,7 @@ class Renderer:
 
         # Cache for rendered text textures
         self.text_cache = {}
+        self.text_used_this_frame = set()
 
         # Shaders
         self._init_shaders()
@@ -281,8 +282,8 @@ class Renderer:
         self.unit_quad_buffer = self.ctx.buffer(unit_quad.tobytes())
 
         # VBO for particle instance data: x, y, size, r, g, b, a (7 floats per instance)
-        # Pre-allocate for 20000 particles (560 KB)
-        self.particle_vbo = self.ctx.buffer(reserve=20000 * 7 * 4)
+        # Pre-allocate for 10000 particles (280 KB)
+        self.particle_vbo = self.ctx.buffer(reserve=10000 * 7 * 4)
 
         # Particle VAO (combines centered quad vertices and instanced particles data)
         self.particle_vao = self.ctx.vertex_array(
@@ -370,11 +371,22 @@ class Renderer:
         pass
 
     def start_frame(self):
+        self.text_used_this_frame.clear()
         self.fb.use()
         self.ctx.viewport = (0, 0, 1920, 1080)
         self.ctx.clear(0.0, 0.0, 0.0, 1.0)
 
     def end_frame(self, screen_w, screen_h):
+        # Evict unused text textures from cache to free VRAM
+        unused_keys = [k for k in self.text_cache if k not in self.text_used_this_frame]
+        for k in unused_keys:
+            entry = self.text_cache.pop(k)
+            if entry.texture:
+                try:
+                    entry.texture.release()
+                except Exception:
+                    pass
+
         self.ctx.screen.use()
         self.ctx.clear(0.0, 0.0, 0.0, 1.0)
 
@@ -430,6 +442,10 @@ class Renderer:
 
         # Dynamic resize of buffer if we exceed pre-allocated space
         if needed_size > self.particle_vbo.size:
+            # Explicitly release old VAO and VBO to prevent GPU memory/handle leak
+            old_vbo = self.particle_vbo
+            old_vao = self.particle_vao
+            
             self.particle_vbo = self.ctx.buffer(reserve=needed_size)
             self.particle_vao = self.ctx.vertex_array(
                 self.particle_program,
@@ -438,6 +454,15 @@ class Renderer:
                     (self.particle_vbo, "2f 1f 4f/i", "in_pos", "in_size", "in_color"),
                 ],
             )
+            
+            try:
+                old_vao.release()
+            except Exception:
+                pass
+            try:
+                old_vbo.release()
+            except Exception:
+                pass
 
         # Write data to VBO
         if isinstance(particles_data, np.ndarray):
@@ -538,9 +563,7 @@ class Renderer:
             entry = TextCacheEntry(tex, w, h)
             self.text_cache[cache_key] = entry
 
-            # Cap cache size to prevent memory leaks
-            if len(self.text_cache) > 500:
-                self.text_cache = {cache_key: entry}
+        self.text_used_this_frame.add(cache_key)
 
         # Draw the text texture as a quad (scaled by 1.0x, font sizes are already native)
         entry.texture.use(0)

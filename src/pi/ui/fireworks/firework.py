@@ -47,7 +47,7 @@ class FireworkManager:
     def __init__(self, audio_system, lighting_system):
         self.audio = audio_system
         self.lighting = lighting_system
-        self.particle_system = ParticleSystem(100000)
+        self.particle_system = ParticleSystem(10000)
         self.active_shell_specs = {}
         
         # Emulated lists for backward compatibility with engine.py
