@@ -23,16 +23,53 @@ class ScriptManager:
         filename = os.path.basename(json_path).lower()
         is_main_show = any(name in filename for name in ["wind", "solar", "piezo", "coil"])
         
-        from .config import COLORS
         import random
         
         if is_main_show:
+            # Determine show-specific theme
+            theme = None
+            if "wind" in filename:
+                theme = {
+                    "name": "wind",
+                    "main_color": "cyan",
+                    "colors_in": ["cyan", "blue", "lime", "silver"],
+                    "colors_out": ["blue", "cyan", "silver", "lime"],
+                    "allowed_types": ["Tourbillion", "Flying Fish", "Comet", "Pearls", "Crossette", "Strobe", "Peony", "Waterfall", "Dragon Eggs", "Palm Tree", "Chrysanthemum", "Brocade", "Pistil", "Willow"]
+                }
+            elif "solar" in filename:
+                theme = {
+                    "name": "solar",
+                    "main_color": "yellow",
+                    "colors_in": ["yellow", "gold", "orange", "red"],
+                    "colors_out": ["orange", "gold", "yellow", "red"],
+                    "allowed_types": ["Strobe", "Peony", "Chrysanthemum", "Pistil", "Brocade", "Palm Tree", "Waterfall", "Crossette", "Comet", "Pearls", "Flying Fish", "Tourbillion", "Dragon Eggs", "Willow"]
+                }
+            elif "piezo" in filename:
+                theme = {
+                    "name": "piezo",
+                    "main_color": "orange",
+                    "colors_in": ["orange", "red", "magenta", "pink"],
+                    "colors_out": ["pink", "magenta", "orange", "yellow"],
+                    "allowed_types": ["Crossette", "Dragon Eggs", "Strobe", "Peony", "Chrysanthemum", "Palm Tree", "Tourbillion", "Comet", "Pearls", "Flying Fish", "Waterfall", "Brocade", "Pistil", "Willow"]
+                }
+            elif "coil" in filename:
+                theme = {
+                    "name": "coil",
+                    "main_color": "blue",
+                    "colors_in": ["blue", "indigo", "violet", "cyan"],
+                    "colors_out": ["cyan", "violet", "indigo", "silver"],
+                    "allowed_types": ["Brocade", "Waterfall", "Tourbillion", "Comet", "Pearls", "Strobe", "Dragon Eggs", "Crossette", "Peony", "Chrysanthemum", "Palm Tree", "Flying Fish", "Pistil", "Willow"]
+                }
+
+            colors_in = theme["colors_in"]
+            colors_out = theme["colors_out"]
+            main_color = theme["main_color"]
+            allowed_types = theme["allowed_types"]
+
             # Generate Choreographed Intro Sequence:
             # 1. Sides to Center (0.0 to 5.0s, spaced 1.0s apart)
             left_x_vals = [100, 272, 444, 616, 788, 960]
             right_x_vals = [1820, 1648, 1476, 1304, 1132, 960]
-            colors_in = ["red", "orange", "gold", "lime", "cyan", "blue"]
-            colors_out = ["magenta", "pink", "violet", "indigo", "lime", "green"]
             
             for i in range(6):
                 t = i * 1.0
@@ -54,9 +91,9 @@ class ScriptManager:
                     events.append({"time": t, "type": "Rising Tail", "color": col, "x": right_x_vals[5 - i], "y": 600})
                     
             # 3. Transition burst (6.5s) - crossover pattern
-            events.append({"time": 6.5, "type": "Tourbillion", "color": "cyan", "x": 300, "y": 500})
-            events.append({"time": 6.5, "type": "Tourbillion", "color": "cyan", "x": 1620, "y": 500})
-            events.append({"time": 6.5, "type": "Brocade", "color": "gold", "x": 960, "y": 400})
+            events.append({"time": 6.5, "type": allowed_types[0], "color": main_color, "x": 300, "y": 500})
+            events.append({"time": 6.5, "type": allowed_types[0], "color": main_color, "x": 1620, "y": 500})
+            events.append({"time": 6.5, "type": "Brocade" if "Brocade" in allowed_types else "Peony", "color": colors_in[1 % len(colors_in)], "x": 960, "y": 400})
             
             # Process main show events WITHOUT time shifting
             for ev in original_events:
@@ -65,19 +102,22 @@ class ScriptManager:
                 shifted_ev["time"] = original_time
                 events.append(shifted_ev)
                 
-                for _ in range(3):
+                # Clone density: create 2 additional clones that are show-specific
+                for _ in range(2):
                     clone = ev.copy()
                     clone["time"] = max(0.0, original_time + random.uniform(-0.6, 0.6))
                     clone["x"] = max(100, min(1820, ev.get("x", 960) + random.randint(-250, 250)))
                     clone["y"] = max(100, min(900, ev.get("y", 600) + random.randint(-150, 150)))
                     
-                    if random.random() < 0.4:
-                        clone["color"] = random.choice(COLORS)
                     if random.random() < 0.5:
-                        clone["type"] = random.choice([
-                            "Tourbillion", "Flying Fish", "Crossette", 
-                            "Dragon Eggs", "Strobe", "Waterfall", "Brocade"
-                        ])
+                        clone["color"] = random.choice(colors_in)
+                    
+                    if random.random() < 0.6:
+                        # In the latter half (time > 15s), give higher probability of Willow clones
+                        if original_time > 15.0 and random.random() < 0.75:
+                            clone["type"] = "Willow"
+                        else:
+                            clone["type"] = random.choice(allowed_types)
                     events.append(clone)
         else:
             # For non-main shows (e.g. success.json), keep original logic
@@ -123,3 +163,4 @@ class ScriptManager:
             # Remove script if completed
             if idx >= len(events):
                 self.active_scripts.remove(script)
+

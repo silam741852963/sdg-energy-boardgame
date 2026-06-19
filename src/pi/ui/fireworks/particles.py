@@ -301,35 +301,7 @@ class ParticleSystem:
         self.px[idxs_arr] = pxs * factor + HALF_SCREEN_WIDTH
         self.py[idxs_arr] = pys * factor + HALF_SCREEN_HEIGHT
 
-    def get_intensity(self, active_mask):
-        intensity = np.zeros(self.max_particles, dtype=np.float32)
-        if not np.any(active_mask):
-            return intensity
 
-        shell_burst = active_mask & self.is_shell & self.burst
-        intensity[shell_burst] = 1.0 * self.intensity_mod[shell_burst]
-
-        other_mask = active_mask & ~shell_burst
-        if np.any(other_mask):
-            age_other = self.age[other_mask]
-            life_other = self.life[other_mask]
-            intensity_mod_other = self.intensity_mod[other_mask]
-            spec_type_other = self.spec_name_type[other_mask]
-
-            remaining = np.maximum(0.0, 1.0 - age_other / np.maximum(1.0, life_other))
-            val = remaining.copy()
-
-            # Comet is type 2
-            comet_mask = spec_type_other == 2
-            val[comet_mask] = remaining[comet_mask] * 1.5
-
-            # Pearls is type 4
-            pearls_mask = spec_type_other == 4
-            val[pearls_mask] = remaining[pearls_mask] * 3.0
-
-            intensity[other_mask] = np.minimum(1.0, val) * intensity_mod_other
-
-        return intensity
 
     def get_intensity_subset(self, indices):
         intensity = np.zeros(len(indices), dtype=np.float32)
@@ -373,18 +345,19 @@ class ParticleSystem:
         self.age[active_mask] += 1
 
         # 2. Cull expired/faded particles
-        intensities = self.get_intensity(active_mask)
         cull_eligible = active_mask & ~(self.is_shell & self.burst)
         if np.any(cull_eligible):
-            age_el = self.age[cull_eligible]
-            life_el = self.life[cull_eligible]
+            cull_indices = np.where(cull_eligible)[0]
+            age_el = self.age[cull_indices]
+            life_el = self.life[cull_indices]
             remaining = 1.0 - (age_el / np.maximum(1.0, life_el))
+            intensities_el = self.get_intensity_subset(cull_indices)
             cull_mask = (
                 (age_el > life_el)
                 | (remaining < 0.12)
-                | (intensities[cull_eligible] < 0.12)
+                | (intensities_el < 0.12)
             )
-            culled_indices = np.where(cull_eligible)[0][cull_mask]
+            culled_indices = cull_indices[cull_mask]
             if len(culled_indices) > 0:
                 self.active[culled_indices] = False
                 self.free_indices.extend(culled_indices)
@@ -541,20 +514,21 @@ class ParticleSystem:
         # 3. Trail instances
         has_trail_mask = self.active & self.has_trail
         if np.any(has_trail_mask):
-            intensities_trail = self.get_intensity_subset(np.arange(self.max_particles))
             trail_indices_all = np.where(has_trail_mask)[0]
+            num_trails = len(trail_indices_all)
+            J = np.arange(40)[None, :]
+            trail_len_all = self.trail_len[trail_indices_all]
+            valid_slot = J >= (40 - trail_len_all[:, None])
+            h_fact_all = self.history_factor[trail_indices_all, :]
+            valid_factor = h_fact_all > 0.0
 
-            for j in range(40):
-                valid_slot = j >= (40 - self.trail_len[trail_indices_all])
-                h_fact = self.history_factor[trail_indices_all, j]
-                valid_factor = h_fact > 0.0
+            valid_mask = valid_slot & valid_factor
+            row_idx, col_idx = np.where(valid_mask)
+            num_instances = len(row_idx)
 
-                valid_mask = valid_slot & valid_factor
-                if not np.any(valid_mask):
-                    continue
-
-                sub_indices = trail_indices_all[valid_mask]
-                num_sub = len(sub_indices)
+            if num_instances > 0:
+                sub_indices = trail_indices_all[row_idx]
+                j = col_idx
 
                 hx = self.history_x[sub_indices, j]
                 hy = self.history_y[sub_indices, j]
@@ -570,7 +544,7 @@ class ParticleSystem:
                 size_mult = 0.5 + 0.5 * (i / denom)
 
                 hfactor_adjusted = hfactor - 0.3
-                shade_offset = np.zeros(num_sub, dtype=np.int32)
+                shade_offset = np.zeros(num_instances, dtype=np.int32)
                 shade_offset[hfactor_adjusted <= 1.2] = 1
                 shade_offset[hfactor_adjusted <= 1.0] = 2
                 shade_offset[hfactor_adjusted <= 0.8] = 3
@@ -588,7 +562,7 @@ class ParticleSystem:
                 thickness = self.radius[sub_indices]
                 size_trail = np.maximum(3.0, hfactor * thickness * 10.0 * size_mult)
 
-                intensity_sub = intensities_trail[sub_indices]
+                intensity_sub = self.get_intensity_subset(sub_indices)
                 alpha_trail = np.minimum(1.0, intensity_sub * alpha_mult * 1.6)
 
                 spec_type_sub = self.spec_name_type[sub_indices]
@@ -608,7 +582,7 @@ class ParticleSystem:
                 skip_scatter = (intensity_sub < 0.3) | (factor_sub < 0.4)
 
                 # Scatter 1 (40% chance)
-                scatter1_mask = ~skip_scatter & (np.random.rand(num_sub) < 0.4)
+                scatter1_mask = ~skip_scatter & (np.random.rand(num_instances) < 0.4)
                 num_s1 = np.count_nonzero(scatter1_mask)
                 if num_s1 > 0:
                     s1_hx = hx[scatter1_mask]
@@ -631,7 +605,7 @@ class ParticleSystem:
                     )
 
                 # Scatter 2 (8% chance, white)
-                scatter2_mask = ~skip_scatter & (np.random.rand(num_sub) < 0.08)
+                scatter2_mask = ~skip_scatter & (np.random.rand(num_instances) < 0.08)
                 num_s2 = np.count_nonzero(scatter2_mask)
                 if num_s2 > 0:
                     s2_hx = hx[scatter2_mask]
@@ -658,7 +632,7 @@ class ParticleSystem:
 
                 # Glitter (40% chance, white)
                 glitter_mask = self.glitter[sub_indices] & (
-                    np.random.rand(num_sub) < 0.4
+                    np.random.rand(num_instances) < 0.4
                 )
                 num_g = np.count_nonzero(glitter_mask)
                 if num_g > 0:
