@@ -45,6 +45,10 @@ class ParticleSystem:
         self.active = np.zeros(max_particles, dtype=bool)
         self.age = np.zeros(max_particles, dtype=np.int32)
         self.life = np.zeros(max_particles, dtype=np.int32)
+        self.intensity = np.zeros(max_particles, dtype=np.float32)
+        self.cull_age = np.zeros(max_particles, dtype=np.int32)
+        self.crackle_start = np.zeros(max_particles, dtype=np.int32)
+        self.crackle_end = np.zeros(max_particles, dtype=np.int32)
 
         # Specs and physical properties
         self.gravity = np.zeros(max_particles, dtype=np.float32)
@@ -133,6 +137,11 @@ class ParticleSystem:
         else:
             self.life[idxs_arr] = spec.life_span * np.random.uniform(0.8, 1.2, count)
 
+        self.cull_age[idxs_arr] = (self.life[idxs_arr] * 0.88).astype(np.int32)
+        self.crackle_start[idxs_arr] = (self.life[idxs_arr] * 0.5).astype(np.int32)
+        self.crackle_end[idxs_arr] = (self.life[idxs_arr] * 0.8).astype(np.int32)
+        self.intensity[idxs_arr] = spec.intensity
+
         self.is_shell[idxs_arr] = is_shell
         self.is_inner[idxs_arr] = is_inner
         self.is_split_child[idxs_arr] = is_split_child
@@ -204,7 +213,11 @@ class ParticleSystem:
 
         # Perspective projection init
         divisor = VIEWER_DISTANCE + z
-        factor = FOV / divisor if divisor != 0 else 1.0
+        if isinstance(divisor, np.ndarray):
+            divisor[divisor == 0.0] = 1.0
+            factor = FOV / divisor
+        else:
+            factor = FOV / divisor if divisor != 0.0 else 1.0
         self.factor[idxs_arr] = factor
         self.px[idxs_arr] = x * factor + HALF_SCREEN_WIDTH
         self.py[idxs_arr] = y * factor + HALF_SCREEN_HEIGHT
@@ -237,13 +250,11 @@ class ParticleSystem:
         p_has_trail = np.repeat(self.has_trail[parent_indices], 4)
 
         # Calculate split child velocities
-        angles = np.tile(
-            [math.pi / 4, 3 * math.pi / 4, 5 * math.pi / 4, 7 * math.pi / 4],
-            num_parents,
-        )
+        cos_vals = np.array([2.82842712, -2.82842712, -2.82842712, 2.82842712], dtype=np.float32)
+        sin_vals = np.array([2.82842712, 2.82842712, -2.82842712, -2.82842712], dtype=np.float32)
 
-        nvxs = (p_vxs * 0.4) + np.cos(angles) * 4.0
-        nvys = (p_vys * 0.4) + np.sin(angles) * 4.0
+        nvxs = (p_vxs * 0.4) + np.tile(cos_vals, num_parents)
+        nvys = (p_vys * 0.4) + np.tile(sin_vals, num_parents)
         nvzs = p_vzs * 0.4
 
         idxs = [self.free_indices.pop() for _ in range(count)]
@@ -263,6 +274,11 @@ class ParticleSystem:
 
         self.age[idxs_arr] = 0
         self.life[idxs_arr] = (p_lifes * 0.4).astype(np.int32)
+
+        self.cull_age[idxs_arr] = (self.life[idxs_arr] * 0.88).astype(np.int32)
+        self.crackle_start[idxs_arr] = (self.life[idxs_arr] * 0.5).astype(np.int32)
+        self.crackle_end[idxs_arr] = (self.life[idxs_arr] * 0.8).astype(np.int32)
+        self.intensity[idxs_arr] = p_intensity_mod
 
         self.is_shell[idxs_arr] = False
         self.is_inner[idxs_arr] = False
@@ -303,38 +319,35 @@ class ParticleSystem:
 
 
 
-    def get_intensity_subset(self, indices):
-        intensity = np.zeros(len(indices), dtype=np.float32)
-        if len(indices) == 0:
-            return intensity
+    def update_intensity(self, active_mask):
+        if not np.any(active_mask):
+            return
 
-        is_shell_sub = self.is_shell[indices]
-        burst_sub = self.burst[indices]
-        shell_burst = is_shell_sub & burst_sub
+        self.intensity[~active_mask] = 0.0
 
-        intensity_mod_sub = self.intensity_mod[indices]
-        intensity[shell_burst] = 1.0 * intensity_mod_sub[shell_burst]
+        shell_burst = active_mask & self.is_shell & self.burst
+        self.intensity[shell_burst] = self.intensity_mod[shell_burst]
 
-        other_mask = ~shell_burst
+        other_mask = active_mask & ~shell_burst
         if np.any(other_mask):
-            other_indices = indices[other_mask]
-            age_other = self.age[other_indices]
-            life_other = self.life[other_indices]
-            intensity_mod_other = self.intensity_mod[other_indices]
-            spec_type_other = self.spec_name_type[other_indices]
+            age_other = self.age[other_mask]
+            life_other = self.life[other_mask]
+            intensity_mod_other = self.intensity_mod[other_mask]
+            spec_type_other = self.spec_name_type[other_mask]
 
             remaining = np.maximum(0.0, 1.0 - age_other / np.maximum(1.0, life_other))
             val = remaining.copy()
 
             comet_mask = spec_type_other == 2
-            val[comet_mask] = remaining[comet_mask] * 1.5
+            val[comet_mask] *= 1.5
 
             pearls_mask = spec_type_other == 4
-            val[pearls_mask] = remaining[pearls_mask] * 3.0
+            val[pearls_mask] *= 3.0
 
-            intensity[other_mask] = np.minimum(1.0, val) * intensity_mod_other
+            self.intensity[other_mask] = np.minimum(1.0, val) * intensity_mod_other
 
-        return intensity
+    def get_intensity_subset(self, indices):
+        return self.intensity[indices]
 
     def update(self):
         active_mask = self.active
@@ -344,18 +357,16 @@ class ParticleSystem:
         # 1. Update age
         self.age[active_mask] += 1
 
+        # Update intensities for active particles
+        self.update_intensity(active_mask)
+
         # 2. Cull expired/faded particles
         cull_eligible = active_mask & ~(self.is_shell & self.burst)
         if np.any(cull_eligible):
             cull_indices = np.where(cull_eligible)[0]
-            age_el = self.age[cull_indices]
-            life_el = self.life[cull_indices]
-            remaining = 1.0 - (age_el / np.maximum(1.0, life_el))
-            intensities_el = self.get_intensity_subset(cull_indices)
             cull_mask = (
-                (age_el > life_el)
-                | (remaining < 0.12)
-                | (intensities_el < 0.12)
+                (self.age[cull_indices] > self.cull_age[cull_indices])
+                | (self.intensity[cull_indices] < 0.12)
             )
             culled_indices = cull_indices[cull_mask]
             if len(culled_indices) > 0:
@@ -451,11 +462,11 @@ class ParticleSystem:
         flicker_skip = self.has_flicker & (
             ((frame_count + self.flicker_offset) % 6) < 3
         )
-        crackle_phase2 = self.has_crackle & (self.age > self.life * 0.8)
+        crackle_phase2 = self.has_crackle & (self.age > self.crackle_end)
         crackle_phase1 = (
             self.has_crackle
-            & (self.age > self.life * 0.5)
-            & (self.age <= self.life * 0.8)
+            & (self.age > self.crackle_start)
+            & (self.age <= self.crackle_end)
         )
 
         draw_main = self.active & ~flicker_skip & ~crackle_phase1 & ~crackle_phase2
@@ -474,11 +485,7 @@ class ParticleSystem:
             radius_main = self.radius[main_indices]
             intensity_main = self.get_intensity_subset(main_indices)
 
-            shade_offset = np.zeros(num_main, dtype=np.int32)
-            shade_offset[factor_main <= 1.2] = 1
-            shade_offset[factor_main <= 1.0] = 2
-            shade_offset[factor_main <= 0.8] = 3
-            shade_offset[factor_main <= 0.6] = 4
+            shade_offset = np.clip(np.floor((1.2 - factor_main) * 5.0).astype(np.int32) + 1, 0, 4)
 
             color_idx = base_col_main + shade_offset
             color_idx[base_col_main == 121] = 121
@@ -507,8 +514,8 @@ class ParticleSystem:
                     s1_py = self.py[s1_sel]
                     s1_factor = self.factor[s1_sel]
                     s1_radius = (self.radius[s1_sel] + 3.0) * s1_factor
-                    sx1 = s1_px + np.random.uniform(-s1_radius, s1_radius)
-                    sy1 = s1_py + np.random.uniform(-s1_radius, s1_radius)
+                    sx1 = s1_px + np.random.uniform(-1.0, 1.0, num_s1) * s1_radius
+                    sy1 = s1_py + np.random.uniform(-1.0, 1.0, num_s1) * s1_radius
                     
                     s1_col = color_idx[has_trail_main][s1_mask]
                     rgb_s1 = PALETTE_ARR[s1_col]
@@ -525,9 +532,9 @@ class ParticleSystem:
                     s2_px = self.px[s2_sel]
                     s2_py = self.py[s2_sel]
                     s2_factor = self.factor[s2_sel]
-                    s2_radius = (self.radius[s2_sel] + 3.0) * s2_factor
-                    sx2 = s2_px + np.random.uniform(-s2_radius - 2.0, s2_radius + 2.0)
-                    sy2 = s2_py + np.random.uniform(-s2_radius - 2.0, s2_radius + 2.0)
+                    s2_radius_offset = (self.radius[s2_sel] + 3.0) * s2_factor + 2.0
+                    sx2 = s2_px + np.random.uniform(-1.0, 1.0, num_s2) * s2_radius_offset
+                    sy2 = s2_py + np.random.uniform(-1.0, 1.0, num_s2) * s2_radius_offset
                     
                     rgb_s2 = PALETTE_ARR[np.repeat(121, num_s2)]
                     size_s2 = 3.0 * s2_factor
@@ -562,12 +569,8 @@ class ParticleSystem:
         num_crackle = len(crackle_indices)
         if num_crackle > 0:
             factor_crackle = self.factor[crackle_indices]
-            px_crackle = self.px[crackle_indices] + np.random.randint(
-                -3, 4, num_crackle
-            )
-            py_crackle = self.py[crackle_indices] + np.random.randint(
-                -3, 4, num_crackle
-            )
+            px_crackle = self.px[crackle_indices] + np.random.uniform(-3.0, 3.0, num_crackle)
+            py_crackle = self.py[crackle_indices] + np.random.uniform(-3.0, 3.0, num_crackle)
             size_crackle = np.maximum(4.0, 8.0 * factor_crackle)
             rgb_crackle = PALETTE_ARR[np.repeat(121, num_crackle)]
             intensity_crackle = self.get_intensity_subset(crackle_indices) * 1.5
@@ -606,15 +609,12 @@ class ParticleSystem:
 
                 i = j - (20 - hist_len)
                 denom = np.maximum(1.0, hist_len - 1.0)
-                alpha_mult = 0.15 + 0.85 * (i / denom)
-                size_mult = 0.5 + 0.5 * (i / denom)
+                ratio = i / denom
+                alpha_mult = 0.15 + 0.85 * ratio
+                size_mult = 0.5 + 0.5 * ratio
 
                 hfactor_adjusted = hfactor - 0.3
-                shade_offset = np.zeros(num_instances, dtype=np.int32)
-                shade_offset[hfactor_adjusted <= 1.2] = 1
-                shade_offset[hfactor_adjusted <= 1.0] = 2
-                shade_offset[hfactor_adjusted <= 0.8] = 3
-                shade_offset[hfactor_adjusted <= 0.6] = 4
+                shade_offset = np.clip(np.floor((1.2 - hfactor_adjusted) * 5.0).astype(np.int32) + 1, 0, 4)
 
                 base_col_sub = self.base_color_idx[sub_indices]
                 is_palm_sub = self.is_palm_tail_shell[sub_indices]
