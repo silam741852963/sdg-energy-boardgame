@@ -2,20 +2,22 @@ import asyncio
 from bleak import BleakScanner
 
 
-TARGET_MAC = "D9:44:B0:92:D4:E0"
+CLEANBOOST_DEVICES = {
+    "D9:44:B0:92:D4:E0": "CleanBoost 03-02860 (Minor: 2860)",
+    "EA:32:68:B2:7F:C1": "CleanBoost 03-02728 (Minor: 2728)",
+    "FC:19:F9:E9:EE:7D": "CleanBoost 03-02859 (Minor: 2859)",
+    "F7:7D:0B:41:39:A8": "CleanBoost 03-02526 (Minor: 2526)",
+}
 
 
 def detection_callback(device, advertisement_data):
-    # Case-insensitive comparison is recommended as some backends
-    # might return lowercase addresses.
-    if device.address.upper() == TARGET_MAC.upper():
+    mac = device.address.upper()
+    if mac in CLEANBOOST_DEVICES:
+        name = CLEANBOOST_DEVICES[mac]
         rssi = advertisement_data.rssi
         print(
-            f"Target found! Address: {device.address}, RSSI: {rssi}, Name: {device.name}"
+            f"Found {name} | Address: {device.address} | RSSI: {rssi} dBm"
         )
-
-        # Optional: Add logic to process the device here
-        # For example: print(f"Service Data: {advertisement_data.service_data}")
 
 
 async def run_scanner():
