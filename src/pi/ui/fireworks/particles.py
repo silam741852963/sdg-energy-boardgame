@@ -490,6 +490,72 @@ class ParticleSystem:
             main_chunk = np.column_stack((px_main, py_main, size, rgb, intensity_main))
             chunks.append(main_chunk)
 
+            # Scatter & Glitter for active particle heads (run on main_indices to avoid per-segment CPU overhead)
+            # Scatter 1 (40% chance of colored sparks)
+            has_trail_main = self.has_trail[main_indices]
+            if np.any(has_trail_main):
+                t_indices = main_indices[has_trail_main]
+                t_factor = factor_main[has_trail_main]
+                t_intensity = intensity_main[has_trail_main]
+                
+                skip_t = (t_intensity < 0.3) | (t_factor < 0.4)
+                s1_mask = ~skip_t & (np.random.rand(len(t_indices)) < 0.4)
+                s1_sel = t_indices[s1_mask]
+                num_s1 = len(s1_sel)
+                if num_s1 > 0:
+                    s1_px = self.px[s1_sel]
+                    s1_py = self.py[s1_sel]
+                    s1_factor = self.factor[s1_sel]
+                    s1_radius = (self.radius[s1_sel] + 3.0) * s1_factor
+                    sx1 = s1_px + np.random.uniform(-s1_radius, s1_radius)
+                    sy1 = s1_py + np.random.uniform(-s1_radius, s1_radius)
+                    
+                    s1_col = color_idx[has_trail_main][s1_mask]
+                    rgb_s1 = PALETTE_ARR[s1_col]
+                    size_s1 = 3.0 * s1_factor
+                    alpha_s1 = t_intensity[s1_mask] * 0.7 * 1.6
+                    
+                    chunks.append(np.column_stack((sx1, sy1, size_s1, rgb_s1, alpha_s1)))
+
+                # Scatter 2 (8% chance of white sparks)
+                s2_mask = ~skip_t & (np.random.rand(len(t_indices)) < 0.08)
+                s2_sel = t_indices[s2_mask]
+                num_s2 = len(s2_sel)
+                if num_s2 > 0:
+                    s2_px = self.px[s2_sel]
+                    s2_py = self.py[s2_sel]
+                    s2_factor = self.factor[s2_sel]
+                    s2_radius = (self.radius[s2_sel] + 3.0) * s2_factor
+                    sx2 = s2_px + np.random.uniform(-s2_radius - 2.0, s2_radius + 2.0)
+                    sy2 = s2_py + np.random.uniform(-s2_radius - 2.0, s2_radius + 2.0)
+                    
+                    rgb_s2 = PALETTE_ARR[np.repeat(121, num_s2)]
+                    size_s2 = 3.0 * s2_factor
+                    alpha_s2 = t_intensity[s2_mask] * 0.7 * 1.6
+                    
+                    chunks.append(np.column_stack((sx2, sy2, size_s2, rgb_s2, alpha_s2)))
+
+            # Glitter (40% chance of white flashes for particles with glitter)
+            glitter_active = self.glitter[main_indices]
+            if np.any(glitter_active):
+                g_indices = main_indices[glitter_active]
+                g_factor = factor_main[glitter_active]
+                g_intensity = intensity_main[glitter_active]
+                
+                g_mask = (g_intensity >= 0.3) & (np.random.rand(len(g_indices)) < 0.4)
+                g_sel = g_indices[g_mask]
+                num_g = len(g_sel)
+                if num_g > 0:
+                    g_px = self.px[g_sel]
+                    g_py = self.py[g_sel]
+                    g_factor_sel = g_factor[g_mask]
+                    g_intensity_sel = g_intensity[g_mask] * 1.5
+                    
+                    rgb_g = PALETTE_ARR[np.repeat(121, num_g)]
+                    size_g = np.maximum(4.0, 8.0 * g_factor_sel)
+                    
+                    chunks.append(np.column_stack((g_px, g_py, size_g, rgb_g, g_intensity_sel)))
+
         # 2. Crackle instances
         draw_crackle = self.active & crackle_phase2
         crackle_indices = np.where(draw_crackle)[0]
@@ -577,74 +643,8 @@ class ParticleSystem:
                 )
                 chunks.append(trail_chunk)
 
-                # Scatter / Glitter
-                factor_sub = self.factor[sub_indices]
-                skip_scatter = (intensity_sub < 0.3) | (factor_sub < 0.4)
-
-                # Scatter 1 (40% chance)
-                scatter1_mask = ~skip_scatter & (np.random.rand(num_instances) < 0.4)
-                num_s1 = np.count_nonzero(scatter1_mask)
-                if num_s1 > 0:
-                    s1_hx = hx[scatter1_mask]
-                    s1_hy = hy[scatter1_mask]
-                    s1_hfactor = hfactor[scatter1_mask]
-                    s1_thickness = thickness[scatter1_mask]
-                    s1_alpha = alpha_trail[scatter1_mask]
-                    s1_col_idx = trail_col_idx[scatter1_mask]
-
-                    scatter_radius = (s1_thickness + 3) * s1_hfactor
-                    sx1 = s1_hx + np.random.uniform(-scatter_radius, scatter_radius)
-                    sy1 = s1_hy + np.random.uniform(-scatter_radius, scatter_radius)
-
-                    rgb_s1 = PALETTE_ARR[s1_col_idx]
-                    size_s1 = 3.0 * s1_hfactor
-                    alpha_s1 = s1_alpha * 0.7
-
-                    chunks.append(
-                        np.column_stack((sx1, sy1, size_s1, rgb_s1, alpha_s1))
-                    )
-
-                # Scatter 2 (8% chance, white)
-                scatter2_mask = ~skip_scatter & (np.random.rand(num_instances) < 0.08)
-                num_s2 = np.count_nonzero(scatter2_mask)
-                if num_s2 > 0:
-                    s2_hx = hx[scatter2_mask]
-                    s2_hy = hy[scatter2_mask]
-                    s2_hfactor = hfactor[scatter2_mask]
-                    s2_thickness = thickness[scatter2_mask]
-                    s2_alpha = alpha_trail[scatter2_mask]
-
-                    scatter_radius = (s2_thickness + 3) * s2_hfactor
-                    sx2 = s2_hx + np.random.uniform(
-                        -scatter_radius - 2.0, scatter_radius + 2.0
-                    )
-                    sy2 = s2_hy + np.random.uniform(
-                        -scatter_radius - 2.0, scatter_radius + 2.0
-                    )
-
-                    rgb_s2 = PALETTE_ARR[np.repeat(121, num_s2)]
-                    size_s2 = 3.0 * s2_hfactor
-                    alpha_s2 = s2_alpha * 0.7
-
-                    chunks.append(
-                        np.column_stack((sx2, sy2, size_s2, rgb_s2, alpha_s2))
-                    )
-
-                # Glitter (40% chance, white)
-                glitter_mask = self.glitter[sub_indices] & (
-                    np.random.rand(num_instances) < 0.4
-                )
-                num_g = np.count_nonzero(glitter_mask)
-                if num_g > 0:
-                    g_hx = hx[glitter_mask]
-                    g_hy = hy[glitter_mask]
-                    g_hfactor = hfactor[glitter_mask]
-                    g_alpha = alpha_trail[glitter_mask] * 1.5
-
-                    rgb_g = PALETTE_ARR[np.repeat(121, num_g)]
-                    size_g = np.maximum(4.0, 8.0 * g_hfactor)
-
-                    chunks.append(np.column_stack((g_hx, g_hy, size_g, rgb_g, g_alpha)))
+                # Scatter/Glitter removed from per-segment trail to run on heads instead
+                pass
 
         if len(chunks) == 0:
             return np.empty((0, 7), dtype=np.float32)
