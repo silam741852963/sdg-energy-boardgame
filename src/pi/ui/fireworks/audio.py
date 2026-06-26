@@ -47,6 +47,7 @@ class AudioSystem:
                 self.sounds["switch_blip"] = pygame.mixer.Sound(array=self._generate_switch_blip_samples())
                 self.sounds["tick"] = pygame.mixer.Sound(array=self._generate_tick_samples())
                 self.sounds["restart_chime"] = pygame.mixer.Sound(array=self._generate_restart_chime_samples())
+                self.sounds["end_chime"] = pygame.mixer.Sound(array=self._generate_end_chime_samples())
 
                 # Pre-generate 16 fill tick sounds at different pitch levels
                 self.fill_sounds = []
@@ -286,3 +287,34 @@ class AudioSystem:
         if channel:
             channel.set_volume(0.6)
             channel.play(self.fill_sounds[idx])
+
+    def _generate_end_chime_samples(self):
+        import numpy as np
+        sample_rate = 44100
+        # Progression of quick bright arpeggios: E5, G5, C6, E6
+        freqs = [659.25, 783.99, 1046.50, 1318.51]
+        durations = [0.08, 0.08, 0.08, 0.36]
+        volume = 0.45 * 32767
+
+        buffer = []
+        for freq, dur in zip(freqs, durations):
+            num_samples = int(sample_rate * dur)
+            t = np.linspace(0, dur, num_samples, endpoint=False)
+            wave = np.sin(2 * np.pi * freq * t)
+            # Add second harmonic for a retro glockenspiel timbre
+            wave += 0.25 * np.sin(2 * np.pi * (freq * 2.0) * t)
+            envelope = np.exp(-5.0 * t)
+            note_samples = (wave * envelope * volume).astype(np.int16)
+            buffer.append(note_samples)
+
+        mono_samples = np.concatenate(buffer)
+        return np.column_stack((mono_samples, mono_samples))
+
+    def play_end_chime(self):
+        if not self.enabled:
+            return
+        if "end_chime" in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.8)
+                channel.play(self.sounds["end_chime"])

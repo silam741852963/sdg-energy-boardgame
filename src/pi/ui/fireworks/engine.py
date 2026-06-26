@@ -303,24 +303,6 @@ class FireworkEngine:
 
         if interaction_detected:
             self.last_interaction_time = time.time()
-            if self.in_attract_mode:
-                self.in_attract_mode = False
-                self._restart_game()
-
-        if time.time() - self.last_interaction_time > 60.0:
-            if not self.in_attract_mode:
-                self.in_attract_mode = True
-                self._restart_game()
-                
-        if self.in_attract_mode:
-            # Randomly cycle drones every 10 seconds
-            if int(time.time()) % 10 == 0 and int(time.time() * 60) % 60 == 0:
-                random_pattern = random.randint(1, 4)
-                self.drone_manager.transition_to_pattern(random_pattern, self.gui, self.audio)
-            
-            # Occasionally spawn random fireworks
-            if random.random() < 0.02:
-                self.firework_manager.launch(random.randint(400, 1500), random.randint(100, 300))
 
         # --- HARDWARE STATE SYNC ---
         if self.game_state:
@@ -332,10 +314,10 @@ class FireworkEngine:
             is_completed = self.game_state.current_session and self.game_state.current_session.completed
             fireworks_done = len(self.script_manager.active_scripts) == 0 and len(self.firework_manager.shells) == 0 and len(self.firework_manager.particles) == 0
             
-            # After fireworks are done, show CONGRAT drones first, then the leaderboard
+            # After fireworks are done, show END drones first, then the leaderboard
             if is_completed and len(self.completed_gauges) > 0 and self.show_started:
                 if fireworks_done and self.congrat_start_time is None:
-                    # Transition drones to CONGRAT pattern (index 7) with a gold color override
+                    # Transition drones to END pattern (index 7) with a gold color override
                     self.drone_manager.transition_to_pattern(7, self.gui, self.audio, override_color="gold")
                     self.congrat_start_time = time.time()
                 
