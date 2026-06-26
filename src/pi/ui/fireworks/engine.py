@@ -315,19 +315,21 @@ class FireworkEngine:
             fireworks_done = len(self.script_manager.active_scripts) == 0 and len(self.firework_manager.shells) == 0 and len(self.firework_manager.particles) == 0
             
             # After fireworks are done, show END drones first, then the leaderboard
-            if is_completed and len(self.completed_gauges) > 0 and self.show_started:
+            if is_completed and self.show_started:
                 if fireworks_done and self.congrat_start_time is None:
                     # Transition drones to END pattern (index 7) with a gold color override
                     self.drone_manager.transition_to_pattern(7, self.gui, self.audio, override_color="gold")
                     self.congrat_start_time = time.time()
+                    if self.game_state:
+                        self.game_state.drain_paused = False
+                        if self.completed_gen:
+                            self.game_state.force_immediate_drain(self.completed_gen)
                 
                 if self.congrat_start_time is not None and not self.show_leaderboard:
                     if time.time() - self.congrat_start_time >= 8.0:
                         self.show_leaderboard = True
                         self.drone_manager.clear_all()
                         self.leaderboard_start_activity_time = self.game_state.last_activity_time
-                        if self.game_state:
-                            self.game_state.drain_paused = False
 
             # Check for key presses or other signals to close leaderboard
             if self.show_leaderboard:

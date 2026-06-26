@@ -80,6 +80,9 @@ class GameState:
                     self.current_session.energy_levels[gen] = new_val
                     self._last_gauge_values[gen] = new_val
 
+    def force_immediate_drain(self, gen_type):
+        self._last_increase_time[gen_type] = time.time() - 100.0
+
     def add_energy(self, gen_type, amount: float, is_clean_boost: bool = False):
         if not self.current_session:
             return
