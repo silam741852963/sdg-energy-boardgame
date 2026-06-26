@@ -21,4 +21,4 @@ class MockReceiver:
                 gen_type = random.choice(generator_types)
 
                 # Send the event to the logic layer
-                self.game_state.add_energy(gen_type, ENERGY_PER_BEACON)
+                self.game_state.add_energy(gen_type, ENERGY_PER_BEACON, is_clean_boost=True)

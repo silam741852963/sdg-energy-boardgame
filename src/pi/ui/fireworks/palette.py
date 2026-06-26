@@ -30,6 +30,17 @@ def generate_rgb_palette():
     palette.append((1.0, 1.0, 1.0))  # Index 121: Pure White
     palette.append((170.0 / 255.0, 170.0 / 255.0, 170.0 / 255.0))  # Index 122: UI Light Gray (0xAAAAAA)
     palette.append((85.0 / 255.0, 85.0 / 255.0, 85.0 / 255.0))      # Index 123: UI Dark Gray (0x555555)
+
+    # Sakura (cherry blossom) variants (Indices 124-133)
+    sakura_hexes = [0xFFB7C5, 0xFFD1DC]
+    for base in sakura_hexes:
+        r = ((base >> 16) & 0xFF) / 255.0
+        g = ((base >> 8) & 0xFF) / 255.0
+        b = (base & 0xFF) / 255.0
+        for i in range(5):
+            factor = 1.0 - (i * 0.20)
+            palette.append((r * factor, g * factor, b * factor))
+
     return palette
 
 RGB_PALETTE = generate_rgb_palette()

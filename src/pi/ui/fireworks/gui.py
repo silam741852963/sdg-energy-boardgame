@@ -10,6 +10,7 @@ class ControlPanel:
         self.selected_color = COLORS[0]
         self.spec = generate_spec(self.selected_type)
         self.spec.base_color = self.selected_color
+        self.has_custom_spec = False
 
         self.width = int(1350 * SCALE_X)
         self.item_height = int(30 * SCALE_Y)
@@ -102,6 +103,7 @@ class ControlPanel:
                         self.selected_type = fw_type
                         self.spec = generate_spec(fw_type)
                         self.spec.base_color = self.selected_color
+                        self.has_custom_spec = True
                         return True
 
                 for i, color in enumerate(COLORS):
@@ -112,6 +114,7 @@ class ControlPanel:
                     ):
                         self.selected_color = color
                         self.spec.base_color = color
+                        self.has_custom_spec = True
                         return True
 
                 for i, (prop, disp, step, min_v, max_v) in enumerate(self.num_props):
@@ -132,6 +135,7 @@ class ControlPanel:
                             setattr(self.spec, prop, int(max(min_v, val - step)))
                         else:
                             setattr(self.spec, prop, round(max(min_v, val - step), 2))
+                        self.has_custom_spec = True
                         return True
 
                     if (
@@ -150,6 +154,7 @@ class ControlPanel:
                             setattr(self.spec, prop, int(min(max_v, val + step)))
                         else:
                             setattr(self.spec, prop, round(min(max_v, val + step), 2))
+                        self.has_custom_spec = True
                         return True
 
                 for i, prop in enumerate(self.bool_props):
@@ -162,6 +167,7 @@ class ControlPanel:
                     ):
                         val = getattr(self.spec, prop)
                         setattr(self.spec, prop, not val)
+                        self.has_custom_spec = True
                         return True
 
                 for i, (prop, disp, step, min_v, max_v) in enumerate(self.drone_props):
@@ -208,8 +214,11 @@ class ControlPanel:
 
         if not self.visible:
             c = palette.get_color(121)
+            msg = "Press TAB for Laboratory"
+            if self.has_custom_spec:
+                msg += f" | Active: Custom {self.selected_type.capitalize()} ({self.selected_color.capitalize()})"
             renderer.draw_text(
-                int(20 * SCALE_X), int(50 * SCALE_Y), "Press TAB for Laboratory", fonts["small"], c
+                int(20 * SCALE_X), int(50 * SCALE_Y), msg, fonts["small"], c
             )
             renderer.set_blend_mode("additive")
             return

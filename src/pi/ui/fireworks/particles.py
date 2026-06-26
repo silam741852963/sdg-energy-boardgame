@@ -152,15 +152,25 @@ class ParticleSystem:
         self.drag[idxs_arr] = 0.01 if is_shell else spec.drag
         self.drag_factor[idxs_arr] = 1.0 - self.drag[idxs_arr]
 
-        # Determine base color index
-        color = particle_color if particle_color else spec.base_color
-        if is_inner:
-            color = "silver" if color != "blue" else "red"
-
-        if color == "silver":
-            color_idx = 121
+        # Determine base color index (handles single color or array of colors)
+        if isinstance(particle_color, (list, np.ndarray)):
+            color_idx = []
+            for col in particle_color:
+                if is_inner:
+                    col = "silver" if col != "blue" else "red"
+                if col == "silver":
+                    color_idx.append(121)
+                else:
+                    color_idx.append(COLOR_MAP.get(col, 121) + (spec.variant * 5))
+            color_idx = np.array(color_idx, dtype=np.int32)
         else:
-            color_idx = COLOR_MAP.get(color, 121) + (spec.variant * 5)
+            color = particle_color if particle_color else spec.base_color
+            if is_inner:
+                color = "silver" if color != "blue" else "red"
+            if color == "silver":
+                color_idx = 121
+            else:
+                color_idx = COLOR_MAP.get(color, 121) + (spec.variant * 5)
 
         self.base_color_idx[idxs_arr] = color_idx
         self.flicker_offset[idxs_arr] = np.random.randint(0, 60, count)
@@ -489,7 +499,6 @@ class ParticleSystem:
 
             color_idx = base_col_main + shade_offset
             color_idx[base_col_main == 121] = 121
-            color_idx[is_palm_main] = 121
 
             rgb = PALETTE_ARR[color_idx]
             size = np.maximum(2.0, factor_main * radius_main * 24.0)
@@ -621,7 +630,6 @@ class ParticleSystem:
 
                 trail_col_idx = base_col_sub + shade_offset
                 trail_col_idx[base_col_sub == 121] = 121
-                trail_col_idx[is_palm_sub] = 121
 
                 rgb_trail = PALETTE_ARR[trail_col_idx]
 

@@ -57,11 +57,7 @@ class GaugeManager:
             base_y = SCREEN_HEIGHT - (110 * SCALE_Y)
             target_y = base_y + (dist * 75 * SCALE_Y)
             
-            if abs(dist) >= 2:
-                target_scale = 0.0
-            else:
-                target_scale = 1.0 if dist == 0 else 0.5
-                
+            target_scale = 1.0 if dist == 0 else 0.0
             target_dim = dist != 0
             
             self.state[gen]["y"] += (target_y - self.state[gen]["y"]) * 0.1

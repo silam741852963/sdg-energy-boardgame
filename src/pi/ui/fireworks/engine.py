@@ -62,9 +62,16 @@ from . import palette
 from config import GeneratorType
 
 class FireworkEngine:
-    def __init__(self, game_state=None, is_mock=True):
+    def __init__(self, game_state=None, is_mock=None, mock_ble=False, mock_hall=False):
         self.game_state = game_state
-        self.is_mock = is_mock
+        if is_mock is not None:
+            self.is_mock = is_mock
+            self.mock_ble = is_mock
+            self.mock_hall = is_mock
+        else:
+            self.is_mock = mock_hall
+            self.mock_ble = mock_ble
+            self.mock_hall = mock_hall
         self.audio = AudioSystem()
 
         # Initialize Pygame and ModernGL
@@ -123,6 +130,13 @@ class FireworkEngine:
         self.gauge_manager = GaugeManager(self.game_state)
         self.script_manager = ScriptManager(self.firework_manager)
         self.completed_gauges = set()
+        self.completion_time = None
+        self.drones_cleared = False
+        self.show_leaderboard = False
+        self.leaderboard_start_activity_time = 0.0
+        self.show_started = False
+        self.completed_gen = None
+        self.congrat_start_time = None
 
         self.show_metrics = False
         self.fps_tracker = FPSTracker()
@@ -130,6 +144,8 @@ class FireworkEngine:
         
         self.last_interaction_time = time.time()
         self.in_attract_mode = False
+        self.prev_energy_levels = {}
+        self.last_fill_sound_time = 0.0
 
     def get_memory_usage(self):
         try:
@@ -144,8 +160,11 @@ class FireworkEngine:
         return 0.0
 
     def _restart_game(self):
+        self.audio.play_restart_sound()
         if self.game_state:
             self.game_state.start_new_session()
+            self.game_state.set_active_generator(None)
+            self.game_state.drain_paused = False
             self.completed_gauges.clear()
             self.firework_manager.particles.clear()
             self.firework_manager.shells.clear()
@@ -153,11 +172,24 @@ class FireworkEngine:
             self.drone_manager.transition_to_pattern(0, self.gui, self.audio)
             if hasattr(self, 'last_seen_gen_after_completion'):
                 delattr(self, 'last_seen_gen_after_completion')
+            # Reset animated levels of all gauges to 0.0 to prevent visual autoplay re-trigger
+            for gen in self.gauge_manager.state:
+                self.gauge_manager.state[gen]["level"] = 0.0
+        self.completion_time = None
+        self.drones_cleared = False
+        self.show_leaderboard = False
+        self.leaderboard_start_activity_time = 0.0
+        self.show_started = False
+        self.completed_gen = None
+        self.congrat_start_time = None
+        self.prev_energy_levels = {}
 
     def update(self, events):
         self.frame_count += 1
         self.fps_tracker.update()
         self.cpu_tracker.update()
+
+
 
         # Get actual logical window size from Pygame
         try:
@@ -248,9 +280,13 @@ class FireworkEngine:
                     key_space_pressed = True
                 elif event.key == pygame.K_p:
                     key_p_pressed = True
+                elif event.key == pygame.K_s:
+                    self.audio.toggle_music()
 
         if self.is_mock:
             gui_captured_mouse = self.gui.update(events, click_pos, mouse_clicked_left)
+            if gui_captured_mouse:
+                self.audio.play_tick_sound()
         else:
             gui_captured_mouse = False
 
@@ -296,28 +332,50 @@ class FireworkEngine:
             is_completed = self.game_state.current_session and self.game_state.current_session.completed
             fireworks_done = len(self.script_manager.active_scripts) == 0 and len(self.firework_manager.shells) == 0 and len(self.firework_manager.particles) == 0
             
-            if is_completed and fireworks_done:
-                if not hasattr(self, 'last_seen_gen_after_completion'):
-                    self.last_seen_gen_after_completion = active_gen
-                    
-                if active_gen != self.last_seen_gen_after_completion:
+            # After fireworks are done, show CONGRAT drones first, then the leaderboard
+            if is_completed and len(self.completed_gauges) > 0 and self.show_started:
+                if fireworks_done and self.congrat_start_time is None:
+                    # Transition drones to CONGRAT pattern (index 7) with a gold color override
+                    self.drone_manager.transition_to_pattern(7, self.gui, self.audio, override_color="gold")
+                    self.congrat_start_time = time.time()
+                
+                if self.congrat_start_time is not None and not self.show_leaderboard:
+                    if time.time() - self.congrat_start_time >= 8.0:
+                        self.show_leaderboard = True
+                        self.drone_manager.clear_all()
+                        self.leaderboard_start_activity_time = self.game_state.last_activity_time
+                        if self.game_state:
+                            self.game_state.drain_paused = False
+
+            # Check for key presses or other signals to close leaderboard
+            if self.show_leaderboard:
+                any_key_pressed = False
+                for event in events:
+                    if event.type == pygame.KEYDOWN:
+                        any_key_pressed = True
+                        break
+                new_activity = False
+                if self.game_state and self.game_state.last_activity_time > self.leaderboard_start_activity_time:
+                    new_activity = True
+                if any_key_pressed or new_activity:
                     self._restart_game()
 
-            active_gen = self.game_state.active_generator
-            target_pattern = 0 # 0 is Ablic
-            if active_gen == GeneratorType.WIND:
-                target_pattern = 1
-            elif active_gen == GeneratorType.SOLAR:
-                target_pattern = 2
-            elif active_gen == GeneratorType.PIEZO:
-                target_pattern = 3
-            elif active_gen == GeneratorType.COIL:
-                target_pattern = 4
-                
-            if self.drone_manager.current_index != target_pattern:
-                if self.drone_manager.current_index != -1:
-                    self.audio.play_switch_sound()
-                self.drone_manager.transition_to_pattern(target_pattern, self.gui, self.audio)
+            if not is_completed:
+                active_gen = self.game_state.active_generator
+                target_pattern = 0 # 0 is Ablic
+                if active_gen == GeneratorType.WIND:
+                    target_pattern = 1
+                elif active_gen == GeneratorType.SOLAR:
+                    target_pattern = 2
+                elif active_gen == GeneratorType.PIEZO:
+                    target_pattern = 3
+                elif active_gen == GeneratorType.COIL:
+                    target_pattern = 4
+                    
+                if self.drone_manager.current_index != target_pattern:
+                    if self.drone_manager.current_index != -1:
+                        self.audio.play_switch_sound()
+                    self.drone_manager.transition_to_pattern(target_pattern, self.gui, self.audio)
 
             if self.is_mock:
                 if key_1_pressed:
@@ -332,33 +390,66 @@ class FireworkEngine:
                     self.game_state.set_active_generator(None)
                 elif key_space_pressed:
                     if self.game_state.active_generator:
-                        self.game_state.add_energy(self.game_state.active_generator, 10.0)
+                        is_cb = True if self.mock_ble else False
+                        self.game_state.add_energy(self.game_state.active_generator, 10.0, is_clean_boost=is_cb)
                 elif key_p_pressed:
                     self.game_state.mock_paused = not self.game_state.mock_paused
+                    self.audio.play_switch_sound()
 
             # Check each gauge independently to trigger fireworks
             if self.game_state.current_session:
-                for gen, level in self.game_state.current_session.energy_levels.items():
-                    if level >= 100.0:
+                for gen in self.gauge_manager.generators:
+                    st_level = self.gauge_manager.state[gen]["level"]
+                    if st_level >= 100.0:
                         if gen not in self.completed_gauges:
                             self.completed_gauges.add(gen)
                             self.audio.play_success_chime()
+                            self.completion_time = time.time()
+                            self.drones_cleared = False
+                            self.show_started = False
+                            self.completed_gen = gen
+                            if self.game_state:
+                                self.game_state.drain_paused = True
                             
-                            script_name = "success.json"
+                            # Transition drones to CLEAR pattern (index 6) with matching color
+                            gen_color = "silver"
                             if gen == GeneratorType.WIND:
-                                script_name = "wind.json"
+                                gen_color = "cyan"
                             elif gen == GeneratorType.SOLAR:
-                                script_name = "solar.json"
+                                gen_color = "yellow"
                             elif gen == GeneratorType.PIEZO:
-                                script_name = "piezo.json"
+                                gen_color = "orange"
                             elif gen == GeneratorType.COIL:
-                                script_name = "coil.json"
+                                gen_color = "blue"
                                 
-                            script_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "resource", "firework-scripts", script_name)
-                            self.script_manager.play_sequence(os.path.abspath(script_path))
+                            self.drone_manager.transition_to_pattern(6, self.gui, self.audio, override_color=gen_color)
                     else:
                         if gen in self.completed_gauges:
                             self.completed_gauges.remove(gen)
+
+            # Delay fireworks show by 4.0 seconds to let user read CLEAR pattern
+            if self.completion_time is not None and not self.show_started:
+                if time.time() - self.completion_time >= 4.0:
+                    script_name = "success.json"
+                    if self.completed_gen == GeneratorType.WIND:
+                        script_name = "wind.json"
+                    elif self.completed_gen == GeneratorType.SOLAR:
+                        script_name = "solar.json"
+                    elif self.completed_gen == GeneratorType.PIEZO:
+                        script_name = "piezo.json"
+                    elif self.completed_gen == GeneratorType.COIL:
+                        script_name = "coil.json"
+                        
+                    script_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "resource", "firework-scripts", script_name)
+                    self.script_manager.play_sequence(os.path.abspath(script_path))
+                    self.show_started = True
+                    self.completion_time = time.time()  # Reset timer to be relative to show start
+
+            # Clear drones after 3.0 seconds into the firework show
+            if self.completion_time is not None and self.show_started and not self.drones_cleared:
+                if time.time() - self.completion_time >= 3.0:
+                    self.drone_manager.clear_all()
+                    self.drones_cleared = True
 
         # --- KEYBOARD SHORTCUTS FOR DRONE TRANSITIONS (Manual) ---
         if not self.game_state and self.is_mock:
@@ -387,28 +478,13 @@ class FireworkEngine:
                         break
 
             if not clicked_gauge:
-                if self.gui.visible:
+                if self.gui.visible or self.gui.has_custom_spec:
                     custom_spec = copy.copy(self.gui.spec)
                     self.firework_manager.launch(
                         click_pos[0], click_pos[1], forced_spec=custom_spec
                     )
                 else:
                     self.firework_manager.launch(click_pos[0], click_pos[1])
-
-        is_completed = self.game_state and self.game_state.current_session and self.game_state.current_session.completed
-
-        if (
-            self.is_mock
-            and not self.gui.visible
-            and not is_completed
-            and len(self.firework_manager.shells) == 0
-            and len(self.firework_manager.particles) == 0
-            and random.random() < 0.05
-        ):
-            self.firework_manager.launch(
-                random.randint(int(400 * SCALE_X), SCREEN_WIDTH - int(400 * SCALE_X)),
-                random.randint(int(400 * SCALE_Y), int(700 * SCALE_Y)),
-            )
 
         self.lighting.update()
         self.firework_manager.update()
@@ -418,7 +494,8 @@ class FireworkEngine:
         if self.game_state and self.game_state.active_generator and self.game_state.current_session:
             from config import MAX_ENERGY_GAUGE
             active_gen = self.game_state.active_generator
-            fill_pct = min(1.0, self.game_state.current_session.energy_levels.get(active_gen, 0.0) / MAX_ENERGY_GAUGE)
+            st_level = self.gauge_manager.state.get(active_gen, {}).get("level", 0.0)
+            fill_pct = min(1.0, st_level / MAX_ENERGY_GAUGE)
 
         self.drone_manager.update(self.frame_count, fill_pct)
         
@@ -426,9 +503,29 @@ class FireworkEngine:
         if self.game_state:
             self.game_state.check_inactivity()
         self.gauge_manager.update()
+
+        # Play fill sound if active generator animated level increased (per integer percentage)
+        if self.game_state and self.game_state.current_session and not self.game_state.current_session.completed:
+            active_gen = self.game_state.active_generator
+            if active_gen:
+                curr_val = self.gauge_manager.state.get(active_gen, {}).get("level", 0.0)
+                prev_val = self.prev_energy_levels.get(active_gen, 0.0)
+                curr_int = int(curr_val)
+                prev_int = int(prev_val)
+                if curr_int > prev_int:
+                    from config import MAX_ENERGY_GAUGE
+                    # Play sound for each integer percent gained in this step
+                    for p in range(prev_int + 1, curr_int + 1):
+                        fill_pct = min(1.0, p / MAX_ENERGY_GAUGE)
+                        self.audio.play_fill_sound(fill_pct)
         
         # --- UPDATE SCRIPTING ---
         self.script_manager.update()
+
+        # Save animated energy levels for the next frame's comparison
+        self.prev_energy_levels = {}
+        for gen in self.gauge_manager.generators:
+            self.prev_energy_levels[gen] = self.gauge_manager.state.get(gen, {}).get("level", 0.0)
 
     def draw(self):
         # 1. Start frame (binds offscreen framebuffer and sets viewport to 1920x1080)
@@ -447,6 +544,28 @@ class FireworkEngine:
         # 5. Draw gauges
         if not self.in_attract_mode:
             self.gauge_manager.draw(self.renderer, self.fonts, self.frame_count)
+
+        if not self.in_attract_mode:
+            # Draw debug mode label
+            debug_label = None
+            if self.mock_ble and self.mock_hall:
+                debug_label = "DEBUG MODE: ALL MOCKED"
+            elif self.mock_ble:
+                debug_label = "DEBUG MODE: BLE MOCKED"
+            elif self.mock_hall:
+                debug_label = "DEBUG MODE: HALL-IC MOCKED"
+                
+            if debug_label:
+                self.renderer.set_blend_mode("alpha")
+                paused_str = " (PAUSED)" if (self.game_state and self.game_state.mock_paused) else ""
+                self.renderer.draw_text(
+                    int(20 * SCALE_X),
+                    SCREEN_HEIGHT - int(80 * SCALE_Y),
+                    f"{debug_label}{paused_str}",
+                    self.fonts["small"],
+                    palette.get_color(122),
+                )
+                self.renderer.set_blend_mode("additive")
 
         # 6. Draw laboratory GUI
         if self.is_mock and not self.in_attract_mode:
@@ -476,10 +595,7 @@ class FireworkEngine:
             self.renderer.draw_text(mx + text_offset_x, my + int(148 * SCALE_Y), f"Pool: {len(self.firework_manager.particle_system.free_indices)}/{self.firework_manager.particle_system.max_particles}", self.fonts["small"], c_white)
             self.renderer.set_blend_mode("additive")
 
-        is_completed = self.game_state and self.game_state.current_session and self.game_state.current_session.completed
-        fireworks_done = len(self.script_manager.active_scripts) == 0 and len(self.firework_manager.shells) == 0 and len(self.firework_manager.particles) == 0
-
-        if is_completed and fireworks_done:
+        if self.show_leaderboard:
             # Draw overlay and leaderboard
             overlay_w = int(600 * SCALE_X)
             overlay_h = int(400 * SCALE_Y)

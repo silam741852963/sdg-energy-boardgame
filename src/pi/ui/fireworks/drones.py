@@ -124,19 +124,19 @@ class Drone:
         visual_radius = 1.5 + (self.radius - 1.0) * 0.3
 
         if self.color_blend < 1.0:
-            c1_idx = COLOR_MAP.get(self.prev_color, 121) if self.activated else 121
+            c1_idx = COLOR_MAP.get(self.prev_color, 121)
             c1 = palette.get_color(c1_idx)
             size1 = max(min_size, factor * visual_radius * size_factor)
             alpha1 = draw_intensity * (1.0 - self.color_blend)
             instance_data.append((px, py, size1, c1[0], c1[1], c1[2], alpha1))
 
-            c2_idx = COLOR_MAP.get(self.target_color, 121) if self.activated else 121
+            c2_idx = COLOR_MAP.get(self.target_color, 121)
             c2 = palette.get_color(c2_idx)
             size2 = max(min_size, factor * visual_radius * size_factor)
             alpha2 = draw_intensity * self.color_blend
             instance_data.append((px, py, size2, c2[0], c2[1], c2[2], alpha2))
         else:
-            color_idx = COLOR_MAP.get(self.target_color, 121) if self.activated else 121
+            color_idx = COLOR_MAP.get(self.target_color, 121)
             c = palette.get_color(color_idx)
             size = max(min_size, factor * visual_radius * size_factor)
             instance_data.append((px, py, size, c[0], c[1], c[2], draw_intensity))
@@ -241,7 +241,7 @@ class DroneManager:
 
         return coords
 
-    def transition_to_pattern(self, index, gui, audio=None):
+    def transition_to_pattern(self, index, gui, audio=None, override_color=None):
         if not self.patterns:
             return
         if index < 0 or index >= len(self.patterns):
@@ -262,7 +262,7 @@ class DroneManager:
 
         for i, target in enumerate(target_coords):
             tx, ty, tz = target["x"], target["y"], target["z"]
-            c_name = target["color"]
+            c_name = override_color if override_color is not None else target["color"]
             radius = target["radius"] if target["radius"] is not None else gui.drone_radius
             intensity = target["intensity"] if target["intensity"] is not None else gui.drone_intensity
             

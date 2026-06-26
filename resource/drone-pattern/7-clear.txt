@@ -1,0 +1,13 @@
+{
+  "spacing": 45,
+  "altitude": -100,
+  "legend": {
+    "G": {"color": "gold", "radius": 3.0, "intensity": 2.2, "z": 0}
+  }
+}
+===
+  G G G      G          G G G G       G G       G G G  
+ G           G          G            G   G      G    G 
+ G           G          G G G       G G G G     G G G  
+ G           G          G           G     G     G  G   
+  G G G      G G G G    G G G G     G     G     G   G  

@@ -164,6 +164,11 @@ def generate_spec(fw_type: str) -> FireworkSpec:
     color = random.choice(COLORS)
     variant = random.choice([0, 1])
 
+    # Sometimes have 2 or more colors (35% chance of 2 or 3 colors)
+    multicolor = 1
+    if random.random() < 0.35:
+        multicolor = random.choice([2, 3])
+
     # Improved base default spec: more particles, slightly larger radius for better glow
     spec = FireworkSpec(
         name=fw_type,
@@ -175,6 +180,7 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         gravity_mod=0.5,
         drag=0.05,
         life_span=80,
+        multicolor=multicolor,
     )
 
     if fw_type == "Brocade":
@@ -240,13 +246,13 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.draw_behaviors.append(CrackleBehavior())
         spec.draw_behaviors.append(TrailBehavior(glitter=True, trail_len=5))
     elif fw_type == "Waterfall":
-        # Waterfall: dense cascading curtain of glowing fire falling down
-        spec.particle_count = 300
+        # Waterfall: dense cascading curtain of glowing fire falling down (enlarged and enhanced)
+        spec.particle_count = 450
         spec.gravity_mod = 1.2
         spec.drag = 0.08
-        spec.speed_variance = 12.0
+        spec.speed_variance = 16.0
         spec.life_span = 200
-        spec.radius = 1.5
+        spec.radius = 2.2
         spec.update_behaviors.append(WaterfallBehavior())
         spec.draw_behaviors.append(TrailBehavior(trail_len=12))
     elif fw_type == "Flying Fish":

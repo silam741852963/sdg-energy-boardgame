@@ -8,6 +8,7 @@ class AudioSystem:
     def __init__(self):
         self.enabled = False
         self.sounds = {}
+        self.music_muted = False
 
         try:
             pygame.init()
@@ -39,6 +40,24 @@ class AudioSystem:
         self._load_sound("twinkle_near", "Firework_twinkle.wav")
         self._load_sound("twinkle_far", "Firework_twinkle_far.wav")
 
+        if self.enabled:
+            try:
+                import numpy as np
+                self.sounds["success_chime"] = pygame.mixer.Sound(array=self._generate_success_chime_samples())
+                self.sounds["switch_blip"] = pygame.mixer.Sound(array=self._generate_switch_blip_samples())
+                self.sounds["tick"] = pygame.mixer.Sound(array=self._generate_tick_samples())
+                self.sounds["restart_chime"] = pygame.mixer.Sound(array=self._generate_restart_chime_samples())
+
+                # Pre-generate 16 fill tick sounds at different pitch levels
+                self.fill_sounds = []
+                for i in range(16):
+                    # Frequencies from 450 Hz to 950 Hz
+                    freq = 450.0 + i * 33.3
+                    samples = self._generate_fill_tick_samples(freq)
+                    self.fill_sounds.append(pygame.mixer.Sound(array=samples))
+            except Exception as e:
+                print(f"Failed to synthesize UI sounds: {e}")
+
     def _load_sound(self, key, filename):
         if not self.enabled:
             return
@@ -55,7 +74,7 @@ class AudioSystem:
 
     # --- NEW: Background Music Controls ---
     def play_music(self, filename):
-        if not self.enabled:
+        if not self.enabled or self.music_muted:
             return
         path = os.path.join(self.audio_dir, filename)
         if os.path.exists(path):
@@ -72,6 +91,15 @@ class AudioSystem:
         if not self.enabled:
             return
         pygame.mixer.music.fadeout(2000)  # Smooth 2-second fade out
+
+    def toggle_music(self):
+        if not self.enabled:
+            return
+        self.music_muted = not self.music_muted
+        if self.music_muted:
+            pygame.mixer.music.stop()
+        else:
+            self.play_music("ablic-theme.wav")
 
     def _get_stereo_pan(self, x_position):
         max_x = 600.0 * SCALE_X
@@ -122,30 +150,139 @@ class AudioSystem:
                 channel.set_volume((1.0 - pan) * base_vol, pan * base_vol)
                 channel.play(self.sounds[key])
 
+    def _generate_success_chime_samples(self):
+        import numpy as np
+        sample_rate = 44100
+        # Notes: C5 (523.25), E5 (659.25), G5 (783.99), C6 (1046.50)
+        freqs = [523.25, 659.25, 783.99, 1046.50]
+        durations = [0.12, 0.12, 0.12, 0.44] # total 0.8s
+        volume = 0.4 * 32767 # signed 16-bit max is 32767
+
+        buffer = []
+        for freq, dur in zip(freqs, durations):
+            num_samples = int(sample_rate * dur)
+            t = np.linspace(0, dur, num_samples, endpoint=False)
+            # Sine wave
+            wave = np.sin(2 * np.pi * freq * t)
+            # Decay envelope
+            envelope = np.exp(-4.0 * t)
+            note_samples = (wave * envelope * volume).astype(np.int16)
+            buffer.append(note_samples)
+
+        mono_samples = np.concatenate(buffer)
+        return np.column_stack((mono_samples, mono_samples))
+
+    def _generate_switch_blip_samples(self):
+        import numpy as np
+        sample_rate = 44100
+        dur = 0.08
+        f_start = 600.0
+        f_end = 900.0
+        num_samples = int(sample_rate * dur)
+        t = np.linspace(0, dur, num_samples, endpoint=False)
+        phi = 2 * np.pi * (f_start * t + (f_end - f_start) / (2 * dur) * (t ** 2))
+        wave = np.sin(phi)
+        envelope = 1.0 - (t / dur)
+        volume = 0.3 * 32767
+        mono = (wave * envelope * volume).astype(np.int16)
+        return np.column_stack((mono, mono))
+
+    def _generate_tick_samples(self):
+        import numpy as np
+        sample_rate = 44100
+        dur = 0.03
+        freq = 1200.0
+        num_samples = int(sample_rate * dur)
+        t = np.linspace(0, dur, num_samples, endpoint=False)
+        wave = np.sin(2 * np.pi * freq * t)
+        envelope = np.exp(-30.0 * t)
+        volume = 0.15 * 32767
+        mono = (wave * envelope * volume).astype(np.int16)
+        return np.column_stack((mono, mono))
+
+    def _generate_restart_chime_samples(self):
+        import numpy as np
+        sample_rate = 44100
+        # Notes: G5 (783.99), C5 (523.25)
+        freqs = [783.99, 523.25]
+        durations = [0.15, 0.25]
+        volume = 0.4 * 32767
+
+        buffer = []
+        for freq, dur in zip(freqs, durations):
+            num_samples = int(sample_rate * dur)
+            t = np.linspace(0, dur, num_samples, endpoint=False)
+            wave = np.sin(2 * np.pi * freq * t)
+            envelope = np.exp(-6.0 * t)
+            note_samples = (wave * envelope * volume).astype(np.int16)
+            buffer.append(note_samples)
+
+        mono = np.concatenate(buffer)
+        return np.column_stack((mono, mono))
+
     def play_success_chime(self):
         if not self.enabled:
             return
         
-        # Play a loud launch and a twinkle to signify 100%
-        if "launch" in self.sounds:
-            channel1 = pygame.mixer.find_channel()
-            if channel1:
-                channel1.set_volume(1.0)
-                channel1.play(self.sounds["launch"])
-                
-        if "twinkle_near" in self.sounds:
-            channel2 = pygame.mixer.find_channel()
-            if channel2:
-                channel2.set_volume(1.0)
-                channel2.play(self.sounds["twinkle_near"])
+        # Play the synthesized retro synth chime (not a firework sound)
+        if "success_chime" in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.8)
+                channel.play(self.sounds["success_chime"])
 
     def play_switch_sound(self):
         if not self.enabled:
             return
         
-        # Play a soft, quick twinkle as a UI selection sound
-        if "twinkle_near" in self.sounds:
+        # Play a quick synthesized chirp blip
+        if "switch_blip" in self.sounds:
             channel = pygame.mixer.find_channel()
             if channel:
-                channel.set_volume(0.3)
-                channel.play(self.sounds["twinkle_near"])
+                channel.set_volume(0.6)
+                channel.play(self.sounds["switch_blip"])
+
+    def play_tick_sound(self):
+        if not self.enabled:
+            return
+        
+        # Play a satisfying short tick click
+        if "tick" in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.5)
+                channel.play(self.sounds["tick"])
+
+    def play_restart_sound(self):
+        if not self.enabled:
+            return
+        
+        # Play a descending restart resolution chime
+        if "restart_chime" in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.7)
+                channel.play(self.sounds["restart_chime"])
+
+    def _generate_fill_tick_samples(self, freq):
+        import numpy as np
+        sample_rate = 44100
+        dur = 0.05
+        num_samples = int(sample_rate * dur)
+        t = np.linspace(0, dur, num_samples, endpoint=False)
+        wave = np.sin(2 * np.pi * freq * t)
+        envelope = np.sin(np.pi * (t / dur)) * np.exp(-12.0 * t)
+        volume = 0.3 * 32767
+        mono = (wave * envelope * volume).astype(np.int16)
+        return np.column_stack((mono, mono))
+
+    def play_fill_sound(self, fill_pct):
+        if not self.enabled or not hasattr(self, 'fill_sounds') or not self.fill_sounds:
+            return
+        
+        # Map fill_pct (0.0 to 1.0) to index 0..15
+        idx = int(min(0.99, max(0.0, fill_pct)) * 16)
+        channel = pygame.mixer.find_channel()
+        if channel:
+            channel.set_volume(0.6)
+            channel.play(self.fill_sounds[idx])

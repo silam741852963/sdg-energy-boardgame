@@ -80,7 +80,8 @@ class TrailBehavior(DrawBehavior):
             alpha_mult = 0.15 + 0.85 * (i / (hist_len - 1 if hist_len > 1 else 1))
             size_mult = 0.5 + 0.5 * (i / (hist_len - 1 if hist_len > 1 else 1))
             
-            trail_col_idx = 121 if particle.is_palm_tail_shell else particle.get_shade(hfactor - 0.3)
+            base_col = getattr(particle, "base_color_idx", 121)
+            trail_col_idx = base_col if particle.is_palm_tail_shell else (particle.get_shade(hfactor - 0.3) if hasattr(particle, "get_shade") else base_col)
             color = palette.get_color(trail_col_idx)
             
             size = max(2.0, hfactor * thickness * 8.0 * size_mult)

@@ -31,33 +31,33 @@ class ScriptManager:
             if "wind" in filename:
                 theme = {
                     "name": "wind",
-                    "main_color": "cyan",
-                    "colors_in": ["cyan", "blue", "lime", "silver"],
-                    "colors_out": ["blue", "cyan", "silver", "lime"],
+                    "main_color": "red",
+                    "colors_in": ["red", "pink", "magenta", "orange"],
+                    "colors_out": ["pink", "magenta", "orange", "red"],
                     "allowed_types": ["Tourbillion", "Flying Fish", "Comet", "Pearls", "Crossette", "Strobe", "Peony", "Waterfall", "Dragon Eggs", "Palm Tree", "Chrysanthemum", "Brocade", "Pistil", "Willow"]
                 }
             elif "solar" in filename:
                 theme = {
                     "name": "solar",
-                    "main_color": "yellow",
-                    "colors_in": ["yellow", "gold", "orange", "red"],
-                    "colors_out": ["orange", "gold", "yellow", "red"],
+                    "main_color": "violet",
+                    "colors_in": ["violet", "indigo", "magenta", "blue"],
+                    "colors_out": ["indigo", "magenta", "blue", "violet"],
                     "allowed_types": ["Strobe", "Peony", "Chrysanthemum", "Pistil", "Brocade", "Palm Tree", "Waterfall", "Crossette", "Comet", "Pearls", "Flying Fish", "Tourbillion", "Dragon Eggs", "Willow"]
                 }
             elif "piezo" in filename:
                 theme = {
                     "name": "piezo",
-                    "main_color": "orange",
-                    "colors_in": ["orange", "red", "magenta", "pink"],
-                    "colors_out": ["pink", "magenta", "orange", "yellow"],
+                    "main_color": "blue",
+                    "colors_in": ["blue", "cyan", "indigo", "lime"],
+                    "colors_out": ["cyan", "indigo", "lime", "blue"],
                     "allowed_types": ["Crossette", "Dragon Eggs", "Strobe", "Peony", "Chrysanthemum", "Palm Tree", "Tourbillion", "Comet", "Pearls", "Flying Fish", "Waterfall", "Brocade", "Pistil", "Willow"]
                 }
             elif "coil" in filename:
                 theme = {
                     "name": "coil",
-                    "main_color": "blue",
-                    "colors_in": ["blue", "indigo", "violet", "cyan"],
-                    "colors_out": ["cyan", "violet", "indigo", "silver"],
+                    "main_color": "orange",
+                    "colors_in": ["orange", "yellow", "gold", "red"],
+                    "colors_out": ["yellow", "gold", "red", "orange"],
                     "allowed_types": ["Brocade", "Waterfall", "Tourbillion", "Comet", "Pearls", "Strobe", "Dragon Eggs", "Crossette", "Peony", "Chrysanthemum", "Palm Tree", "Flying Fish", "Pistil", "Willow"]
                 }
 
@@ -67,12 +67,12 @@ class ScriptManager:
             allowed_types = theme["allowed_types"]
 
             # Generate Choreographed Intro Sequence:
-            # 1. Sides to Center (0.0 to 5.0s, spaced 1.0s apart)
+            # 1. Sides to Center (0.0 to 2.5s, spaced 0.5s apart)
             left_x_vals = [100, 272, 444, 616, 788, 960]
             right_x_vals = [1820, 1648, 1476, 1304, 1132, 960]
             
             for i in range(6):
-                t = i * 1.0
+                t = i * 0.5
                 col = colors_in[i % len(colors_in)]
                 if i == 5:
                     events.append({"time": t, "type": "Rising Tail", "color": col, "x": 960, "y": 600})
@@ -80,9 +80,9 @@ class ScriptManager:
                     events.append({"time": t, "type": "Rising Tail", "color": col, "x": left_x_vals[i], "y": 600})
                     events.append({"time": t, "type": "Rising Tail", "color": col, "x": right_x_vals[i], "y": 600})
                     
-            # 2. Reverse: Center to Sides (8.0 to 13.0s, spaced 1.0s apart)
+            # 2. Reverse: Center to Sides (4.0 to 6.5s, spaced 0.5s apart)
             for i in range(6):
-                t = 8.0 + i * 1.0
+                t = 4.0 + i * 0.5
                 col = colors_out[i % len(colors_out)]
                 if i == 0:
                     events.append({"time": t, "type": "Rising Tail", "color": col, "x": 960, "y": 600})
@@ -90,10 +90,10 @@ class ScriptManager:
                     events.append({"time": t, "type": "Rising Tail", "color": col, "x": left_x_vals[5 - i], "y": 600})
                     events.append({"time": t, "type": "Rising Tail", "color": col, "x": right_x_vals[5 - i], "y": 600})
                     
-            # 3. Transition burst (6.5s) - crossover pattern
-            events.append({"time": 6.5, "type": allowed_types[0], "color": main_color, "x": 300, "y": 500})
-            events.append({"time": 6.5, "type": allowed_types[0], "color": main_color, "x": 1620, "y": 500})
-            events.append({"time": 6.5, "type": "Brocade" if "Brocade" in allowed_types else "Peony", "color": colors_in[1 % len(colors_in)], "x": 960, "y": 400})
+            # 3. Transition burst (3.25s) - crossover pattern
+            events.append({"time": 3.25, "type": allowed_types[0], "color": main_color, "x": 300, "y": 500})
+            events.append({"time": 3.25, "type": allowed_types[0], "color": main_color, "x": 1620, "y": 500})
+            events.append({"time": 3.25, "type": "Brocade" if "Brocade" in allowed_types else "Peony", "color": colors_in[1 % len(colors_in)], "x": 960, "y": 400})
             
             # Process main show events WITHOUT time shifting
             for ev in original_events:

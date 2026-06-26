@@ -24,6 +24,7 @@ COLOR_MAP = {
     "magenta": 101,
     "pink": 111,
     "silver": 121,
+    "sakura": 124,
 }
 
 FIREWORK_TYPES = [
@@ -57,4 +58,5 @@ COLORS = [
     "violet",
     "magenta",
     "pink",
+    "sakura",
 ]
