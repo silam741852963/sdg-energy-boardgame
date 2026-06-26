@@ -143,7 +143,10 @@ class GameState:
         import datetime
         import math
         
-        filepath = "/home/lam/Work/sdg-energy-boardgame/clean_boost_test.log"
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
+        filepath = os.path.join(root_dir, "clean_boost_test.log")
         
         total_signals = len(self.clean_boost_signals)
         if total_signals == 0:
