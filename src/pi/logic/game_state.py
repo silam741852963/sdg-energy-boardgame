@@ -20,6 +20,24 @@ class GameState:
         self.session_count = 0
         self.clean_boost_signals = []
 
+        # Multi-sensor active states (Hall-IC)
+        self.active_sensors = []
+        
+        # Konami sequence history (track transitions)
+        self.dial_sequence = []
+        self.trigger_konami_combo = False
+        
+        # Overdrive Mode state
+        self.overdrive_active = False
+        self.overdrive_start_time = 0.0
+        
+        # Simon Says Mode state
+        self.simon_says_active = False
+        self.simon_says_target = None
+        self.simon_says_step = 0
+        self.simon_says_sequence = []
+        self.simon_says_last_target_time = 0.0
+
     def start_new_session(self, player_name: str | None = None):
         self.session_count += 1
         name = player_name if player_name else f"Student {self.session_count}"
@@ -33,11 +51,59 @@ class GameState:
         if self.active_generator != gen_type:
             self.active_generator = gen_type
             self.last_activity_time = time.time()
+            if not self.active_sensors:
+                self.active_sensors = [gen_type] if gen_type else []
+
+    def set_active_sensors(self, sensors: List[GeneratorType]):
+        current_time = time.time()
+        self.active_sensors = sensors
+        
+        new_active = sensors[0] if sensors else None
+        
+        # Track dialing sequence for Konami and Overdrive Mode
+        if new_active is not None:
+            if not self.dial_sequence or self.dial_sequence[-1][0] != new_active or (current_time - self.dial_sequence[-1][1] > 0.05):
+                self.dial_sequence.append((new_active, current_time))
+                self.dial_sequence = self.dial_sequence[-15:]
+                
+                # Check for Konami code: WIND -> SOLAR -> PIEZO -> COIL
+                deduped = []
+                for item, t in self.dial_sequence:
+                    if not deduped or deduped[-1] != item:
+                        deduped.append(item)
+                
+                if len(deduped) >= 4 and deduped[-4:] == [
+                    GeneratorType.WIND,
+                    GeneratorType.SOLAR,
+                    GeneratorType.PIEZO,
+                    GeneratorType.COIL,
+                ]:
+                    if len(self.dial_sequence) >= 4 and (self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0):
+                        self.trigger_konami_combo = True
+                
+                # Check for Overdrive speed trigger: 4 distinct sensors hit in the last 1.2 seconds
+                recent_sensors = set()
+                for item, t in self.dial_sequence:
+                    if current_time - t <= 1.2:
+                        recent_sensors.add(item)
+                if len(recent_sensors) == 4:
+                    self.activate_overdrive()
+
+        self.set_active_generator(new_active)
+
+    def activate_overdrive(self):
+        if not self.overdrive_active:
+            self.overdrive_active = True
+            self.overdrive_start_time = time.time()
 
     def check_inactivity(self):
         current_time = time.time()
         dt = current_time - self.last_drain_time
         self.last_drain_time = current_time
+
+        # Check if overdrive has expired
+        if self.overdrive_active and (current_time - self.overdrive_start_time) > 10.0:
+            self.overdrive_active = False
 
         if self.drain_paused:
             # While draining is paused, keep the timers fresh relative to current_time

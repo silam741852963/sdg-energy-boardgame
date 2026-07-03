@@ -23,6 +23,25 @@ ASCII_COLOR_MAP = {
 }
 
 
+def hsl_to_rgb(h, s, l):
+    c = (1.0 - abs(2.0 * l - 1.0)) * s
+    x = c * (1.0 - abs((h / 60.0) % 2.0 - 1.0))
+    m = l - c / 2.0
+    if 0 <= h < 60:
+        r, g, b = c, x, 0.0
+    elif 60 <= h < 120:
+        r, g, b = x, c, 0.0
+    elif 120 <= h < 180:
+        r, g, b = 0.0, c, x
+    elif 180 <= h < 240:
+        r, g, b = 0.0, x, c
+    elif 240 <= h < 300:
+        r, g, b = x, 0.0, c
+    else:
+        r, g, b = c, 0.0, x
+    return (r + m, g + m, b + m)
+
+
 class Drone:
     def __init__(
         self, target_x, target_y, target_z, color_name, radius, intensity, spawn_y=1000
@@ -123,7 +142,7 @@ class Drone:
         # Compress the radius range to narrow size difference visually (e.g. 1.0 -> 1.5, 4.5 -> 2.55)
         visual_radius = 1.5 + (self.radius - 1.0) * 0.3
 
-        if self.color_blend < 1.0:
+        if self.color_blend < 1.0 and self.target_color != "rainbow":
             c1_idx = COLOR_MAP.get(self.prev_color, 121)
             c1 = palette.get_color(c1_idx)
             size1 = max(min_size, factor * visual_radius * size_factor)
@@ -136,8 +155,12 @@ class Drone:
             alpha2 = draw_intensity * self.color_blend
             instance_data.append((px, py, size2, c2[0], c2[1], c2[2], alpha2))
         else:
-            color_idx = COLOR_MAP.get(self.target_color, 121)
-            c = palette.get_color(color_idx)
+            if self.target_color == "rainbow":
+                hue = (frame_count * 2.5 + self.tx * 0.4) % 360.0
+                c = hsl_to_rgb(hue, 1.0, 0.5)
+            else:
+                color_idx = COLOR_MAP.get(self.target_color, 121)
+                c = palette.get_color(color_idx)
             size = max(min_size, factor * visual_radius * size_factor)
             instance_data.append((px, py, size, c[0], c[1], c[2], draw_intensity))
 
@@ -340,13 +363,13 @@ class DroneManager:
                 alive_count += 1
         del self.drones[alive_count:]
 
-    def draw(self, renderer, font, frame_count):
+    def draw(self, renderer, font, frame_count, show_debug_text=True):
         instance_data = []
         for d in self.drones:
             d.gather_instances(instance_data, frame_count)
         renderer.draw_particles(instance_data)
 
-        if self.current_index != -1 and self.patterns:
+        if show_debug_text and self.current_index != -1 and self.patterns:
             name = self.patterns[self.current_index]["name"]
             c = palette.get_color(121)
             renderer.draw_text(int(20 * SCALE_X), int(20 * SCALE_Y), f"DRONE SHOW: {name}", font, c)

@@ -1,7 +1,34 @@
 import random
+import math
 from .config import SCREEN_WIDTH, SCREEN_HEIGHT, SCALE_X, SCALE_Y
 from config import GeneratorType, MAX_ENERGY_GAUGE
 from . import palette
+
+def draw_lightning_arc(renderer, x1, y1, x2, y2, color, segments=10, max_offset=12.0):
+    pts = []
+    pts.append((x1, y1))
+    
+    dx = x2 - x1
+    dy = y2 - y1
+    dist = math.sqrt(dx*dx + dy*dy)
+    if dist < 1.0:
+        return
+        
+    nx = -dy / dist
+    ny = dx / dist
+    
+    for i in range(1, segments):
+        t = i / segments
+        px = x1 + dx * t
+        py = y1 + dy * t
+        offset = random.uniform(-max_offset, max_offset)
+        pts.append((px + nx * offset, py + ny * offset))
+        
+    pts.append((x2, y2))
+    
+    for i in range(len(pts) - 1):
+        renderer.draw_line(pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1], color)
+
 
 class GaugeManager:
     def __init__(self, game_state=None):
@@ -71,6 +98,10 @@ class GaugeManager:
         # Set blend mode to alpha for UI layout
         renderer.set_blend_mode("alpha")
         
+        overdrive_active = self.game_state.overdrive_active
+        simon_says_active = self.game_state.simon_says_active
+        simon_target = self.game_state.simon_says_target
+        
         # Draw background gauges first, then foreground
         for pass_num in [0, 1]:
             for gen in self.generators:
@@ -93,18 +124,26 @@ class GaugeManager:
                 
                 fill_pct = min(1.0, st["level"] / MAX_ENERGY_GAUGE)
 
-                # Add vibration and flashing effect when full
+                # Add vibration and flashing effect when full or in overdrive
                 is_full = fill_pct >= 1.0
-                if is_full:
-                    x += random.randint(-3, 3)
-                    y += random.randint(-3, 3)
+                
+                # Check if this gauge is the current target in Simon Says
+                is_simon_target = simon_says_active and (gen == simon_target)
+                
+                if is_full or (overdrive_active and is_foreground):
+                    x += random.randint(-4, 4)
+                    y += random.randint(-4, 4)
                     if (frame_count % 10) < 5:
                         fill_col_idx = self.colors[gen] + 5  # Use pastel variant of the main color
                         border_col_idx = fill_col_idx
+                elif is_simon_target:
+                    # Simon says target flashes/pulses
+                    if (frame_count % 12) < 6:
+                        border_col_idx = self.colors[gen]
+                        fill_col_idx = self.colors[gen] + 5
 
                 # Draw outer glow / shadow
-                if not st["dim"] or is_full:
-                    # Renders a slightly larger outline in main/pastel color
+                if not st["dim"] or is_full or is_simon_target:
                     outer_col = palette.get_color(fill_col_idx)
                     renderer.draw_rect(x-1, y-1, w+2, h+2, outer_col, fill=False)
                 
@@ -112,23 +151,29 @@ class GaugeManager:
                 border_col = palette.get_color(border_col_idx)
                 renderer.draw_rect(x, y, w, h, border_col, fill=False)
                 
-                # Clear background (draw black rectangle inside)
+                # Clear background
                 renderer.draw_rect(x+1, y+1, w-2, h-2, (0.0, 0.0, 0.0, 1.0), fill=True)
                 
-                # Draw fill
-                if fill_pct > 0:
+                # Draw fill (in Simon Says, if it's the target, show a pulsing/empty level if 0)
+                draw_pct = fill_pct
+                if is_simon_target and draw_pct == 0:
+                    draw_pct = 0.15 * (0.5 + 0.5 * math.sin(frame_count * 0.2)) # Pulse a mock level to invite dialing
+                
+                if draw_pct > 0:
                     fill_col = palette.get_color(fill_col_idx)
-                    renderer.draw_rect(x + 2, y + 2, (w - 4) * fill_pct, h - 4, fill_col, fill=True)
+                    renderer.draw_rect(x + 2, y + 2, (w - 4) * draw_pct, h - 4, fill_col, fill=True)
                 
                 # Draw label
                 text = f"{gen.name} - {int(fill_pct*100)}%"
-                text_col_idx = 122 if st["dim"] and not is_full else 121
-                if is_full and (frame_count % 10) < 5:
+                if is_simon_target:
+                    text = f"🎯 DIAL THIS: {gen.name}!"
+                    
+                text_col_idx = 122 if st["dim"] and not is_full and not is_simon_target else 121
+                if (is_full or is_simon_target) and (frame_count % 10) < 5:
                     text_col_idx = self.colors[gen] + 5 # Flash pastel variant
 
                 text_col = palette.get_color(text_col_idx)
                 
-                # Select font size based on scale
                 if st["scale"] > 0.8:
                     font = fonts["large"]
                     text_y = y - 48 * SCALE_Y
@@ -137,6 +182,13 @@ class GaugeManager:
                     text_y = y - 30 * SCALE_Y
                 
                 renderer.draw_text(x + 10 * SCALE_X, text_y, text, font, text_col)
-                
+
+                # Draw lightning effects in Overdrive
+                if overdrive_active and is_foreground:
+                    neon_blue = (0.0, 0.75, 1.0, 1.0)
+                    if (frame_count % 3) != 0:
+                        draw_lightning_arc(renderer, x, y, x + w, y, neon_blue, segments=15, max_offset=8 * SCALE_Y)
+                        draw_lightning_arc(renderer, x, y + h, x + w, y + h, neon_blue, segments=15, max_offset=8 * SCALE_Y)
+
         # Reset blend mode back to additive for particles
         renderer.set_blend_mode("additive")

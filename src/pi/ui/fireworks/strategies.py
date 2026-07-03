@@ -198,3 +198,38 @@ class ConeBurst(BurstStrategy):
             pvz = (pvz * 0.7) + (nz * speeds * 0.9)
 
         return pvx, pvy, pvz
+
+class RingBurst(BurstStrategy):
+    def __init__(self, speed_min=0.9, add_shell_velocity=True):
+        self.speed_min = speed_min
+        self.add_shell_velocity = add_shell_velocity
+
+    def get_velocity(self, shell, speed, spec):
+        phi = random.uniform(0, math.pi * 2)
+        speed = (
+            random.uniform(
+                spec.speed_variance * self.speed_min, spec.speed_variance * 1.3
+            )
+            * speed
+        )
+        pvx = speed * math.cos(phi)
+        pvy = speed * math.sin(phi)
+        pvz = random.uniform(-0.1, 0.1)
+        if self.add_shell_velocity:
+            pvx += shell.vx * 0.1
+            pvy += shell.vy * 0.1
+        return pvx, pvy, pvz
+
+    def get_velocities(self, shell, speed, spec, count):
+        phi = np.random.uniform(0.0, 2.0 * np.pi, count)
+        speeds = np.random.uniform(
+            spec.speed_variance * self.speed_min, spec.speed_variance * 1.3, count
+        ) * speed
+        pvx = speeds * np.cos(phi)
+        pvy = speeds * np.sin(phi)
+        pvz = np.random.uniform(-0.15, 0.15, count)
+        if self.add_shell_velocity:
+            pvx += shell.vx * 0.1
+            pvy += shell.vy * 0.1
+        return pvx, pvy, pvz
+

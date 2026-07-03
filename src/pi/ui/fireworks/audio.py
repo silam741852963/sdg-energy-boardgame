@@ -49,6 +49,15 @@ class AudioSystem:
                 self.sounds["restart_chime"] = pygame.mixer.Sound(array=self._generate_restart_chime_samples())
                 self.sounds["end_chime"] = pygame.mixer.Sound(array=self._generate_end_chime_samples())
 
+                # Pre-generate Simon Says notes & interactive combo sounds
+                self.sounds["simon_note_wind"] = pygame.mixer.Sound(array=self._generate_note_samples(523.25))
+                self.sounds["simon_note_solar"] = pygame.mixer.Sound(array=self._generate_note_samples(659.25))
+                self.sounds["simon_note_piezo"] = pygame.mixer.Sound(array=self._generate_note_samples(783.99))
+                self.sounds["simon_note_coil"] = pygame.mixer.Sound(array=self._generate_note_samples(1046.50))
+                self.sounds["overdrive_unlock"] = pygame.mixer.Sound(array=self._generate_overdrive_unlock_samples())
+                self.sounds["combo_unlock"] = pygame.mixer.Sound(array=self._generate_combo_unlock_samples())
+                self.sounds["electric_spark"] = pygame.mixer.Sound(array=self._generate_electric_spark_samples())
+
                 # Pre-generate 16 fill tick sounds at different pitch levels
                 self.fill_sounds = []
                 for i in range(16):
@@ -318,3 +327,105 @@ class AudioSystem:
             if channel:
                 channel.set_volume(0.8)
                 channel.play(self.sounds["end_chime"])
+
+    def play_simon_note(self, gen_type_name):
+        if not self.enabled:
+            return
+        # gen_type_name should match WIND, SOLAR, PIEZO, COIL
+        key = f"simon_note_{gen_type_name.lower()}"
+        if key in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.6)
+                channel.play(self.sounds[key])
+
+    def play_overdrive_unlock(self):
+        if not self.enabled:
+            return
+        if "overdrive_unlock" in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.7)
+                channel.play(self.sounds["overdrive_unlock"])
+
+    def play_combo_unlock(self):
+        if not self.enabled:
+            return
+        if "combo_unlock" in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.7)
+                channel.play(self.sounds["combo_unlock"])
+
+    def play_electric_spark(self):
+        if not self.enabled:
+            return
+        if "electric_spark" in self.sounds:
+            channel = pygame.mixer.find_channel()
+            if channel:
+                channel.set_volume(0.3)
+                channel.play(self.sounds["electric_spark"])
+
+    def _generate_note_samples(self, freq):
+        import numpy as np
+        sample_rate = 44100
+        dur = 0.3
+        volume = 0.4 * 32767
+        num_samples = int(sample_rate * dur)
+        t = np.linspace(0, dur, num_samples, endpoint=False)
+        wave = np.sin(2 * np.pi * freq * t)
+        # Add fundamental retro Glockenspiel-like overtone
+        wave += 0.2 * np.sin(2 * np.pi * (freq * 2.0) * t)
+        envelope = np.exp(-5.0 * t)
+        mono = (wave * envelope * volume).astype(np.int16)
+        return np.column_stack((mono, mono))
+
+    def _generate_overdrive_unlock_samples(self):
+        import numpy as np
+        sample_rate = 44100
+        freqs = [440.0, 554.37, 659.25, 880.0]
+        durations = [0.08, 0.08, 0.08, 0.3]
+        volume = 0.4 * 32767
+        buffer = []
+        for freq, dur in zip(freqs, durations):
+            num_samples = int(sample_rate * dur)
+            t = np.linspace(0, dur, num_samples, endpoint=False)
+            wave = np.sin(2 * np.pi * freq * t)
+            wave += 0.15 * np.sin(2 * np.pi * (freq * 2.0) * t)
+            envelope = np.exp(-4.0 * t)
+            note_samples = (wave * envelope * volume).astype(np.int16)
+            buffer.append(note_samples)
+        mono = np.concatenate(buffer)
+        return np.column_stack((mono, mono))
+
+    def _generate_combo_unlock_samples(self):
+        import numpy as np
+        sample_rate = 44100
+        freqs = [523.25, 783.99, 1046.50, 1318.51, 1567.98, 2093.00]
+        durations = [0.06, 0.06, 0.06, 0.06, 0.06, 0.4]
+        volume = 0.35 * 32767
+        buffer = []
+        for freq, dur in zip(freqs, durations):
+            num_samples = int(sample_rate * dur)
+            t = np.linspace(0, dur, num_samples, endpoint=False)
+            wave = np.sin(2 * np.pi * freq * t)
+            wave += 0.2 * np.sin(2 * np.pi * (freq * 2.0) * t)
+            envelope = np.exp(-4.0 * t)
+            note_samples = (wave * envelope * volume).astype(np.int16)
+            buffer.append(note_samples)
+        mono = np.concatenate(buffer)
+        return np.column_stack((mono, mono))
+
+    def _generate_electric_spark_samples(self):
+        import numpy as np
+        sample_rate = 44100
+        dur = 0.12
+        num_samples = int(sample_rate * dur)
+        t = np.linspace(0, dur, num_samples, endpoint=False)
+        noise = np.random.uniform(-1.0, 1.0, num_samples)
+        modulator = np.sin(2 * np.pi * 3000.0 * t)
+        wave = noise * modulator
+        envelope = np.exp(-22.0 * t)
+        volume = 0.25 * 32767
+        mono = (wave * envelope * volume).astype(np.int16)
+        return np.column_stack((mono, mono))

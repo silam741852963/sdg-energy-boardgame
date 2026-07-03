@@ -24,6 +24,7 @@ class Renderer:
 
         self.resolution = (1920.0, 1080.0)
         self.target_resolution = (1920, 1080)
+        self.screen_shake = (0.0, 0.0)
 
         # Cache for rendered text textures
         self.text_cache = {}
@@ -414,9 +415,10 @@ class Renderer:
         ratio_x = round(raw_ratio_x * 2.0) / 2.0
         ratio_y = round(raw_ratio_y * 2.0) / 2.0
 
+        sx, sy = self.screen_shake
         self.ctx.viewport = (
-            int(x * ratio_x),
-            int(y * ratio_y),
+            int((x + sx) * ratio_x),
+            int((y + sy) * ratio_y),
             int(w * ratio_x),
             int(h * ratio_y),
         )

@@ -50,25 +50,20 @@ class WireReceiver:
 
     def _check_and_update_generator(self):
         states = {}
-        detected_gen = None
+        active_list = []
         for gen_type, device in zip(GPIO_PINS.keys(), self.inputs):
             pressed = device.is_pressed
             states[gen_type.name] = pressed
             
-            # The sensor is active when it reads the HALL_IC_ACTIVE_STATE (e.g., False)
+            # The sensor is active when it reads the HALL_IC_ACTIVE_STATE (e.g., True)
             if pressed == HALL_IC_ACTIVE_STATE:
-                detected_gen = gen_type
+                active_list.append(gen_type)
         
         # Log pin states on change
         self._log(f"Pin states scan: WIND={states['WIND']}, SOLAR={states['SOLAR']}, PIEZO={states['PIEZO']}, COIL={states['COIL']}")
         
-        if detected_gen is not None:
-            old_gen = self.game_state.active_generator
-            if old_gen != detected_gen:
-                self._log(f"Active generator change: {old_gen.name if old_gen else 'None'} -> {detected_gen.name}")
-                self.game_state.set_active_generator(detected_gen)
-        else:
-            self._log("No sensor currently active. Retaining last selected generator.")
+        # Update game state with all active sensors immediately
+        self.game_state.set_active_sensors(active_list)
 
     async def start_listening(self):
         """Initializes GPIO pins and listens for Hall-IC signals."""
@@ -84,10 +79,8 @@ class WireReceiver:
             digital_input.when_released = self._on_pin_changed
             self.inputs.append(digital_input)
 
-            # Check initial state
-            if digital_input.is_pressed == HALL_IC_ACTIVE_STATE:
-                self._log(f"Initial state detected magnet present for {gen_type.name}")
-                self.game_state.set_active_generator(gen_type)
+        # Scan initial state of all pins immediately
+        self._check_and_update_generator()
 
         # Keep the async task alive so the program doesn't exit
         try:

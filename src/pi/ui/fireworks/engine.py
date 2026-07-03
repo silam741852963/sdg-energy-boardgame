@@ -147,6 +147,13 @@ class FireworkEngine:
         self.prev_energy_levels = {}
         self.last_fill_sound_time = 0.0
 
+        # Interactive combos & Simon Says local states
+        self.overdrive_was_active = False
+        self.simon_says_prev_target = None
+        self.simon_says_celebration_start = None
+        self.last_combo_spark_time = 0.0
+        self.screen_shake_amount = 0.0
+
     def get_memory_usage(self):
         try:
             with open("/proc/self/status", "r") as f:
@@ -238,6 +245,9 @@ class FireworkEngine:
         key_2_pressed = False
         key_3_pressed = False
         key_4_pressed = False
+        key_5_pressed = False
+        key_6_pressed = False
+        key_7_pressed = False
         key_0_pressed = False
         key_space_pressed = False
         key_p_pressed = False
@@ -280,6 +290,12 @@ class FireworkEngine:
                     key_space_pressed = True
                 elif event.key == pygame.K_p:
                     key_p_pressed = True
+                elif event.key == pygame.K_5:
+                    key_5_pressed = True
+                elif event.key == pygame.K_6:
+                    key_6_pressed = True
+                elif event.key == pygame.K_7:
+                    key_7_pressed = True
                 elif event.key == pygame.K_s:
                     self.audio.toggle_music()
 
@@ -361,17 +377,23 @@ class FireworkEngine:
                         self.audio.play_switch_sound()
                     self.drone_manager.transition_to_pattern(target_pattern, self.gui, self.audio)
 
-            if self.is_mock:
+            if self.is_mock or self.mock_hall:
                 if key_1_pressed:
-                    self.game_state.set_active_generator(GeneratorType.WIND)
+                    self.game_state.set_active_sensors([GeneratorType.WIND])
                 elif key_2_pressed:
-                    self.game_state.set_active_generator(GeneratorType.SOLAR)
+                    self.game_state.set_active_sensors([GeneratorType.SOLAR])
                 elif key_3_pressed:
-                    self.game_state.set_active_generator(GeneratorType.PIEZO)
+                    self.game_state.set_active_sensors([GeneratorType.PIEZO])
                 elif key_4_pressed:
-                    self.game_state.set_active_generator(GeneratorType.COIL)
+                    self.game_state.set_active_sensors([GeneratorType.COIL])
                 elif key_0_pressed:
-                    self.game_state.set_active_generator(None)
+                    self.game_state.set_active_sensors([])
+                elif key_5_pressed:
+                    self.game_state.set_active_sensors([GeneratorType.WIND, GeneratorType.SOLAR])
+                elif key_6_pressed:
+                    self.game_state.set_active_sensors([GeneratorType.PIEZO, GeneratorType.COIL])
+                elif key_7_pressed:
+                    self.game_state.set_active_sensors([GeneratorType.WIND, GeneratorType.SOLAR, GeneratorType.PIEZO, GeneratorType.COIL])
                 elif key_space_pressed:
                     if self.game_state.active_generator:
                         is_cb = True if self.mock_ble else False
@@ -502,6 +524,201 @@ class FireworkEngine:
                     for p in range(prev_int + 1, curr_int + 1):
                         fill_pct = min(1.0, p / MAX_ENERGY_GAUGE)
                         self.audio.play_fill_sound(fill_pct)
+
+        # --- INTERACTIVE COMBOS & EASTER EGGS LOGIC ---
+        if self.game_state:
+            # 1. Konami Combo (Concept A)
+            if self.game_state.trigger_konami_combo:
+                self.game_state.trigger_konami_combo = False
+                self.audio.play_combo_unlock()
+                # Rainbow shifting Ablic logo
+                self.drone_manager.transition_to_pattern(0, self.gui, self.audio, override_color="rainbow")
+                # Trigger continuous supernova count
+                self.konami_supernova_count = 35
+                self.konami_supernova_timer = 0
+            
+            # Spawn supernova fireworks for Konami combo
+            if hasattr(self, 'konami_supernova_count') and self.konami_supernova_count > 0:
+                self.konami_supernova_timer += 1
+                if self.konami_supernova_timer % 6 == 0:
+                    self.konami_supernova_count -= 1
+                    # Launch random large multi-color firework
+                    from .models import generate_spec
+                    colors_list = ["red", "yellow", "green", "cyan", "blue", "magenta", "pink", "orange"]
+                    fw_color = random.choice(colors_list)
+                    spec = generate_spec("Peony", [fw_color])
+                    spec.radius = 2.0
+                    spec.particle_count = 250
+                    self.firework_manager.launch(
+                        random.randint(int(300 * SCALE_X), int(1600 * SCALE_X)),
+                        random.randint(int(200 * SCALE_Y), int(600 * SCALE_Y)),
+                        forced_spec=spec
+                    )
+
+            # 2. Rhythm Spin Challenge / Overdrive (Concept B)
+            if self.game_state.overdrive_active:
+                if not self.overdrive_was_active:
+                    self.overdrive_was_active = True
+                    self.audio.play_overdrive_unlock()
+                
+                # Spawn rapid ring fireworks!
+                if self.frame_count % 15 == 0:
+                    active_gen = self.game_state.active_generator
+                    # Choose color matching active generator (or random if None)
+                    color = "silver"
+                    if active_gen == GeneratorType.WIND:
+                        color = "cyan"
+                    elif active_gen == GeneratorType.SOLAR:
+                        color = "yellow"
+                    elif active_gen == GeneratorType.PIEZO:
+                        color = "orange"
+                    elif active_gen == GeneratorType.COIL:
+                        color = "blue"
+                    
+                    from .models import generate_spec
+                    from .strategies import RingBurst
+                    spec = generate_spec("Peony", [color])
+                    spec.burst_strategy = RingBurst()
+                    spec.particle_count = 150
+                    spec.radius = 1.4
+                    self.firework_manager.launch(
+                        random.randint(int(400 * SCALE_X), int(1500 * SCALE_X)),
+                        random.randint(int(250 * SCALE_Y), int(550 * SCALE_Y)),
+                        forced_spec=spec
+                    )
+            else:
+                self.overdrive_was_active = False
+
+            # 3. Synchronized Dual Generation / Combos (Concept C)
+            sensors = self.game_state.active_sensors
+            is_hybrid_green = GeneratorType.WIND in sensors and GeneratorType.SOLAR in sensors
+            is_kinetic_induction = GeneratorType.PIEZO in sensors and GeneratorType.COIL in sensors
+            is_super_overload = len(sensors) == 4
+
+            if is_super_overload:
+                # Shake screen and launch supernova finale
+                self.screen_shake_amount = 15.0
+                if self.frame_count % 20 == 0:
+                    # Spawn massive golden supernova
+                    from .models import generate_spec
+                    spec = generate_spec("Waterfall", ["gold"])
+                    spec.particle_count = 350
+                    spec.radius = 2.5
+                    spec.intensity = 2.5
+                    self.firework_manager.launch(
+                        random.randint(int(600 * SCALE_X), int(1320 * SCALE_X)),
+                        random.randint(int(300 * SCALE_Y), int(500 * SCALE_Y)),
+                        forced_spec=spec
+                    )
+                    self.audio.play_explosion(spec, 0, -200) # center/far blast sound
+            elif is_hybrid_green:
+                # Hybrid Helix: green and yellow spiraling fireworks
+                if self.frame_count % 35 == 0:
+                    from .models import generate_spec
+                    spec = generate_spec("Pistil", ["green", "yellow"])
+                    spec.particle_count = 200
+                    spec.radius = 1.6
+                    self.firework_manager.launch(
+                        random.randint(int(500 * SCALE_X), int(1400 * SCALE_X)),
+                        random.randint(int(300 * SCALE_Y), int(600 * SCALE_Y)),
+                        forced_spec=spec
+                    )
+            elif is_kinetic_induction:
+                # Sparkler sparks + sound
+                current_time = time.time()
+                if current_time - self.last_combo_spark_time >= 0.25:
+                    self.last_combo_spark_time = current_time
+                    self.audio.play_electric_spark()
+                    # Spawn sparkling crossette
+                    from .models import generate_spec
+                    spec = generate_spec("Crossette", ["cyan", "blue", "silver"])
+                    spec.particle_count = 80
+                    spec.radius = 1.2
+                    self.firework_manager.launch(
+                        random.randint(int(600 * SCALE_X), int(1300 * SCALE_X)),
+                        random.randint(int(350 * SCALE_Y), int(550 * SCALE_Y)),
+                        forced_spec=spec
+                    )
+
+            # Apply screen shake displacement to renderer
+            if hasattr(self, 'screen_shake_amount') and self.screen_shake_amount > 0.1:
+                dx = random.uniform(-self.screen_shake_amount, self.screen_shake_amount)
+                dy = random.uniform(-self.screen_shake_amount, self.screen_shake_amount)
+                self.renderer.screen_shake = (dx, dy)
+                self.screen_shake_amount *= 0.9 # Decay screen shake
+            else:
+                self.renderer.screen_shake = (0.0, 0.0)
+
+            # 4. Simon Says Idle Mode (Concept D)
+            is_completed = self.game_state.current_session and self.game_state.current_session.completed
+            total_energy = sum(self.game_state.current_session.energy_levels.values()) if self.game_state.current_session else 0.0
+            is_system_idle = (not is_completed) and (total_energy == 0.0) and (self.game_state.active_generator is None)
+            
+            if is_system_idle and not self.show_leaderboard:
+                current_time = time.time()
+                if current_time - self.game_state.last_activity_time >= 6.0:
+                    if not self.game_state.simon_says_active:
+                        self.game_state.simon_says_active = True
+                        self.game_state.simon_says_sequence = [random.choice(self.gauge_manager.generators) for _ in range(5)]
+                        self.game_state.simon_says_step = 0
+                        self.game_state.simon_says_target = self.game_state.simon_says_sequence[0]
+                        self.game_state.simon_says_last_target_time = current_time
+                        self.simon_says_prev_target = None
+                        print("[SIMON-SAYS] Mode Started!")
+            else:
+                if self.game_state.simon_says_active:
+                    self.game_state.simon_says_active = False
+                    self.game_state.simon_says_target = None
+                    self.simon_says_celebration_start = None
+            
+            if self.game_state.simon_says_active:
+                current_time = time.time()
+                target = self.game_state.simon_says_target
+                
+                if target and (target != self.simon_says_prev_target or current_time - self.game_state.simon_says_last_target_time >= 3.0):
+                    self.audio.play_simon_note(target.name)
+                    self.simon_says_prev_target = target
+                    self.game_state.simon_says_last_target_time = current_time
+                
+                if target and target in sensors:
+                    self.audio.play_success_chime()
+                    
+                    st = self.gauge_manager.state[target]
+                    w = 1200 * SCALE_X * st["scale"]
+                    x_pos = int((SCREEN_WIDTH / 2) - (w / 2) + 20 * SCALE_X)
+                    y_pos = int(st["y"])
+                    
+                    self.firework_manager.launch(x_pos, y_pos - 150)
+                    
+                    self.game_state.simon_says_step += 1
+                    if self.game_state.simon_says_step >= len(self.game_state.simon_says_sequence):
+                        print("[SIMON-SAYS] Completed! Celebration triggered!")
+                        self.audio.play_combo_unlock()
+                        self.simon_says_celebration_start = current_time
+                        self.game_state.simon_says_active = False
+                        self.game_state.simon_says_target = None
+                    else:
+                        self.game_state.simon_says_target = self.game_state.simon_says_sequence[self.game_state.simon_says_step]
+                        self.game_state.simon_says_last_target_time = current_time
+                        self.simon_says_prev_target = None
+            
+            if self.simon_says_celebration_start is not None:
+                elapsed_cel = time.time() - self.simon_says_celebration_start
+                if elapsed_cel < 5.0:
+                    if self.frame_count % 15 == 0:
+                        colors = ["yellow", "cyan", "magenta", "lime", "pink"]
+                        c = random.choice(colors)
+                        from .models import generate_spec
+                        spec = generate_spec("Strobe", [c])
+                        spec.radius = 1.8
+                        spec.particle_count = 180
+                        self.firework_manager.launch(
+                            random.randint(int(350 * SCALE_X), int(1570 * SCALE_X)),
+                            random.randint(int(200 * SCALE_Y), int(550 * SCALE_Y)),
+                            forced_spec=spec
+                        )
+                else:
+                    self.simon_says_celebration_start = None
         
         # --- UPDATE SCRIPTING ---
         self.script_manager.update()
@@ -523,7 +740,8 @@ class FireworkEngine:
         self.firework_manager.draw(self.renderer, self.frame_count)
 
         # 4. Draw drones
-        self.drone_manager.draw(self.renderer, self.fonts["small"], self.frame_count)
+        show_debug = self.mock_ble or self.mock_hall
+        self.drone_manager.draw(self.renderer, self.fonts["small"], self.frame_count, show_debug_text=show_debug)
         
         # 5. Draw gauges
         if not self.in_attract_mode:
