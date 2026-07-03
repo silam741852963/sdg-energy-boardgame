@@ -82,9 +82,10 @@ def main():
     # Graceful check for gpiozero/RPi.GPIO if running real Hall-IC
     if not mock_hall:
         try:
-            import gpiozero
-        except (ImportError, ModuleNotFoundError) as e:
-            print(f"[WARNING] gpiozero/RPi.GPIO not found ({e}). Forcing mock Hall-IC mode.")
+            from gpiozero import Device
+            Device.ensure_pin_factory()
+        except Exception as e:
+            print(f"[WARNING] gpiozero/RPi.GPIO not fully functional ({e}). Forcing mock Hall-IC mode.")
             mock_hall = True
 
     # 1. Initialize State
