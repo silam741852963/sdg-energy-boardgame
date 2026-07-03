@@ -40,6 +40,7 @@ class FireworkSpec:
     split: bool = False
     multicolor: int = 1
     intensity: float = 1.0
+    colors: List[str] = field(default_factory=list)
 
     launch_strategy: LaunchStrategy = field(default_factory=SingleLaunch)
     burst_strategy: BurstStrategy = field(default_factory=SphericalBurst)
@@ -341,3 +342,87 @@ def generate_spec(fw_type: str) -> FireworkSpec:
 
 def get_random_preset():
     return generate_spec(random.choice(FIREWORK_TYPES))
+
+
+def serialize_spec(spec: FireworkSpec) -> dict:
+    return {
+        "name": spec.name,
+        "particle_count": spec.particle_count,
+        "base_color": spec.base_color,
+        "variant": spec.variant,
+        "speed_variance": spec.speed_variance,
+        "radius": spec.radius,
+        "gravity_mod": spec.gravity_mod,
+        "drag": spec.drag,
+        "life_span": spec.life_span,
+        "burst": spec.burst,
+        "pistil": spec.pistil,
+        "split": spec.split,
+        "multicolor": spec.multicolor,
+        "intensity": spec.intensity,
+        "has_trails": spec.has_trails,
+        "flicker": spec.flicker,
+        "crackle": spec.crackle,
+        "swim": spec.swim,
+        "spin": spec.spin,
+        "waterfall": spec.waterfall,
+        "palm_tail": spec.palm_tail,
+        "glitter": spec.glitter,
+        "colors": spec.colors
+    }
+
+
+def deserialize_spec(d: dict) -> FireworkSpec:
+    spec = FireworkSpec(
+        name=d.get("name", "Peony"),
+        particle_count=d.get("particle_count", 150),
+        base_color=d.get("base_color", "silver"),
+        variant=d.get("variant", 0),
+        speed_variance=d.get("speed_variance", 7.5),
+        radius=d.get("radius", 1.2),
+        gravity_mod=d.get("gravity_mod", 0.5),
+        drag=d.get("drag", 0.05),
+        life_span=d.get("life_span", 80),
+        burst=d.get("burst", True),
+        pistil=d.get("pistil", False),
+        split=d.get("split", False),
+        multicolor=d.get("multicolor", 1),
+        intensity=d.get("intensity", 1.0),
+        colors=d.get("colors", [])
+    )
+    spec.has_trails = d.get("has_trails", False)
+    spec.flicker = d.get("flicker", False)
+    spec.crackle = d.get("crackle", False)
+    spec.swim = d.get("swim", False)
+    spec.spin = d.get("spin", False)
+    spec.waterfall = d.get("waterfall", False)
+    spec.palm_tail = d.get("palm_tail", False)
+    spec.glitter = d.get("glitter", False)
+    
+    # Restore burst strategy
+    if spec.name == "Rising Tail":
+        from .strategies import ConeBurst
+        spec.burst_strategy = ConeBurst()
+    elif spec.name == "Palm Tree":
+        from .strategies import PalmBurst
+        spec.burst_strategy = PalmBurst()
+    else:
+        from .strategies import SphericalBurst
+        spec.burst_strategy = SphericalBurst(speed_min=1.2, add_shell_velocity=False) if spec.name == "Peony" else SphericalBurst()
+        
+    return spec
+
+
+def save_spec_to_file(spec: FireworkSpec, filepath: str):
+    import os
+    import json
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "w") as f:
+        json.dump(serialize_spec(spec), f, indent=4)
+
+
+def load_spec_from_file(filepath: str) -> FireworkSpec:
+    import json
+    with open(filepath, "r") as f:
+        return deserialize_spec(json.load(f))
+

@@ -58,11 +58,11 @@ class AudioSystem:
                 self.sounds["combo_unlock"] = pygame.mixer.Sound(array=self._generate_combo_unlock_samples())
                 self.sounds["electric_spark"] = pygame.mixer.Sound(array=self._generate_electric_spark_samples())
 
-                # Pre-generate 16 fill tick sounds at different pitch levels
+                # Pre-generate 101 fill tick sounds at different pitch levels
                 self.fill_sounds = []
-                for i in range(16):
-                    # Frequencies from 450 Hz to 950 Hz
-                    freq = 450.0 + i * 33.3
+                for i in range(101):
+                    # Frequencies from 400 Hz to 1200 Hz
+                    freq = 400.0 + i * 8.0
                     samples = self._generate_fill_tick_samples(freq)
                     self.fill_sounds.append(pygame.mixer.Sound(array=samples))
             except Exception as e:
@@ -290,8 +290,8 @@ class AudioSystem:
         if not self.enabled or not hasattr(self, 'fill_sounds') or not self.fill_sounds:
             return
         
-        # Map fill_pct (0.0 to 1.0) to index 0..15
-        idx = int(min(0.99, max(0.0, fill_pct)) * 16)
+        # Map fill_pct (0.0 to 1.0) to index 0..100
+        idx = int(min(1.0, max(0.0, fill_pct)) * 100)
         channel = pygame.mixer.find_channel()
         if channel:
             channel.set_volume(0.6)

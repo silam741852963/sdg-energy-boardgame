@@ -26,10 +26,7 @@ class GameState:
         # Konami sequence history (track transitions)
         self.dial_sequence = []
         self.trigger_konami_combo = False
-        
-        # Overdrive Mode state
-        self.overdrive_active = False
-        self.overdrive_start_time = 0.0
+        self.trigger_reset_combo = False
         
         # Simon Says Mode state
         self.simon_says_active = False
@@ -81,29 +78,22 @@ class GameState:
                     if len(self.dial_sequence) >= 4 and (self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0):
                         self.trigger_konami_combo = True
                 
-                # Check for Overdrive speed trigger: 4 distinct sensors hit in the last 1.2 seconds
-                recent_sensors = set()
-                for item, t in self.dial_sequence:
-                    if current_time - t <= 1.2:
-                        recent_sensors.add(item)
-                if len(recent_sensors) == 4:
-                    self.activate_overdrive()
-
+                # Check for Reset combo sequence: COIL -> PIEZO -> SOLAR -> WIND in rapid succession
+                if len(deduped) >= 4 and deduped[-4:] == [
+                    GeneratorType.COIL,
+                    GeneratorType.PIEZO,
+                    GeneratorType.SOLAR,
+                    GeneratorType.WIND,
+                ]:
+                    if len(self.dial_sequence) >= 4 and (self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0):
+                        self.trigger_reset_combo = True
+                
         self.set_active_generator(new_active)
-
-    def activate_overdrive(self):
-        if not self.overdrive_active:
-            self.overdrive_active = True
-            self.overdrive_start_time = time.time()
 
     def check_inactivity(self):
         current_time = time.time()
         dt = current_time - self.last_drain_time
         self.last_drain_time = current_time
-
-        # Check if overdrive has expired
-        if self.overdrive_active and (current_time - self.overdrive_start_time) > 10.0:
-            self.overdrive_active = False
 
         if self.drain_paused:
             # While draining is paused, keep the timers fresh relative to current_time
@@ -151,6 +141,10 @@ class GameState:
 
     def add_energy(self, gen_type, amount: float, is_clean_boost: bool = False):
         if not self.current_session:
+            return
+
+        # Prevent filling any gauge if the generator is not the currently active selection
+        if self.active_generator is None or self.active_generator != gen_type:
             return
 
         from config import CLEANBOOST_TEST_MODE, ENERGY_PER_BEACON_BY_TYPE

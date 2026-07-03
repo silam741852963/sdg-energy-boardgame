@@ -98,7 +98,6 @@ class GaugeManager:
         # Set blend mode to alpha for UI layout
         renderer.set_blend_mode("alpha")
         
-        overdrive_active = self.game_state.overdrive_active
         simon_says_active = self.game_state.simon_says_active
         simon_target = self.game_state.simon_says_target
         
@@ -130,7 +129,7 @@ class GaugeManager:
                 # Check if this gauge is the current target in Simon Says
                 is_simon_target = simon_says_active and (gen == simon_target)
                 
-                if is_full or (overdrive_active and is_foreground):
+                if is_full:
                     x += random.randint(-4, 4)
                     y += random.randint(-4, 4)
                     if (frame_count % 10) < 5:
@@ -183,12 +182,18 @@ class GaugeManager:
                 
                 renderer.draw_text(x + 10 * SCALE_X, text_y, text, font, text_col)
 
-                # Draw lightning effects in Overdrive
-                if overdrive_active and is_foreground:
-                    neon_blue = (0.0, 0.75, 1.0, 1.0)
+                # Draw lightning effects if gauge is 100% filled
+                if is_full:
                     if (frame_count % 3) != 0:
-                        draw_lightning_arc(renderer, x, y, x + w, y, neon_blue, segments=15, max_offset=8 * SCALE_Y)
-                        draw_lightning_arc(renderer, x, y + h, x + w, y + h, neon_blue, segments=15, max_offset=8 * SCALE_Y)
+                        gen_color = (0.0, 0.75, 1.0, 1.0)
+                        if gen == GeneratorType.SOLAR:
+                            gen_color = (1.0, 0.9, 0.0, 1.0)
+                        elif gen == GeneratorType.PIEZO:
+                            gen_color = (1.0, 0.5, 0.0, 1.0)
+                        elif gen == GeneratorType.COIL:
+                            gen_color = (0.0, 0.4, 1.0, 1.0)
+                        draw_lightning_arc(renderer, x, y, x + w, y, gen_color, segments=15, max_offset=8 * SCALE_Y)
+                        draw_lightning_arc(renderer, x, y + h, x + w, y + h, gen_color, segments=15, max_offset=8 * SCALE_Y)
 
         # Reset blend mode back to additive for particles
         renderer.set_blend_mode("additive")

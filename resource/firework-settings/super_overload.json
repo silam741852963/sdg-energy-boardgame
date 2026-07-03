@@ -1,0 +1,27 @@
+{
+    "name": "Waterfall",
+    "particle_count": 350,
+    "base_color": "sakura",
+    "variant": 1,
+    "speed_variance": 16.0,
+    "radius": 2.5,
+    "gravity_mod": 1.2,
+    "drag": 0.08,
+    "life_span": 200,
+    "burst": true,
+    "pistil": false,
+    "split": false,
+    "multicolor": 3,
+    "intensity": 2.5,
+    "has_trails": true,
+    "flicker": false,
+    "crackle": false,
+    "swim": false,
+    "spin": false,
+    "waterfall": true,
+    "palm_tail": false,
+    "glitter": false,
+    "colors": [
+        "red"
+    ]
+}

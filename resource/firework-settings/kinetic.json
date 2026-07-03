@@ -1,0 +1,29 @@
+{
+    "name": "Crossette",
+    "particle_count": 80,
+    "base_color": "indigo",
+    "variant": 0,
+    "speed_variance": 8.0,
+    "radius": 1.2,
+    "gravity_mod": 0.2,
+    "drag": 0.04,
+    "life_span": 50,
+    "burst": true,
+    "pistil": false,
+    "split": true,
+    "multicolor": 1,
+    "intensity": 1.0,
+    "has_trails": true,
+    "flicker": false,
+    "crackle": false,
+    "swim": false,
+    "spin": false,
+    "waterfall": false,
+    "palm_tail": false,
+    "glitter": false,
+    "colors": [
+        "cyan",
+        "blue",
+        "silver"
+    ]
+}

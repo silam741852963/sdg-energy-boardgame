@@ -148,11 +148,14 @@ class FireworkEngine:
         self.last_fill_sound_time = 0.0
 
         # Interactive combos & Simon Says local states
-        self.overdrive_was_active = False
         self.simon_says_prev_target = None
         self.simon_says_celebration_start = None
         self.last_combo_spark_time = 0.0
         self.screen_shake_amount = 0.0
+        self.konami_unlocked = False
+
+        # Load or initialize easter egg specs from files
+        self._init_easter_egg_specs()
 
     def get_memory_usage(self):
         try:
@@ -176,6 +179,7 @@ class FireworkEngine:
             self.firework_manager.particles.clear()
             self.firework_manager.shells.clear()
             self.script_manager.active_scripts.clear()
+            self.konami_unlocked = False
             self.drone_manager.transition_to_pattern(0, self.gui, self.audio)
             if hasattr(self, 'last_seen_gen_after_completion'):
                 delattr(self, 'last_seen_gen_after_completion')
@@ -251,6 +255,7 @@ class FireworkEngine:
         key_0_pressed = False
         key_space_pressed = False
         key_p_pressed = False
+        key_e_pressed = False
 
         for event in events:
             if event.type == pygame.QUIT:
@@ -290,6 +295,8 @@ class FireworkEngine:
                     key_space_pressed = True
                 elif event.key == pygame.K_p:
                     key_p_pressed = True
+                elif event.key == pygame.K_e:
+                    key_e_pressed = True
                 elif event.key == pygame.K_5:
                     key_5_pressed = True
                 elif event.key == pygame.K_6:
@@ -298,6 +305,9 @@ class FireworkEngine:
                     key_7_pressed = True
                 elif event.key == pygame.K_s:
                     self.audio.toggle_music()
+
+        if key_e_pressed:
+            self.gui.export_current_spec()
 
         if self.is_mock:
             gui_captured_mouse = self.gui.update(events, click_pos, mouse_clicked_left)
@@ -375,29 +385,35 @@ class FireworkEngine:
                 if self.drone_manager.current_index != target_pattern:
                     if self.drone_manager.current_index != -1:
                         self.audio.play_switch_sound()
-                    self.drone_manager.transition_to_pattern(target_pattern, self.gui, self.audio)
+                    override_c = "rainbow" if (target_pattern == 0 and getattr(self, "konami_unlocked", False)) else None
+                    self.drone_manager.transition_to_pattern(target_pattern, self.gui, self.audio, override_color=override_c)
 
             if self.is_mock or self.mock_hall:
-                if key_1_pressed:
-                    self.game_state.set_active_sensors([GeneratorType.WIND])
-                elif key_2_pressed:
-                    self.game_state.set_active_sensors([GeneratorType.SOLAR])
-                elif key_3_pressed:
-                    self.game_state.set_active_sensors([GeneratorType.PIEZO])
-                elif key_4_pressed:
-                    self.game_state.set_active_sensors([GeneratorType.COIL])
-                elif key_0_pressed:
-                    self.game_state.set_active_sensors([])
-                elif key_5_pressed:
-                    self.game_state.set_active_sensors([GeneratorType.WIND, GeneratorType.SOLAR])
-                elif key_6_pressed:
-                    self.game_state.set_active_sensors([GeneratorType.PIEZO, GeneratorType.COIL])
-                elif key_7_pressed:
-                    self.game_state.set_active_sensors([GeneratorType.WIND, GeneratorType.SOLAR, GeneratorType.PIEZO, GeneratorType.COIL])
-                elif key_space_pressed:
+                pressed_keys = pygame.key.get_pressed()
+                mock_active_sensors = []
+                if pressed_keys[pygame.K_1]:
+                    mock_active_sensors.append(GeneratorType.WIND)
+                if pressed_keys[pygame.K_2]:
+                    mock_active_sensors.append(GeneratorType.SOLAR)
+                if pressed_keys[pygame.K_3]:
+                    mock_active_sensors.append(GeneratorType.PIEZO)
+                if pressed_keys[pygame.K_4]:
+                    mock_active_sensors.append(GeneratorType.COIL)
+                
+                # Keep keys 5, 6, 7 as quick helper buttons for keyboard ghosting/easy testing
+                if pressed_keys[pygame.K_5]:
+                    mock_active_sensors = [GeneratorType.WIND, GeneratorType.SOLAR]
+                elif pressed_keys[pygame.K_6]:
+                    mock_active_sensors = [GeneratorType.PIEZO, GeneratorType.COIL]
+                elif pressed_keys[pygame.K_7]:
+                    mock_active_sensors = [GeneratorType.WIND, GeneratorType.SOLAR, GeneratorType.PIEZO, GeneratorType.COIL]
+
+                if set(mock_active_sensors) != set(self.game_state.active_sensors):
+                    self.game_state.set_active_sensors(mock_active_sensors)
+
+                if key_space_pressed and self.mock_ble:
                     if self.game_state.active_generator:
-                        is_cb = True if self.mock_ble else False
-                        self.game_state.add_energy(self.game_state.active_generator, 10.0, is_clean_boost=is_cb)
+                        self.game_state.add_energy(self.game_state.active_generator, 10.0, is_clean_boost=True)
                 elif key_p_pressed:
                     self.game_state.mock_paused = not self.game_state.mock_paused
                     self.audio.play_switch_sound()
@@ -510,20 +526,7 @@ class FireworkEngine:
             self.game_state.check_inactivity()
         self.gauge_manager.update()
 
-        # Play fill sound if active generator animated level increased (per integer percentage)
-        if self.game_state and self.game_state.current_session and not self.game_state.current_session.completed:
-            active_gen = self.game_state.active_generator
-            if active_gen:
-                curr_val = self.gauge_manager.state.get(active_gen, {}).get("level", 0.0)
-                prev_val = self.prev_energy_levels.get(active_gen, 0.0)
-                curr_int = int(curr_val)
-                prev_int = int(prev_val)
-                if curr_int > prev_int:
-                    from config import MAX_ENERGY_GAUGE
-                    # Play sound for each integer percent gained in this step
-                    for p in range(prev_int + 1, curr_int + 1):
-                        fill_pct = min(1.0, p / MAX_ENERGY_GAUGE)
-                        self.audio.play_fill_sound(fill_pct)
+
 
         # --- INTERACTIVE COMBOS & EASTER EGGS LOGIC ---
         if self.game_state:
@@ -531,11 +534,17 @@ class FireworkEngine:
             if self.game_state.trigger_konami_combo:
                 self.game_state.trigger_konami_combo = False
                 self.audio.play_combo_unlock()
+                self.konami_unlocked = True
                 # Rainbow shifting Ablic logo
                 self.drone_manager.transition_to_pattern(0, self.gui, self.audio, override_color="rainbow")
                 # Trigger continuous supernova count
                 self.konami_supernova_count = 35
                 self.konami_supernova_timer = 0
+            
+            # Reset Combo (reverse Konami)
+            if getattr(self.game_state, "trigger_reset_combo", False):
+                self.game_state.trigger_reset_combo = False
+                self._restart_game()
             
             # Spawn supernova fireworks for Konami combo
             if hasattr(self, 'konami_supernova_count') and self.konami_supernova_count > 0:
@@ -543,51 +552,19 @@ class FireworkEngine:
                 if self.konami_supernova_timer % 6 == 0:
                     self.konami_supernova_count -= 1
                     # Launch random large multi-color firework
-                    from .models import generate_spec
                     colors_list = ["red", "yellow", "green", "cyan", "blue", "magenta", "pink", "orange"]
                     fw_color = random.choice(colors_list)
-                    spec = generate_spec("Peony", [fw_color])
-                    spec.radius = 2.0
-                    spec.particle_count = 250
+                    spec = copy.copy(self.spec_konami)
+                    spec.base_color = fw_color
+                    spec.colors = [fw_color]
                     self.firework_manager.launch(
                         random.randint(int(300 * SCALE_X), int(1600 * SCALE_X)),
                         random.randint(int(200 * SCALE_Y), int(600 * SCALE_Y)),
                         forced_spec=spec
                     )
 
-            # 2. Rhythm Spin Challenge / Overdrive (Concept B)
-            if self.game_state.overdrive_active:
-                if not self.overdrive_was_active:
-                    self.overdrive_was_active = True
-                    self.audio.play_overdrive_unlock()
-                
-                # Spawn rapid ring fireworks!
-                if self.frame_count % 15 == 0:
-                    active_gen = self.game_state.active_generator
-                    # Choose color matching active generator (or random if None)
-                    color = "silver"
-                    if active_gen == GeneratorType.WIND:
-                        color = "cyan"
-                    elif active_gen == GeneratorType.SOLAR:
-                        color = "yellow"
-                    elif active_gen == GeneratorType.PIEZO:
-                        color = "orange"
-                    elif active_gen == GeneratorType.COIL:
-                        color = "blue"
-                    
-                    from .models import generate_spec
-                    from .strategies import RingBurst
-                    spec = generate_spec("Peony", [color])
-                    spec.burst_strategy = RingBurst()
-                    spec.particle_count = 150
-                    spec.radius = 1.4
-                    self.firework_manager.launch(
-                        random.randint(int(400 * SCALE_X), int(1500 * SCALE_X)),
-                        random.randint(int(250 * SCALE_Y), int(550 * SCALE_Y)),
-                        forced_spec=spec
-                    )
-            else:
-                self.overdrive_was_active = False
+            # 2. Rhythm Spin Challenge / Overdrive (Concept B) - Removed
+            pass
 
             # 3. Synchronized Dual Generation / Combos (Concept C)
             sensors = self.game_state.active_sensors
@@ -599,12 +576,7 @@ class FireworkEngine:
                 # Shake screen and launch supernova finale
                 self.screen_shake_amount = 15.0
                 if self.frame_count % 20 == 0:
-                    # Spawn massive golden supernova
-                    from .models import generate_spec
-                    spec = generate_spec("Waterfall", ["gold"])
-                    spec.particle_count = 350
-                    spec.radius = 2.5
-                    spec.intensity = 2.5
+                    spec = copy.copy(self.spec_super_overload)
                     self.firework_manager.launch(
                         random.randint(int(600 * SCALE_X), int(1320 * SCALE_X)),
                         random.randint(int(300 * SCALE_Y), int(500 * SCALE_Y)),
@@ -614,10 +586,7 @@ class FireworkEngine:
             elif is_hybrid_green:
                 # Hybrid Helix: green and yellow spiraling fireworks
                 if self.frame_count % 35 == 0:
-                    from .models import generate_spec
-                    spec = generate_spec("Pistil", ["green", "yellow"])
-                    spec.particle_count = 200
-                    spec.radius = 1.6
+                    spec = copy.copy(self.spec_hybrid)
                     self.firework_manager.launch(
                         random.randint(int(500 * SCALE_X), int(1400 * SCALE_X)),
                         random.randint(int(300 * SCALE_Y), int(600 * SCALE_Y)),
@@ -630,10 +599,7 @@ class FireworkEngine:
                     self.last_combo_spark_time = current_time
                     self.audio.play_electric_spark()
                     # Spawn sparkling crossette
-                    from .models import generate_spec
-                    spec = generate_spec("Crossette", ["cyan", "blue", "silver"])
-                    spec.particle_count = 80
-                    spec.radius = 1.2
+                    spec = copy.copy(self.spec_kinetic)
                     self.firework_manager.launch(
                         random.randint(int(600 * SCALE_X), int(1300 * SCALE_X)),
                         random.randint(int(350 * SCALE_Y), int(550 * SCALE_Y)),
@@ -675,7 +641,7 @@ class FireworkEngine:
                 current_time = time.time()
                 target = self.game_state.simon_says_target
                 
-                if target and (target != self.simon_says_prev_target or current_time - self.game_state.simon_says_last_target_time >= 3.0):
+                if target and target != self.simon_says_prev_target:
                     self.audio.play_simon_note(target.name)
                     self.simon_says_prev_target = target
                     self.game_state.simon_says_last_target_time = current_time
@@ -709,7 +675,9 @@ class FireworkEngine:
                         colors = ["yellow", "cyan", "magenta", "lime", "pink"]
                         c = random.choice(colors)
                         from .models import generate_spec
-                        spec = generate_spec("Strobe", [c])
+                        spec = generate_spec("Strobe")
+                        spec.base_color = c
+                        spec.colors = [c]
                         spec.radius = 1.8
                         spec.particle_count = 180
                         self.firework_manager.launch(
@@ -720,6 +688,19 @@ class FireworkEngine:
                 else:
                     self.simon_says_celebration_start = None
         
+        # --- COMPARE ENERGY LEVELS FOR FILL SOUND ---
+        if self.game_state and self.game_state.current_session:
+            from config import MAX_ENERGY_GAUGE
+            for gen in self.gauge_manager.generators:
+                prev_val = self.prev_energy_levels.get(gen, 0.0)
+                curr_val = self.gauge_manager.state.get(gen, {}).get("level", 0.0)
+                
+                prev_pct = int(min(1.0, max(0.0, prev_val / MAX_ENERGY_GAUGE)) * 100)
+                curr_pct = int(min(1.0, max(0.0, curr_val / MAX_ENERGY_GAUGE)) * 100)
+                
+                if curr_pct > prev_pct:
+                    self.audio.play_fill_sound(curr_pct / 100.0)
+
         # --- UPDATE SCRIPTING ---
         self.script_manager.update()
 
@@ -905,6 +886,72 @@ class FireworkEngine:
         self.renderer.draw_line(cx + 4, cy + 14, cx + 5, cy + 14, c_white)
         
         self.renderer.set_blend_mode("additive")
+
+    def load_easter_egg_spec(self, egg_name, fallback_creator):
+        import os
+        from .models import load_spec_from_file, save_spec_to_file
+        
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "..", ".."))
+        filepath = os.path.join(root_dir, "resource", "firework-settings", f"{egg_name}.json")
+        
+        if os.path.exists(filepath):
+            try:
+                spec = load_spec_from_file(filepath)
+                print(f"[ENGINE] Loaded easter egg '{egg_name}' spec from {filepath}")
+                return spec
+            except Exception as e:
+                print(f"[ENGINE] Error loading '{egg_name}' spec: {e}. Reverting to default.")
+                
+        spec = fallback_creator()
+        try:
+            save_spec_to_file(spec, filepath)
+            print(f"[ENGINE] Created default '{egg_name}' spec at {filepath}")
+        except Exception as e:
+            print(f"[ENGINE] Failed to save default '{egg_name}' spec: {e}")
+        return spec
+
+    def _init_easter_egg_specs(self):
+        def create_konami():
+            from .models import generate_spec
+            spec = generate_spec("Peony")
+            spec.radius = 2.0
+            spec.particle_count = 250
+            spec.colors = ["red", "yellow", "green", "cyan", "blue", "magenta", "pink", "orange"]
+            return spec
+
+        # create_overdrive removed
+
+        def create_hybrid():
+            from .models import generate_spec
+            spec = generate_spec("Pistil")
+            spec.particle_count = 200
+            spec.radius = 1.6
+            spec.colors = ["green", "yellow"]
+            return spec
+
+        def create_kinetic():
+            from .models import generate_spec
+            spec = generate_spec("Crossette")
+            spec.particle_count = 80
+            spec.radius = 1.2
+            spec.colors = ["cyan", "blue", "silver"]
+            return spec
+
+        def create_super_overload():
+            from .models import generate_spec
+            spec = generate_spec("Waterfall")
+            spec.base_color = "gold"
+            spec.colors = ["gold"]
+            spec.particle_count = 350
+            spec.radius = 2.5
+            spec.intensity = 2.5
+            return spec
+
+        self.spec_konami = self.load_easter_egg_spec("konami", create_konami)
+        self.spec_hybrid = self.load_easter_egg_spec("hybrid", create_hybrid)
+        self.spec_kinetic = self.load_easter_egg_spec("kinetic", create_kinetic)
+        self.spec_super_overload = self.load_easter_egg_spec("super_overload", create_super_overload)
 
     def run(self):
         while self.running:

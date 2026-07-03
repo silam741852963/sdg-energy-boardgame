@@ -1,0 +1,27 @@
+{
+    "name": "Dragon Eggs",
+    "particle_count": 250,
+    "base_color": "sakura",
+    "variant": 0,
+    "speed_variance": 11.0,
+    "radius": 2.0,
+    "gravity_mod": 0.5,
+    "drag": 0.06,
+    "life_span": 300,
+    "burst": true,
+    "pistil": false,
+    "split": true,
+    "multicolor": 1,
+    "intensity": 2.5,
+    "has_trails": true,
+    "flicker": false,
+    "crackle": true,
+    "swim": true,
+    "spin": false,
+    "waterfall": false,
+    "palm_tail": false,
+    "glitter": true,
+    "colors": [
+        "sakura"
+    ]
+}

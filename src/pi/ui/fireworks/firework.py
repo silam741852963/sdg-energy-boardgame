@@ -142,7 +142,9 @@ class FireworkManager:
             layers.append(True)
 
         color_pool = [spec.base_color]
-        if spec.multicolor > 1:
+        if spec.colors:
+            color_pool = spec.colors
+        elif spec.multicolor > 1:
             color_pool = random.sample(COLORS, min(spec.multicolor, len(COLORS)))
 
         # Create shell mock for strategy calculations
