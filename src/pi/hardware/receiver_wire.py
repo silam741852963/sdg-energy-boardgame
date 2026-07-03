@@ -1,4 +1,5 @@
 import asyncio
+import os
 from gpiozero import Button
 from config import GeneratorType, ENERGY_PER_BEACON
 from logic.game_state import GameState
@@ -23,24 +24,48 @@ class WireReceiver:
         self.loop = asyncio.get_event_loop()
         self.inputs = []
 
+    def _log(self, message: str):
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        formatted_message = f"[HALL-IC] [{timestamp}] {message}"
+        print(formatted_message)
+        
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
+            log_path = os.path.join(root_dir, "hall_ic_debug.log")
+            with open(log_path, "a") as f:
+                f.write(formatted_message + "\n")
+        except Exception as e:
+            print(f"Failed to write to hall_ic_debug.log: {e}")
+
     def _on_pin_changed(self):
         # Scan all pins to find which generator is active.
         # This handles transitions and intermediate states (where no pin is active) cleanly.
         self.loop.call_soon_threadsafe(self._check_and_update_generator)
 
     def _check_and_update_generator(self):
+        states = {}
         active_gen = None
         for gen_type, device in zip(GPIO_PINS.keys(), self.inputs):
-            if device.is_pressed:
+            pressed = device.is_pressed
+            states[gen_type.name] = pressed
+            if pressed:
                 active_gen = gen_type
-                break
+        
+        # Log pin states on change
+        self._log(f"Pin states scan: WIND={states['WIND']}, SOLAR={states['SOLAR']}, PIEZO={states['PIEZO']}, COIL={states['COIL']}")
         
         # Update game state immediately
-        if self.game_state.active_generator != active_gen:
+        old_gen = self.game_state.active_generator
+        if old_gen != active_gen:
+            self._log(f"Active generator change: {old_gen.name if old_gen else 'None'} -> {active_gen.name if active_gen else 'None'}")
             self.game_state.set_active_generator(active_gen)
 
     async def start_listening(self):
         """Initializes GPIO pins and listens for Hall-IC signals."""
+        self._log("WireReceiver starting...")
+        self._log(f"Config: PULL_UP={HALL_IC_PULL_UP}, Pins: WIND={GPIO_PINS[GeneratorType.WIND]}, SOLAR={GPIO_PINS[GeneratorType.SOLAR]}, PIEZO={GPIO_PINS[GeneratorType.PIEZO]}, COIL={GPIO_PINS[GeneratorType.COIL]}")
 
         for gen_type, pin in GPIO_PINS.items():
             # bounce_time=0.05: Ignored rapid signal noise for 50ms for faster response
@@ -53,6 +78,7 @@ class WireReceiver:
 
             # Check initial state
             if digital_input.is_pressed:
+                self._log(f"Initial state detected pin pressed for {gen_type.name}")
                 self.game_state.set_active_generator(gen_type)
 
         # Keep the async task alive so the program doesn't exit
@@ -63,5 +89,6 @@ class WireReceiver:
                 await asyncio.sleep(1.0)
         finally:
             # Safely release the GPIO pins when the program stops
+            self._log("WireReceiver stopping, closing GPIO pins...")
             for device in self.inputs:
                 device.close()
