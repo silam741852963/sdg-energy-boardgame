@@ -15,7 +15,12 @@ GPIO_PINS = {
 # Configuration for Hall-IC output type:
 # - True: Active-LOW sensor (pulls to GND when magnet detected). Uses internal pull-up.
 # - False: Active-HIGH sensor (pulls to 3.3V when magnet detected). Uses internal pull-down.
-HALL_IC_PULL_UP = False
+HALL_IC_PULL_UP = True
+
+# The logic value returned by `device.is_pressed` that represents magnet detection:
+# - False: Sensor pulls LOW (reads False) when magnet is present (active-LOW behavior).
+# - True: Sensor pulls HIGH (reads True) when magnet is present (active-HIGH behavior).
+HALL_IC_ACTIVE_STATE = False
 
 
 class WireReceiver:
@@ -41,31 +46,34 @@ class WireReceiver:
 
     def _on_pin_changed(self):
         # Scan all pins to find which generator is active.
-        # This handles transitions and intermediate states (where no pin is active) cleanly.
         self.loop.call_soon_threadsafe(self._check_and_update_generator)
 
     def _check_and_update_generator(self):
         states = {}
-        active_gen = None
+        detected_gen = None
         for gen_type, device in zip(GPIO_PINS.keys(), self.inputs):
             pressed = device.is_pressed
             states[gen_type.name] = pressed
-            if pressed:
-                active_gen = gen_type
+            
+            # The sensor is active when it reads the HALL_IC_ACTIVE_STATE (e.g., False)
+            if pressed == HALL_IC_ACTIVE_STATE:
+                detected_gen = gen_type
         
         # Log pin states on change
         self._log(f"Pin states scan: WIND={states['WIND']}, SOLAR={states['SOLAR']}, PIEZO={states['PIEZO']}, COIL={states['COIL']}")
         
-        # Update game state immediately
-        old_gen = self.game_state.active_generator
-        if old_gen != active_gen:
-            self._log(f"Active generator change: {old_gen.name if old_gen else 'None'} -> {active_gen.name if active_gen else 'None'}")
-            self.game_state.set_active_generator(active_gen)
+        if detected_gen is not None:
+            old_gen = self.game_state.active_generator
+            if old_gen != detected_gen:
+                self._log(f"Active generator change: {old_gen.name if old_gen else 'None'} -> {detected_gen.name}")
+                self.game_state.set_active_generator(detected_gen)
+        else:
+            self._log("No sensor currently active. Retaining last selected generator.")
 
     async def start_listening(self):
         """Initializes GPIO pins and listens for Hall-IC signals."""
         self._log("WireReceiver starting...")
-        self._log(f"Config: PULL_UP={HALL_IC_PULL_UP}, Pins: WIND={GPIO_PINS[GeneratorType.WIND]}, SOLAR={GPIO_PINS[GeneratorType.SOLAR]}, PIEZO={GPIO_PINS[GeneratorType.PIEZO]}, COIL={GPIO_PINS[GeneratorType.COIL]}")
+        self._log(f"Config: PULL_UP={HALL_IC_PULL_UP}, ACTIVE_STATE={HALL_IC_ACTIVE_STATE}, Pins: WIND={GPIO_PINS[GeneratorType.WIND]}, SOLAR={GPIO_PINS[GeneratorType.SOLAR]}, PIEZO={GPIO_PINS[GeneratorType.PIEZO]}, COIL={GPIO_PINS[GeneratorType.COIL]}")
 
         for gen_type, pin in GPIO_PINS.items():
             # bounce_time=0.05: Ignored rapid signal noise for 50ms for faster response
@@ -77,8 +85,8 @@ class WireReceiver:
             self.inputs.append(digital_input)
 
             # Check initial state
-            if digital_input.is_pressed:
-                self._log(f"Initial state detected pin pressed for {gen_type.name}")
+            if digital_input.is_pressed == HALL_IC_ACTIVE_STATE:
+                self._log(f"Initial state detected magnet present for {gen_type.name}")
                 self.game_state.set_active_generator(gen_type)
 
         # Keep the async task alive so the program doesn't exit
