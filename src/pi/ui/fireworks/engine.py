@@ -411,7 +411,8 @@ class FireworkEngine:
                 if set(mock_active_sensors) != set(self.game_state.active_sensors):
                     self.game_state.set_active_sensors(mock_active_sensors)
 
-                if key_space_pressed and self.mock_ble:
+            if self.mock_ble:
+                if key_space_pressed:
                     if self.game_state.active_generator:
                         self.game_state.add_energy(self.game_state.active_generator, 10.0, is_clean_boost=True)
                 elif key_p_pressed:
