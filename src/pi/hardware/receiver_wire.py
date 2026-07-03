@@ -20,7 +20,7 @@ HALL_IC_PULL_UP = True
 # The logic value returned by `device.is_pressed` that represents magnet detection:
 # - False: Sensor pulls LOW (reads False) when magnet is present (active-LOW behavior).
 # - True: Sensor pulls HIGH (reads True) when magnet is present (active-HIGH behavior).
-HALL_IC_ACTIVE_STATE = False
+HALL_IC_ACTIVE_STATE = True
 
 
 class WireReceiver:
