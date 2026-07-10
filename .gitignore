@@ -219,3 +219,7 @@ __marimo__/
 
 # CleanBoost Test log
 clean_boost_test.log
+
+# Persistent players database
+players_database.json
+

@@ -1,4 +1,6 @@
 import time
+import os
+import json
 from typing import List
 from config import MAX_ENERGY_GAUGE, GeneratorType
 from .models import PlayerSession, RankingEntry
@@ -27,6 +29,7 @@ class GameState:
         self.dial_sequence = []
         self.trigger_konami_combo = False
         self.trigger_reset_combo = False
+        self.trigger_love_combo = False
         
         # Simon Says Mode state
         self.simon_says_active = False
@@ -39,12 +42,16 @@ class GameState:
         self.session_count += 1
         name = player_name if player_name else f"Student {self.session_count}"
         self.current_session = PlayerSession(player_name=name)
-        self.current_session.start_time = time.time()
+        self.current_session.start_time = 0.0
+        self.current_ranking_entry = None
         for gen in GeneratorType:
             self._last_gauge_values[gen] = 0.0
             self._last_increase_time[gen] = time.time()
 
     def set_active_generator(self, gen_type: GeneratorType | None):
+        if gen_type is not None and self.current_session and self.current_session.start_time == 0.0:
+            self.current_session.start_time = time.time()
+
         if self.active_generator != gen_type:
             self.active_generator = gen_type
             self.last_activity_time = time.time()
@@ -87,6 +94,19 @@ class GameState:
                 ]:
                     if len(self.dial_sequence) >= 4 and (self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0):
                         self.trigger_reset_combo = True
+
+                # Check for Love combo sequence: SOLAR -> WIND -> SOLAR -> WIND -> PIEZO -> PIEZO in rapid succession (within 7.0 seconds)
+                types_seq = [item[0] for item in self.dial_sequence]
+                if len(types_seq) >= 6 and types_seq[-6:] == [
+                    GeneratorType.SOLAR,
+                    GeneratorType.WIND,
+                    GeneratorType.SOLAR,
+                    GeneratorType.WIND,
+                    GeneratorType.PIEZO,
+                    GeneratorType.PIEZO,
+                ]:
+                    if len(self.dial_sequence) >= 6 and (self.dial_sequence[-1][1] - self.dial_sequence[-6][1] <= 7.0):
+                        self.trigger_love_combo = True
                 
         self.set_active_generator(new_active)
 
@@ -293,14 +313,56 @@ class GameState:
 
     def _save_ranking(self):
         time_taken = self.current_session.end_time - self.current_session.start_time
-        entry = RankingEntry(self.current_session.player_name, time_taken)
-        self.rankings.append(entry)
+        self.current_ranking_entry = RankingEntry(self.current_session.player_name, time_taken)
+        self.rankings.append(self.current_ranking_entry)
         # Sort by fastest time
         self.rankings.sort(key=lambda x: x.time_taken)
 
     def get_elapsed_time(self) -> float:
         if not self.current_session:
             return 0.0
+        if self.current_session.start_time == 0.0:
+            return 0.0
         if self.current_session.completed:
             return self.current_session.end_time - self.current_session.start_time
         return time.time() - self.current_session.start_time
+
+    def update_player_name(self, name: str):
+        if self.current_session:
+            self.current_session.player_name = name
+            if self.current_ranking_entry:
+                self.current_ranking_entry.player_name = name
+                # Re-sort rankings
+                self.rankings.sort(key=lambda x: x.time_taken)
+
+    def _get_players_filepath(self) -> str:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
+        return os.path.join(root_dir, "players_database.json")
+
+    def load_player_base(self) -> List[str]:
+        filepath = self._get_players_filepath()
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error loading player base: {e}")
+        return []
+
+    def save_player_base(self, players: List[str]):
+        filepath = self._get_players_filepath()
+        try:
+            with open(filepath, "w") as f:
+                json.dump(players, f, indent=4)
+        except Exception as e:
+            print(f"Error saving player base: {e}")
+
+    def add_player_to_base(self, name: str):
+        if not name or name.strip() == "":
+            return
+        name = name.strip()
+        players = self.load_player_base()
+        if not any(p.lower() == name.lower() for p in players):
+            players.append(name)
+            self.save_player_base(players)

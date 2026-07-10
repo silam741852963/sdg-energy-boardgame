@@ -8,7 +8,7 @@ class AudioSystem:
     def __init__(self):
         self.enabled = False
         self.sounds = {}
-        self.music_muted = False
+        self.music_muted = True
 
         try:
             pygame.init()

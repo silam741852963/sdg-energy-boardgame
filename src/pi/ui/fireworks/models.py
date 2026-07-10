@@ -41,6 +41,7 @@ class FireworkSpec:
     multicolor: int = 1
     intensity: float = 1.0
     colors: List[str] = field(default_factory=list)
+    pistil_color: str = ""
 
     launch_strategy: LaunchStrategy = field(default_factory=SingleLaunch)
     burst_strategy: BurstStrategy = field(default_factory=SphericalBurst)
@@ -327,6 +328,70 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.life_span = 100
         spec.update_behaviors.append(SpinBehavior())
         spec.draw_behaviors.append(TrailBehavior(trail_len=8))
+    elif fw_type == "Heart":
+        # Heart: Custom heart-shaped explosion
+        from .strategies import HeartBurst
+        spec.particle_count = 200
+        spec.speed_variance = 11.0
+        spec.drag = 0.08
+        spec.gravity_mod = 0.08
+        spec.life_span = 120
+        spec.radius = 1.6
+        spec.intensity = 2.0
+        spec.burst_strategy = HeartBurst(add_shell_velocity=False)
+        spec.draw_behaviors.append(TrailBehavior(trail_len=6))
+    elif fw_type == "Heart_Brocade":
+        # Heart Brocade: heart-shaped explosion with long shimmering trails
+        from .strategies import HeartBurst
+        spec.particle_count = 250
+        spec.speed_variance = 10.0
+        spec.drag = 0.06
+        spec.gravity_mod = 0.4
+        spec.life_span = 140
+        spec.radius = 1.8
+        spec.intensity = 2.5
+        spec.burst_strategy = HeartBurst(add_shell_velocity=False)
+        spec.draw_behaviors.append(TrailBehavior(palm_tail=True, glitter=True, trail_len=8))
+    elif fw_type == "Heart_Strobe":
+        # Heart Strobe: heart-shaped explosion with flickering strobe particles
+        from .strategies import HeartBurst
+        spec.particle_count = 200
+        spec.speed_variance = 12.0
+        spec.drag = 0.08
+        spec.gravity_mod = 0.08
+        spec.life_span = 140
+        spec.radius = 1.5
+        spec.intensity = 2.0
+        spec.burst_strategy = HeartBurst(add_shell_velocity=False)
+        spec.draw_behaviors.append(TrailBehavior(trail_len=4))
+        spec.draw_behaviors.append(FlickerBehavior())
+    elif fw_type == "Heart_Crackle":
+        # Heart Crackle: heart-shaped explosion with crackling dragon eggs behavior
+        from .strategies import HeartBurst
+        spec.particle_count = 200
+        spec.speed_variance = 11.0
+        spec.drag = 0.08
+        spec.gravity_mod = 0.08
+        spec.life_span = 130
+        spec.radius = 1.8
+        spec.intensity = 2.2
+        spec.burst_strategy = HeartBurst(add_shell_velocity=False)
+        spec.draw_behaviors.append(CrackleBehavior())
+        spec.draw_behaviors.append(TrailBehavior(glitter=True, trail_len=5))
+    elif fw_type == "Orange_Fruit":
+        # Orange Fruit: spherical burst with dense bright orange outer shell and green core (leaf/stem)
+        spec.particle_count = 200
+        spec.speed_variance = 9.0
+        spec.drag = 0.05
+        spec.gravity_mod = 0.1
+        spec.life_span = 120
+        spec.radius = 1.6
+        spec.intensity = 2.0
+        spec.base_color = "orange"
+        spec.colors = ["orange"]
+        spec.pistil = True
+        spec.pistil_color = "green"
+        spec.draw_behaviors.append(TrailBehavior(trail_len=5))
     elif fw_type == "Willow":
         # Willow: dense falling willow branches with long golden tails
         spec.particle_count = 180
@@ -368,7 +433,8 @@ def serialize_spec(spec: FireworkSpec) -> dict:
         "waterfall": spec.waterfall,
         "palm_tail": spec.palm_tail,
         "glitter": spec.glitter,
-        "colors": spec.colors
+        "colors": spec.colors,
+        "pistil_color": spec.pistil_color
     }
 
 
@@ -388,7 +454,8 @@ def deserialize_spec(d: dict) -> FireworkSpec:
         split=d.get("split", False),
         multicolor=d.get("multicolor", 1),
         intensity=d.get("intensity", 1.0),
-        colors=d.get("colors", [])
+        colors=d.get("colors", []),
+        pistil_color=d.get("pistil_color", "")
     )
     spec.has_trails = d.get("has_trails", False)
     spec.flicker = d.get("flicker", False)
@@ -406,6 +473,9 @@ def deserialize_spec(d: dict) -> FireworkSpec:
     elif spec.name == "Palm Tree":
         from .strategies import PalmBurst
         spec.burst_strategy = PalmBurst()
+    elif spec.name in ("Heart", "Heart_Brocade", "Heart_Strobe", "Heart_Crackle"):
+        from .strategies import HeartBurst
+        spec.burst_strategy = HeartBurst(add_shell_velocity=False)
     else:
         from .strategies import SphericalBurst
         spec.burst_strategy = SphericalBurst(speed_min=1.2, add_shell_velocity=False) if spec.name == "Peony" else SphericalBurst()

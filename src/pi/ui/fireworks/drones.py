@@ -72,6 +72,10 @@ class Drone:
         self.tx = tx
         self.ty = ty
         self.tz = tz
+        if hasattr(self, "orig_tx"):
+            delattr(self, "orig_tx")
+        if hasattr(self, "orig_ty"):
+            delattr(self, "orig_ty")
 
         if self.target_color != color_name:
             self.prev_color = self.target_color
@@ -158,6 +162,24 @@ class Drone:
             if self.target_color == "rainbow":
                 hue = (frame_count * 2.5 + self.tx * 0.4) % 360.0
                 c = hsl_to_rgb(hue, 1.0, 0.5)
+            elif self.target_color == "love_breath":
+                cycle = (frame_count * 0.01 + self.tx * 0.001) % 1.0
+                if cycle < 0.33:
+                    t = cycle / 0.33
+                    r = 1.0 * (1.0 - t) + 1.0 * t
+                    g = 0.4 * (1.0 - t) + 0.85 * t
+                    b = 0.7 * (1.0 - t) + 0.0 * t
+                elif cycle < 0.66:
+                    t = (cycle - 0.33) / 0.33
+                    r = 1.0 * (1.0 - t) + 1.0 * t
+                    g = 0.85 * (1.0 - t) + 0.0 * t
+                    b = 0.0 * (1.0 - t) + 0.0 * t
+                else:
+                    t = (cycle - 0.66) / 0.34
+                    r = 1.0 * (1.0 - t) + 1.0 * t
+                    g = 0.0 * (1.0 - t) + 0.4 * t
+                    b = 0.0 * (1.0 - t) + 0.7 * t
+                c = (r, g, b)
             else:
                 color_idx = COLOR_MAP.get(self.target_color, 121)
                 c = palette.get_color(color_idx)
@@ -333,6 +355,25 @@ class DroneManager:
             audio.stop_music()
 
     def update(self, frame_count, fill_pct=0.0):
+        # Apply heartbeat scaling to targets if we are in Heart pattern (index 5) or Love pattern (index 8)
+        if self.current_index in (5, 8) and self.drones:
+            t = (frame_count * 0.08) % (2.0 * math.pi)
+            heartbeat = 1.0 + 0.12 * (max(0.0, math.sin(t)) ** 4 + 0.5 * max(0.0, math.sin(t - 0.8)) ** 4)
+            
+            sum_tx = sum(d.tx for d in self.drones if not d.clearing)
+            sum_ty = sum(d.ty for d in self.drones if not d.clearing)
+            count = sum(1 for d in self.drones if not d.clearing)
+            if count > 0:
+                center_x = sum_tx / count
+                center_y = sum_ty / count
+                for d in self.drones:
+                    if not d.clearing and d.active:
+                        if not hasattr(d, "orig_tx"):
+                            d.orig_tx = d.tx
+                            d.orig_ty = d.ty
+                        d.tx = center_x + (d.orig_tx - center_x) * heartbeat
+                        d.ty = center_y + (d.orig_ty - center_y) * heartbeat
+
         # The Ablic logo (index 0) should be fully colored from the beginning
         if self.current_index == 0:
             fill_pct = 1.0

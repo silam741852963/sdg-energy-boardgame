@@ -233,3 +233,38 @@ class RingBurst(BurstStrategy):
             pvy += shell.vy * 0.1
         return pvx, pvy, pvz
 
+
+class HeartBurst(BurstStrategy):
+    def __init__(self, speed_min=0.8, add_shell_velocity=True):
+        self.speed_min = speed_min
+        self.add_shell_velocity = add_shell_velocity
+
+    def get_velocity(self, shell, speed, spec):
+        pvx, pvy, pvz = self.get_velocities(shell, speed, spec, 1)
+        return pvx[0], pvy[0], pvz[0]
+
+    def get_velocities(self, shell, speed, spec, count):
+        theta = np.linspace(0.0, 2.0 * np.pi, count)
+        
+        # Parametric heart shape equations
+        x = 16.0 * (np.sin(theta) ** 3)
+        y = 13.0 * np.cos(theta) - 5.0 * np.cos(2.0 * theta) - 2.0 * np.cos(3.0 * theta) - np.cos(4.0 * theta)
+        
+        # Invert y so the heart tip points downwards in screen space (positive Y points down)
+        y = -y
+        
+        var_speed = np.random.uniform(
+            spec.speed_variance * self.speed_min, spec.speed_variance * 1.3, count
+        ) * speed
+        
+        pvx = (x / 16.0) * var_speed
+        pvy = (y / 16.0) * var_speed
+        pvz = np.random.uniform(-0.1, 0.1, count) * speed
+        
+        if self.add_shell_velocity:
+            pvx += shell.vx * 0.1
+            pvy += shell.vy * 0.1
+            
+        return pvx, pvy, pvz
+
+

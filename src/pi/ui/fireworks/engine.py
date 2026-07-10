@@ -137,6 +137,12 @@ class FireworkEngine:
         self.show_started = False
         self.completed_gen = None
         self.congrat_start_time = None
+        
+        # Player name entry state
+        self.show_name_entry = False
+        self.name_input = ""
+        self.name_suggestion = ""
+        self.player_base = []
 
         self.show_metrics = False
         self.fps_tracker = FPSTracker()
@@ -153,6 +159,9 @@ class FireworkEngine:
         self.last_combo_spark_time = 0.0
         self.screen_shake_amount = 0.0
         self.konami_unlocked = False
+        self.love_mode_active = False
+        self.love_celebration_count = 0
+        self.love_celebration_timer = 0
 
         # Load or initialize easter egg specs from files
         self._init_easter_egg_specs()
@@ -180,6 +189,9 @@ class FireworkEngine:
             self.firework_manager.shells.clear()
             self.script_manager.active_scripts.clear()
             self.konami_unlocked = False
+            self.love_mode_active = False
+            self.love_celebration_count = 0
+            self.love_celebration_timer = 0
             self.drone_manager.transition_to_pattern(0, self.gui, self.audio)
             if hasattr(self, 'last_seen_gen_after_completion'):
                 delattr(self, 'last_seen_gen_after_completion')
@@ -194,6 +206,20 @@ class FireworkEngine:
         self.completed_gen = None
         self.congrat_start_time = None
         self.prev_energy_levels = {}
+        self.show_name_entry = False
+        self.name_input = ""
+        self.name_suggestion = ""
+
+    def _update_name_suggestion(self):
+        if not self.name_input:
+            self.name_suggestion = ""
+            return
+        inp_lower = self.name_input.lower()
+        for player in self.player_base:
+            if player.lower().startswith(inp_lower):
+                self.name_suggestion = player
+                return
+        self.name_suggestion = ""
 
     def update(self, events):
         self.frame_count += 1
@@ -236,6 +262,47 @@ class FireworkEngine:
         my = (raw_my - offset_y) * scale_y
         mouse_pos = (int(mx), int(my))
         self.mouse_pos = mouse_pos
+
+        if self.show_name_entry:
+            for event in events:
+                if event.type == pygame.QUIT:
+                    self.running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if self.game_state:
+                            self.game_state.update_player_name(self.game_state.current_session.player_name)
+                        self.show_name_entry = False
+                        self.show_leaderboard = True
+                        self.leaderboard_start_activity_time = self.game_state.last_activity_time
+                    elif event.key == pygame.K_BACKSPACE:
+                        self.name_input = self.name_input[:-1]
+                        self._update_name_suggestion()
+                    elif event.key in (pygame.K_TAB, pygame.K_RIGHT):
+                        if self.name_suggestion and len(self.name_suggestion) > len(self.name_input):
+                            self.name_input = self.name_suggestion
+                            self.name_suggestion = ""
+                    elif event.key == pygame.K_RETURN:
+                        entered_name = self.name_input.strip()
+                        if not entered_name:
+                            entered_name = self.game_state.current_session.player_name if self.game_state else "Student"
+                        
+                        if self.game_state:
+                            self.game_state.update_player_name(entered_name)
+                            self.game_state.add_player_to_base(entered_name)
+                        
+                        self.show_name_entry = False
+                        self.show_leaderboard = True
+                        self.leaderboard_start_activity_time = self.game_state.last_activity_time
+                    else:
+                        if event.unicode and event.unicode.isprintable() and len(self.name_input) < 18:
+                            self.name_input += event.unicode
+                            self._update_name_suggestion()
+            
+            self.lighting.update()
+            self.firework_manager.update()
+            self.drone_manager.update(self.frame_count, 0.0)
+            self.gauge_manager.update()
+            return
 
         mouse_clicked_left = False
         click_pos = mouse_pos  # Fallback to current mouse position
@@ -351,11 +418,16 @@ class FireworkEngine:
                         if self.completed_gen:
                             self.game_state.force_immediate_drain(self.completed_gen)
                 
-                if self.congrat_start_time is not None and not self.show_leaderboard:
+                if self.congrat_start_time is not None and not self.show_leaderboard and not self.show_name_entry:
                     if time.time() - self.congrat_start_time >= 8.0:
-                        self.show_leaderboard = True
+                        self.show_name_entry = True
+                        self.name_input = ""
+                        self.name_suggestion = ""
+                        if self.game_state:
+                            self.player_base = self.game_state.load_player_base()
+                        else:
+                            self.player_base = []
                         self.drone_manager.clear_all()
-                        self.leaderboard_start_activity_time = self.game_state.last_activity_time
 
             # Check for key presses or other signals to close leaderboard
             if self.show_leaderboard:
@@ -371,21 +443,25 @@ class FireworkEngine:
                     self._restart_game()
 
             if not is_completed:
-                active_gen = self.game_state.active_generator
-                target_pattern = 0 # 0 is Ablic
-                if active_gen == GeneratorType.WIND:
-                    target_pattern = 1
-                elif active_gen == GeneratorType.SOLAR:
-                    target_pattern = 2
-                elif active_gen == GeneratorType.PIEZO:
-                    target_pattern = 3
-                elif active_gen == GeneratorType.COIL:
-                    target_pattern = 4
+                if getattr(self, "love_mode_active", False):
+                    target_pattern = 8
+                    override_c = "red"
+                else:
+                    active_gen = self.game_state.active_generator
+                    target_pattern = 0 # 0 is Ablic
+                    if active_gen == GeneratorType.WIND:
+                        target_pattern = 1
+                    elif active_gen == GeneratorType.SOLAR:
+                        target_pattern = 2
+                    elif active_gen == GeneratorType.PIEZO:
+                        target_pattern = 3
+                    elif active_gen == GeneratorType.COIL:
+                        target_pattern = 4
+                    override_c = "rainbow" if (target_pattern == 0 and getattr(self, "konami_unlocked", False)) else None
                     
                 if self.drone_manager.current_index != target_pattern:
                     if self.drone_manager.current_index != -1:
                         self.audio.play_switch_sound()
-                    override_c = "rainbow" if (target_pattern == 0 and getattr(self, "konami_unlocked", False)) else None
                     self.drone_manager.transition_to_pattern(target_pattern, self.gui, self.audio, override_color=override_c)
 
             if self.is_mock or self.mock_hall:
@@ -453,7 +529,7 @@ class FireworkEngine:
             # Delay fireworks show by 4.0 seconds to let user read CLEAR pattern
             if self.completion_time is not None and not self.show_started:
                 if time.time() - self.completion_time >= 4.0:
-                    script_name = "success.json"
+                    script_name = "wind.json"
                     if self.completed_gen == GeneratorType.WIND:
                         script_name = "wind.json"
                     elif self.completed_gen == GeneratorType.SOLAR:
@@ -463,8 +539,10 @@ class FireworkEngine:
                     elif self.completed_gen == GeneratorType.COIL:
                         script_name = "coil.json"
                         
-                    script_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "resource", "firework-scripts", script_name)
-                    self.script_manager.play_sequence(os.path.abspath(script_path))
+                    current_dir = os.path.dirname(os.path.abspath(__file__))
+                    script_path = os.path.join(current_dir, "..", "..", "..", "..", "resource", "firework-scripts", script_name)
+                        
+                    self.script_manager.play_sequence(script_path)
                     self.show_started = True
                     self.completion_time = time.time()  # Reset timer to be relative to show start
 
@@ -546,6 +624,19 @@ class FireworkEngine:
             if getattr(self.game_state, "trigger_reset_combo", False):
                 self.game_state.trigger_reset_combo = False
                 self._restart_game()
+            
+            # Love Combo (101022 - Solar/Wind/Solar/Wind/Piezo/Piezo)
+            if getattr(self.game_state, "trigger_love_combo", False):
+                self.game_state.trigger_love_combo = False
+                self.audio.play_combo_unlock()
+                self.love_mode_active = True
+                
+                # Load and play the secret/schneider.json show immediately
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                script_path = os.path.join(current_dir, "..", "..", "..", "..", "resource", "firework-scripts", "secret", "schneider.json")
+                self.script_manager.play_sequence(script_path)
+                
+                self.drone_manager.transition_to_pattern(8, self.gui, self.audio, override_color="red")
             
             # Spawn supernova fireworks for Konami combo
             if hasattr(self, 'konami_supernova_count') and self.konami_supernova_count > 0:
@@ -701,9 +792,20 @@ class FireworkEngine:
                 
                 if curr_pct > prev_pct:
                     self.audio.play_fill_sound(curr_pct / 100.0)
+                    if getattr(self, "love_mode_active", False):
+                        colors_list = ["pink", "magenta", "red", "gold"]
+                        fw_color = random.choice(colors_list)
+                        spec = copy.copy(self.spec_love)
+                        spec.base_color = fw_color
+                        spec.colors = [fw_color]
+                        self.firework_manager.launch(
+                            random.randint(int(400 * SCALE_X), int(1520 * SCALE_X)),
+                            random.randint(int(250 * SCALE_Y), int(500 * SCALE_Y)),
+                            forced_spec=spec
+                        )
 
         # --- UPDATE SCRIPTING ---
-        self.script_manager.update()
+        self.script_manager.update(love_mode_active=getattr(self, "love_mode_active", False))
 
         # Save animated energy levels for the next frame's comparison
         self.prev_energy_levels = {}
@@ -779,6 +881,114 @@ class FireworkEngine:
             self.renderer.draw_text(mx + text_offset_x, my + int(148 * SCALE_Y), f"Pool: {len(self.firework_manager.particle_system.free_indices)}/{self.firework_manager.particle_system.max_particles}", self.fonts["small"], c_white)
             self.renderer.set_blend_mode("additive")
 
+        if self.show_name_entry:
+            # Draw overlay and name entry
+            overlay_w = int(600 * SCALE_X)
+            overlay_h = int(300 * SCALE_Y)
+            ox = (SCREEN_WIDTH - overlay_w) // 2
+            oy = (SCREEN_HEIGHT - overlay_h) // 2
+            
+            self.renderer.set_blend_mode("alpha")
+            self.renderer.draw_rect(ox, oy, overlay_w, overlay_h, (0.0, 0.0, 0.0, 0.95), fill=True)
+            self.renderer.draw_rect(ox, oy, overlay_w, overlay_h, palette.get_color(122), fill=False)
+
+            # Title
+            title_text = "=== ENTER YOUR NAME ==="
+            font_med = self.fonts["medium"]
+            tw, _ = font_med.size(title_text)
+            tx = ox + (overlay_w - tw) // 2
+            self.renderer.draw_text(
+                tx,
+                oy + int(40 * SCALE_Y),
+                title_text,
+                font_med,
+                palette.get_color(51),
+            )
+
+            # Subtitle
+            sub_text = "Type name for the Leaderboard"
+            font_small = self.fonts["small"]
+            sw, _ = font_small.size(sub_text)
+            sx = ox + (overlay_w - sw) // 2
+            self.renderer.draw_text(
+                sx,
+                oy + int(85 * SCALE_Y),
+                sub_text,
+                font_small,
+                palette.get_color(121),
+            )
+
+            # Input box
+            box_w = int(400 * SCALE_X)
+            box_h = int(50 * SCALE_Y)
+            bx = ox + (overlay_w - box_w) // 2
+            by = oy + int(130 * SCALE_Y)
+
+            self.renderer.draw_rect(bx, by, box_w, box_h, (0.1, 0.1, 0.1, 0.8), fill=True)
+            self.renderer.draw_rect(bx, by, box_w, box_h, palette.get_color(51), fill=False)
+
+            # Cursor blinking
+            cursor_char = "_" if (self.frame_count // 30) % 2 == 0 else " "
+            
+            # Input text
+            input_display_text = self.name_input
+            font_input = self.fonts["medium"]
+            text_x = bx + int(15 * SCALE_X)
+            text_y = by + (box_h - font_input.size("A")[1]) // 2
+            
+            self.renderer.draw_text(
+                text_x,
+                text_y,
+                input_display_text,
+                font_input,
+                palette.get_color(122),
+            )
+            
+            input_width, _ = font_input.size(input_display_text)
+            self.renderer.draw_text(
+                text_x + input_width,
+                text_y,
+                cursor_char,
+                font_input,
+                palette.get_color(122),
+            )
+            
+            # Autocomplete suggestion
+            if self.name_suggestion and len(self.name_suggestion) > len(self.name_input):
+                suffix = self.name_suggestion[len(self.name_input):]
+                self.renderer.draw_text(
+                    text_x + input_width,
+                    text_y,
+                    suffix,
+                    font_input,
+                    (0.4, 0.4, 0.4, 0.8),
+                )
+                
+                # Tab hint
+                hint_text = "[ Press 'TAB' or 'RIGHT' to auto-fill ]"
+                hw, _ = font_small.size(hint_text)
+                hx = ox + (overlay_w - hw) // 2
+                self.renderer.draw_text(
+                    hx,
+                    by + box_h + int(10 * SCALE_Y),
+                    hint_text,
+                    font_small,
+                    (0.5, 0.5, 0.5, 1.0),
+                )
+
+            # Bottom instructions
+            bottom_text = "[ PRESS ENTER TO SUBMIT | ESC TO SKIP ]"
+            bw, _ = font_small.size(bottom_text)
+            bx_bottom = ox + (overlay_w - bw) // 2
+            self.renderer.draw_text(
+                bx_bottom,
+                oy + overlay_h - int(45 * SCALE_Y),
+                bottom_text,
+                font_small,
+                palette.get_color(121),
+            )
+            self.renderer.set_blend_mode("additive")
+
         if self.show_leaderboard:
             # Draw overlay and leaderboard
             overlay_w = int(600 * SCALE_X)
@@ -837,17 +1047,18 @@ class FireworkEngine:
                     palette.get_color(51),
                 )
                 
-            # Center bottom text: "[ PRESS 'R' TO RESTART CHALLENGE ]"
-            restart_text = "[ PRESS 'R' TO RESTART CHALLENGE ]"
-            rw, _ = font_small.size(restart_text)
-            rx = ox + (overlay_w - rw) // 2
-            self.renderer.draw_text(
-                rx,
-                oy + overlay_h - int(60 * SCALE_Y),
-                restart_text,
-                font_small,
-                palette.get_color(121),
-            )
+            if self.mock_ble or self.mock_hall:
+                # Center bottom text: "[ PRESS 'R' TO RESTART CHALLENGE ]"
+                restart_text = "[ PRESS 'R' TO RESTART CHALLENGE ]"
+                rw, _ = font_small.size(restart_text)
+                rx = ox + (overlay_w - rw) // 2
+                self.renderer.draw_text(
+                    rx,
+                    oy + overlay_h - int(60 * SCALE_Y),
+                    restart_text,
+                    font_small,
+                    palette.get_color(121),
+                )
             self.renderer.set_blend_mode("additive")
 
         # 8. End frame (blits the offscreen framebuffer to the centered screen viewport)
@@ -949,10 +1160,19 @@ class FireworkEngine:
             spec.intensity = 2.5
             return spec
 
+        def create_love_heart():
+            from .models import generate_spec
+            spec = generate_spec("Heart")
+            spec.particle_count = 250
+            spec.radius = 2.0
+            spec.colors = ["pink", "magenta", "red", "gold"]
+            return spec
+
         self.spec_konami = self.load_easter_egg_spec("konami", create_konami)
         self.spec_hybrid = self.load_easter_egg_spec("hybrid", create_hybrid)
         self.spec_kinetic = self.load_easter_egg_spec("kinetic", create_kinetic)
         self.spec_super_overload = self.load_easter_egg_spec("super_overload", create_super_overload)
+        self.spec_love = self.load_easter_egg_spec("love_heart", create_love_heart)
 
     def run(self):
         while self.running:

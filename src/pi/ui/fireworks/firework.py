@@ -163,7 +163,9 @@ class FireworkManager:
 
             pvx, pvy, pvz = spec.burst_strategy.get_velocities(shell_mock, speed_mult, spec, count)
 
-            if len(color_pool) > 1:
+            if is_inner and getattr(spec, "pistil_color", None):
+                colors_choice = spec.pistil_color
+            elif len(color_pool) > 1:
                 colors_choice = [random.choice(color_pool) for _ in range(count)]
             else:
                 colors_choice = color_pool[0]
