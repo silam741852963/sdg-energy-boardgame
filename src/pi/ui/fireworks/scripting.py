@@ -124,6 +124,25 @@ class ScriptManager:
             for ev in original_events:
                 events.append(ev)
             
+        # 1. Scale event times to make the show 20% faster
+        for ev in events:
+            if "time" in ev:
+                ev["time"] = ev["time"] / 1.2
+
+        # 2. Increase the number of firework launches by 10%
+        import random
+        num_additional = int(round(len(events) * 0.10))
+        if num_additional > 0:
+            events_to_clone = random.sample(events, num_additional)
+            for ev in events_to_clone:
+                clone = ev.copy()
+                # Apply a small time offset (e.g. -0.4 to 0.4 seconds)
+                clone["time"] = max(0.0, ev.get("time", 0.0) + random.uniform(-0.4, 0.4))
+                # Apply a small spatial offset
+                clone["x"] = max(100, min(1820, ev.get("x", 960) + random.randint(-150, 150)))
+                clone["y"] = max(100, min(900, ev.get("y", 600) + random.randint(-100, 100)))
+                events.append(clone)
+
         # Sort events by time
         events = sorted(events, key=lambda e: e.get("time", 0.0))
         

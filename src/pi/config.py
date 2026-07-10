@@ -17,15 +17,15 @@ CLEANBOOST_MACS = {
 
 # Game Settings
 MAX_ENERGY_GAUGE = 100.0  # Total energy needed to complete the task
-ENERGY_PER_BEACON = 2.5  # How much gauge fills per CleanBoost signal
+ENERGY_PER_BEACON = 4.25  # How much gauge fills per CleanBoost signal (scaled by 1.7 for 1.7x faster filling)
 UI_REFRESH_RATE = 0.5  # UI updates 2 times a second
 
 CLEANBOOST_TEST_MODE = True
 
-# Energy fill amount per beacon per generator type in test mode
+# Energy fill amount per beacon per generator type in test mode (scaled by 1.7 for 1.7x faster filling)
 ENERGY_PER_BEACON_BY_TYPE = {
-    GeneratorType.WIND: 2.0,
-    GeneratorType.SOLAR: 2.5,
-    GeneratorType.PIEZO: 3.0,
-    GeneratorType.COIL: 1.5,
+    GeneratorType.WIND: 3.4,
+    GeneratorType.SOLAR: 4.25,
+    GeneratorType.PIEZO: 5.1,
+    GeneratorType.COIL: 2.55,
 }
