@@ -22,10 +22,10 @@ UI_REFRESH_RATE = 0.5  # UI updates 2 times a second
 
 CLEANBOOST_TEST_MODE = True
 
-# Energy fill amount per beacon per generator type in test mode (scaled by 1.7 for 1.7x faster filling)
+# Energy fill amount per beacon per generator type in test mode (scaled for custom generator rates)
 ENERGY_PER_BEACON_BY_TYPE = {
-    GeneratorType.WIND: 3.4,
-    GeneratorType.SOLAR: 4.25,
+    GeneratorType.WIND: 6.8,
+    GeneratorType.SOLAR: 2.125,
     GeneratorType.PIEZO: 5.1,
-    GeneratorType.COIL: 2.55,
+    GeneratorType.COIL: 5.1,
 }
