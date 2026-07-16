@@ -25,7 +25,7 @@ CLEANBOOST_TEST_MODE = True
 # Energy fill amount per beacon per generator type in test mode (scaled for custom generator rates)
 ENERGY_PER_BEACON_BY_TYPE = {
     GeneratorType.WIND: 6.8,
-    GeneratorType.SOLAR: 2.125,
+    GeneratorType.SOLAR: 8.5,
     GeneratorType.PIEZO: 5.1,
     GeneratorType.COIL: 5.1,
 }
