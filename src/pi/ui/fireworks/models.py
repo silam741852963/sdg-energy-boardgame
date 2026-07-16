@@ -378,6 +378,22 @@ def generate_spec(fw_type: str) -> FireworkSpec:
         spec.burst_strategy = HeartBurst(add_shell_velocity=False)
         spec.draw_behaviors.append(CrackleBehavior())
         spec.draw_behaviors.append(TrailBehavior(glitter=True, trail_len=5))
+    elif fw_type in ("Star", "Diamond", "Galaxy"):
+        from .strategies import DiamondBurst, GalaxyBurst, StarBurst
+        strategies = {
+            "Star": StarBurst,
+            "Diamond": DiamondBurst,
+            "Galaxy": GalaxyBurst,
+        }
+        spec.particle_count = 360 if fw_type != "Galaxy" else 480
+        spec.speed_variance = 13.0
+        spec.drag = 0.055
+        spec.gravity_mod = 0.04
+        spec.life_span = 145
+        spec.radius = 1.7
+        spec.intensity = 2.4
+        spec.burst_strategy = strategies[fw_type]()
+        spec.draw_behaviors.append(TrailBehavior(glitter=True, trail_len=7))
     elif fw_type == "Orange_Fruit":
         # Orange Fruit: spherical burst with dense bright orange outer shell and green core (leaf/stem)
         spec.particle_count = 200
@@ -476,6 +492,10 @@ def deserialize_spec(d: dict) -> FireworkSpec:
     elif spec.name in ("Heart", "Heart_Brocade", "Heart_Strobe", "Heart_Crackle"):
         from .strategies import HeartBurst
         spec.burst_strategy = HeartBurst(add_shell_velocity=False)
+    elif spec.name in ("Star", "Diamond", "Galaxy"):
+        from .strategies import DiamondBurst, GalaxyBurst, StarBurst
+        strategies = {"Star": StarBurst, "Diamond": DiamondBurst, "Galaxy": GalaxyBurst}
+        spec.burst_strategy = strategies[spec.name]()
     else:
         from .strategies import SphericalBurst
         spec.burst_strategy = SphericalBurst(speed_min=1.2, add_shell_velocity=False) if spec.name == "Peony" else SphericalBurst()
@@ -495,4 +515,3 @@ def load_spec_from_file(filepath: str) -> FireworkSpec:
     import json
     with open(filepath, "r") as f:
         return deserialize_spec(json.load(f))
-

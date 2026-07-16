@@ -402,41 +402,49 @@ class GameState:
         return time.time() - self.current_session.start_time
 
     def update_player_name(self, name: str):
-        if self.current_session:
-            self.current_session.player_name = name
-            if self.current_ranking_entry:
-                gen = self.current_ranking_entry.generator_type
-                key = name.lower().strip()
-                
-                # Find if this player already has an entry for this generator
-                existing_entry = None
-                if gen in self.rankings:
-                    for r in self.rankings[gen]:
-                        # Skip the current temporary ranking entry we just added
-                        if r is not self.current_ranking_entry and r.player_name.lower().strip() == key:
-                            existing_entry = r
-                            break
-                
-                if existing_entry:
-                    # They have an existing record! Compare times:
-                    if self.current_ranking_entry.time_taken < existing_entry.time_taken:
-                        # The new time is better! Remove the old one, and update the new one's name.
-                        self.rankings[gen].remove(existing_entry)
-                        self.current_ranking_entry.player_name = name
-                    else:
-                        # The new time is worse or equal! Discard the new ranking entry entirely,
-                        # leaving the old one as their personal best.
-                        if gen in self.rankings and self.current_ranking_entry in self.rankings[gen]:
-                            self.rankings[gen].remove(self.current_ranking_entry)
-                        self.current_ranking_entry = None
-                else:
-                    # First record for this player on this generator! Just set their name.
-                    self.current_ranking_entry.player_name = name
-                
-                # Sort rankings by time taken
-                if gen in self.rankings:
-                    self.rankings[gen].sort(key=lambda x: x.time_taken)
+        if not self.current_session:
+            return
+
+        clean_name = name.strip() or self.current_session.player_name
+        self.current_session.player_name = clean_name
+        current = self.current_ranking_entry
+        if not current:
             self.save_rankings()
+            return
+
+        gen = current.generator_type
+        key = clean_name.casefold()
+        entries = self.rankings.setdefault(gen, [])
+
+        # Partition by object identity first. Never use list.remove/equality here:
+        # only records belonging to confirmed player may be replaced.
+        previous_entries = [entry for entry in entries if entry is not current]
+        same_player = [
+            entry
+            for entry in previous_entries
+            if entry.player_name.strip().casefold() == key
+        ]
+        different_players = [
+            entry
+            for entry in previous_entries
+            if entry.player_name.strip().casefold() != key
+        ]
+
+        current.player_name = clean_name
+        if same_player:
+            best_entry = min(
+                [*same_player, current], key=lambda entry: entry.time_taken
+            )
+            # Keep exactly one personal best for this name. Every differently
+            # named player remains untouched, regardless of relative time.
+            self.rankings[gen] = [*different_players, best_entry]
+            self.current_ranking_entry = current if best_entry is current else None
+        else:
+            # New name: rename provisional entry only. No existing player removed.
+            self.rankings[gen] = [*previous_entries, current]
+
+        self.rankings[gen].sort(key=lambda entry: entry.time_taken)
+        self.save_rankings()
 
     def discard_current_ranking(self):
         if self.current_ranking_entry:

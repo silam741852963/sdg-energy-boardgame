@@ -57,12 +57,29 @@ def main():
         choices=['ble', 'hall-ic', 'all'],
         help="Run in debug mode. Option: 'ble', 'hall-ic', or 'all' (default if --debug is set)"
     )
+    parser.add_argument(
+        "--ultimate-debug",
+        action="store_true",
+        help="Preview only the Ultimate Firework Forge with mocked inputs and no score writes",
+    )
+    parser.add_argument(
+        "--disable-ultimate",
+        action="store_true",
+        help="Disable Ultimate Firework Forge while keeping normal production shows",
+    )
     args = parser.parse_args()
+    if args.ultimate_debug and args.disable_ultimate:
+        parser.error("--ultimate-debug cannot be combined with --disable-ultimate")
 
     mock_ble = False
     mock_hall = False
 
-    if args.debug == 'all':
+    if args.ultimate_debug:
+        mock_ble = True
+        mock_hall = True
+        print("[INIT] Ultimate Forge debug: hardware mocked; scores and players untouched.")
+
+    elif args.debug == 'all':
         mock_ble = True
         mock_hall = True
         print("[INIT] Debug mode: BOTH BLE and Hall-IC mocked.")
@@ -93,6 +110,9 @@ def main():
 
     # Start a test session immediately
     state.start_new_session()
+    if args.ultimate_debug:
+        state.mock_paused = True
+        state.drain_paused = True
 
     # 2. Start Asyncio Logic in a Background Thread
     bg_thread = threading.Thread(
@@ -104,7 +124,13 @@ def main():
 
     # 3. Start ModernGL Engine in the Main Thread
     # Inject the resolved mock flags
-    app = FireworkEngine(state, mock_ble=mock_ble, mock_hall=mock_hall)
+    app = FireworkEngine(
+        state,
+        mock_ble=mock_ble,
+        mock_hall=mock_hall,
+        ultimate_debug=args.ultimate_debug,
+        ultimate_enabled=not args.disable_ultimate,
+    )
     app.run()
 
 if __name__ == "__main__":

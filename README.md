@@ -120,6 +120,61 @@ Changing generators clears the previously selected unfinished gauge. A non-zero
 gauge begins draining after 55 seconds without an increase, and selection returns
 to neutral after 60 seconds without activity.
 
+### Ultimate Firework Forge
+
+An all-time generator record or returning player's personal best starts a short
+interactive finale using the same four Hall positions. First-time players do not
+trigger it. All-time records are known immediately; personal bests start only
+after player confirms existing name. Player chooses shape, palette, and special
+effect; every result launches complete capped multi-stage ultra firework.
+Inactivity selects varied defaults, so no failure state or timing minigame.
+
+In mocked Hall mode, hold number keys `1` through `4` for Wind, Solar, Piezo, and
+Coil. Release or move between positions to create distinct input transitions.
+Each choice adds a persistent glowing ring to the central launch core using the
+generator's consistent color: cyan Wind, yellow Solar, orange Piezo, and lime
+Coil. After the third ring forms, the forge interface disappears and the normal
+show becomes fully visible. The three rings descend together toward the bottom of
+the screen, slowly lose their glow as stored energy is spent, and launch the
+complete firework sequence from their final position. Rings use the same additive
+soft-particle texture as fireworks. Finale stages are spaced over several seconds
+so each transformation remains readable.
+
+Finale choreography also comes from chosen combination, not only shell settings.
+Wind power creates expanding alternating spirals; Solar opens a rising fan; Piezo
+fires rhythmic mirrored pairs and heart pulses; Coil travels around an alternating
+orbit before discharging through center. Shape changes hero trajectory and crown
+spacing, palette colors every stage, and each combination has mirrored/cadence/
+altitude variants across repeat plays.
+
+Launch the isolated presentation while developing the forge with:
+
+```bash
+./run.sh --ultimate-debug
+```
+
+This mode mocks hardware, pauses energy generation, plays a normal-show prelude,
+then starts the forge. It does not complete a session or write leaderboard/player
+data. Press `R` to clear the presentation and replay it. Choice windows are three
+seconds and all unattended choices receive safe visual defaults.
+
+Production can keep normal generator shows while disabling forge interaction:
+
+```bash
+./run.sh --disable-ultimate
+```
+
+Forge selection phases last ten seconds. Configuration is intentionally text-free:
+screen dimming and four generator-colored rings/energy lines fade in together once,
+without restarting between phases. Each selection sends bright pulse along chosen
+line into center core. Custom hero
+shapes include three-arm Galaxy, five-point Star, Heart, and Diamond.
+
+Generator scripts receive one constrained variation per run: original, horizontal
+mirror, faster cadence, or an authored palette rotation. Script authors may also
+schedule `begin_ultimate_forge`, `launch_ultimate`, or `launch_custom` actions;
+existing scripts require no changes because record finales start automatically.
+
 ## Runtime data
 
 The application creates these files in the repository/deployment root as needed:

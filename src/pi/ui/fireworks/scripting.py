@@ -4,11 +4,12 @@ import time
 from .models import generate_spec
 
 class ScriptManager:
-    def __init__(self, firework_manager):
+    def __init__(self, firework_manager, action_handler=None):
         self.firework_manager = firework_manager
+        self.action_handler = action_handler
         self.active_scripts = [] # List of {"events": [...], "start_time": float, "index": int}
 
-    def play_sequence(self, json_path: str):
+    def play_sequence(self, json_path: str, variation: int = 0):
         if not os.path.exists(json_path):
             print(f"Script not found: {json_path}")
             return
@@ -21,15 +22,34 @@ class ScriptManager:
         
         filename = os.path.basename(json_path).lower()
         
-        # Load events exactly as they are in the JSON file
+        # Keep the authored events intact, then apply one constrained variation.
+        # 0 original, 1 mirrored, 2 faster cadence, 3 palette rotation.
+        palette_rotation = {
+            "red": "gold", "orange": "pink", "gold": "cyan",
+            "yellow": "magenta", "lime": "cyan", "green": "gold",
+            "cyan": "violet", "blue": "pink", "indigo": "gold",
+            "violet": "cyan", "magenta": "orange", "pink": "yellow",
+            "silver": "gold",
+        }
         for ev in original_events:
-            events.append(ev.copy())
+            varied = ev.copy()
+            if variation == 1 and "x" in varied:
+                varied["x"] = 1920 - varied["x"]
+            elif variation == 2:
+                varied["time"] = round(varied.get("time", 0.0) * 0.88, 3)
+            elif variation == 3:
+                if "color" in varied:
+                    varied["color"] = palette_rotation.get(varied["color"], varied["color"])
+                if "colors" in varied:
+                    varied["colors"] = [palette_rotation.get(c, c) for c in varied["colors"]]
+            events.append(varied)
 
         # Sort events by time
         events = sorted(events, key=lambda e: e.get("time", 0.0))
         
         self.active_scripts.append({
             "filename": filename,
+            "variation": variation,
             "events": events,
             "start_time": time.time(),
             "index": 0
@@ -48,6 +68,11 @@ class ScriptManager:
             while idx < len(events):
                 ev = events[idx]
                 if current_time - start_time >= ev["time"]:
+                    if "action" in ev:
+                        if self.action_handler:
+                            self.action_handler(ev["action"], ev)
+                        idx += 1
+                        continue
                     # Trigger this event
                     fw_type = ev.get("type", "Peony")
                     if love_mode_active:
@@ -136,4 +161,3 @@ class ScriptManager:
             # Remove script if completed
             if idx >= len(events):
                 self.active_scripts.remove(script)
-

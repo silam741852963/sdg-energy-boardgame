@@ -268,3 +268,47 @@ class HeartBurst(BurstStrategy):
         return pvx, pvy, pvz
 
 
+class ParametricBurst(BurstStrategy):
+    """Base for authored flat silhouettes rendered as particle velocities."""
+
+    def get_velocity(self, shell, speed, spec):
+        pvx, pvy, pvz = self.get_velocities(shell, speed, spec, 1)
+        return pvx[0], pvy[0], pvz[0]
+
+    def _finish(self, shell, speed, spec, x, y, count):
+        variance = np.random.uniform(0.9, 1.12, count) * spec.speed_variance * speed
+        pvx = x * variance
+        pvy = y * variance
+        pvz = np.random.uniform(-0.08, 0.08, count) * speed
+        return pvx, pvy, pvz
+
+
+class StarBurst(ParametricBurst):
+    def get_velocities(self, shell, speed, spec, count):
+        theta = np.linspace(-np.pi / 2, 3 * np.pi / 2, count, endpoint=False)
+        # Ten alternating vertices trace a crisp five-point star.
+        segment = (np.arange(count) * 10 // max(1, count)) % 10
+        radius = np.where(segment % 2 == 0, 1.0, 0.42)
+        return self._finish(shell, speed, spec, np.cos(theta) * radius, np.sin(theta) * radius, count)
+
+
+class DiamondBurst(ParametricBurst):
+    def get_velocities(self, shell, speed, spec, count):
+        theta = np.linspace(0.0, 2.0 * np.pi, count, endpoint=False)
+        denom = np.abs(np.cos(theta)) + np.abs(np.sin(theta))
+        x = np.cos(theta) / denom
+        y = np.sin(theta) / denom
+        return self._finish(shell, speed, spec, x, y, count)
+
+
+class GalaxyBurst(ParametricBurst):
+    def get_velocities(self, shell, speed, spec, count):
+        index = np.arange(count)
+        arm = index % 3
+        progress = index / max(1, count - 1)
+        theta = progress * np.pi * 4.5 + arm * (2.0 * np.pi / 3.0)
+        radius = 0.15 + progress * 0.9
+        x = np.cos(theta) * radius
+        y = np.sin(theta) * radius
+        return self._finish(shell, speed, spec, x, y, count)
+
