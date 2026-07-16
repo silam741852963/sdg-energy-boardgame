@@ -1,7 +1,7 @@
 import time
 import os
 import json
-from typing import List
+from typing import List, Dict
 from config import MAX_ENERGY_GAUGE, GeneratorType
 from .models import PlayerSession, RankingEntry
 from .smooth_fill import SmoothFiller
@@ -10,7 +10,7 @@ from .smooth_fill import SmoothFiller
 class GameState:
     def __init__(self):
         self.current_session: PlayerSession | None = None
-        self.rankings: List[RankingEntry] = []
+        self.rankings: Dict[GeneratorType, List[RankingEntry]] = {gen: [] for gen in GeneratorType}
         self.active_generator: GeneratorType | None = None
         self.last_activity_time = time.time()
         self.last_drain_time = time.time()
@@ -363,13 +363,22 @@ class GameState:
             f.write("\n".join(lines) + "\n")
 
     def _save_ranking(self):
+        # Determine completed generator type by checking which gauge >= MAX_ENERGY_GAUGE
+        completed_gen = next(
+            (gen for gen, level in self.current_session.energy_levels.items() if level >= MAX_ENERGY_GAUGE),
+            None
+        )
+        if not completed_gen:
+            completed_gen = self.active_generator or GeneratorType.WIND
+
         time_taken = self.current_session.end_time - self.current_session.start_time
         self.current_ranking_entry = RankingEntry(
-            self.current_session.player_name, time_taken
+            self.current_session.player_name, time_taken, completed_gen
         )
-        self.rankings.append(self.current_ranking_entry)
-        # Sort by fastest time
-        self.rankings.sort(key=lambda x: x.time_taken)
+        if completed_gen not in self.rankings:
+            self.rankings[completed_gen] = []
+        self.rankings[completed_gen].append(self.current_ranking_entry)
+        self.rankings[completed_gen].sort(key=lambda x: x.time_taken)
         self.save_rankings()
 
     def get_elapsed_time(self) -> float:
@@ -386,9 +395,18 @@ class GameState:
             self.current_session.player_name = name
             if self.current_ranking_entry:
                 self.current_ranking_entry.player_name = name
-                # Re-sort rankings
-                self.rankings.sort(key=lambda x: x.time_taken)
+                gen = self.current_ranking_entry.generator_type
+                if gen in self.rankings:
+                    self.rankings[gen].sort(key=lambda x: x.time_taken)
             self.save_rankings()
+
+    def discard_current_ranking(self):
+        if self.current_ranking_entry:
+            gen = self.current_ranking_entry.generator_type
+            if gen in self.rankings and self.current_ranking_entry in self.rankings[gen]:
+                self.rankings[gen].remove(self.current_ranking_entry)
+                self.save_rankings()
+            self.current_ranking_entry = None
 
     def _get_leaderboard_filepath(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -397,29 +415,60 @@ class GameState:
 
     def load_rankings(self):
         filepath = self._get_leaderboard_filepath()
-        self.rankings = []
+        self.rankings = {gen: [] for gen in GeneratorType}
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r") as f:
                     data = json.load(f)
-                    for entry in data:
-                        self.rankings.append(
-                            RankingEntry(
-                                player_name=entry.get("player_name", "Student"),
-                                time_taken=entry.get("time_taken", 0.0)
+                    if isinstance(data, dict):
+                        for gen_name, entries in data.items():
+                            try:
+                                gen = GeneratorType[gen_name]
+                            except KeyError:
+                                try:
+                                    gen = next(g for g in GeneratorType if g.name.lower() == gen_name.lower() or g.value.lower() == gen_name.lower())
+                                except StopIteration:
+                                    continue
+                            for entry in entries:
+                                self.rankings[gen].append(
+                                    RankingEntry(
+                                        player_name=entry.get("player_name", "Student"),
+                                        time_taken=entry.get("time_taken", 0.0),
+                                        generator_type=gen
+                                    )
+                                )
+                    elif isinstance(data, list):
+                        # Backward compatibility for old flat list leaderboard format
+                        for entry in data:
+                            gen_name = entry.get("generator_type")
+                            try:
+                                gen = GeneratorType[gen_name] if gen_name else GeneratorType.WIND
+                            except KeyError:
+                                gen = GeneratorType.WIND
+                            self.rankings[gen].append(
+                                RankingEntry(
+                                    player_name=entry.get("player_name", "Student"),
+                                    time_taken=entry.get("time_taken", 0.0),
+                                    generator_type=gen
+                                )
                             )
-                        )
-                self.rankings.sort(key=lambda x: x.time_taken)
+                for gen in GeneratorType:
+                    self.rankings[gen].sort(key=lambda x: x.time_taken)
             except Exception as e:
                 print(f"Error loading rankings: {e}")
 
     def save_rankings(self):
         filepath = self._get_leaderboard_filepath()
         try:
-            data = [
-                {"player_name": r.player_name, "time_taken": r.time_taken}
-                for r in self.rankings
-            ]
+            data = {}
+            for gen, entries in self.rankings.items():
+                data[gen.name] = [
+                    {
+                        "player_name": r.player_name,
+                        "time_taken": r.time_taken
+                    }
+                    for r in entries
+                ]
             with open(filepath, "w") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:

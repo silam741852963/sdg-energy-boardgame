@@ -228,6 +228,14 @@ class FireworkEngine:
         self.fps_tracker.update()
         self.cpu_tracker.update()
 
+        # Check if ranking board / name entry should be cancelled due to selecting a different generator
+        if (self.show_name_entry or self.show_leaderboard) and self.game_state:
+            active_gen = self.game_state.active_generator
+            if active_gen is not None and active_gen != self.completed_gen:
+                self.game_state.discard_current_ranking()
+                self._restart_game()
+                self.game_state.set_active_generator(active_gen)
+
         # Get actual logical window size from Pygame
         try:
             win_w, win_h = pygame.display.get_window_size()
@@ -452,7 +460,7 @@ class FireworkEngine:
                     and not self.show_leaderboard
                     and not self.show_name_entry
                 ):
-                    if time.time() - self.congrat_start_time >= 3.5:
+                    if time.time() - self.congrat_start_time >= 4.0:
                         self.show_name_entry = True
                         self.name_input = ""
                         self.name_suggestion = ""
@@ -1196,8 +1204,9 @@ class FireworkEngine:
                 ox, oy, overlay_w, overlay_h, palette.get_color(122), fill=False
             )
 
-            # Center title: "=== GENERATOR CHARGED ==="
-            title_text = "=== GENERATOR CHARGED ==="
+            # Center title: "=== GENERATOR CHARGED ===" (dynamically generated based on completed generator)
+            gen = self.completed_gen or GeneratorType.WIND
+            title_text = f"=== {gen.value.upper()} CHARGED ==="
             font_med = self.fonts["medium"]
             tw, _ = font_med.size(title_text)
             tx = ox + (overlay_w - tw) // 2
@@ -1226,7 +1235,13 @@ class FireworkEngine:
             col1_x = ox + int(130 * SCALE_X)
             col2_x = ox + int(370 * SCALE_X)
 
-            for i, rank in enumerate(self.game_state.rankings[:5]):
+            rankings_list = []
+            if isinstance(self.game_state.rankings, dict):
+                rankings_list = self.game_state.rankings.get(gen, [])
+            else:
+                rankings_list = self.game_state.rankings
+
+            for i, rank in enumerate(rankings_list[:5]):
                 y_pos = oy + int(140 * SCALE_Y) + (i * int(40 * SCALE_Y))
                 self.renderer.draw_text(
                     col1_x,

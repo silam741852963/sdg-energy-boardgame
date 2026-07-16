@@ -27,3 +27,4 @@ class PlayerSession:
 class RankingEntry:
     player_name: str
     time_taken: float
+    generator_type: GeneratorType

@@ -42,12 +42,19 @@ class CLIRenderer:
         )
 
         # 2. Rankings Layout
-        table = Table(title="Top Students")
+        active_gen = self.game_state.active_generator or GeneratorType.WIND
+        table = Table(title=f"Top Students ({active_gen.value})")
         table.add_column("Rank", style="cyan", no_wrap=True)
         table.add_column("Student", style="magenta")
         table.add_column("Time (s)", justify="right", style="green")
 
-        for i, rank in enumerate(self.game_state.rankings[:5], 1):
+        rankings_list = []
+        if isinstance(self.game_state.rankings, dict):
+            rankings_list = self.game_state.rankings.get(active_gen, [])
+        else:
+            rankings_list = self.game_state.rankings
+
+        for i, rank in enumerate(rankings_list[:5], 1):
             table.add_row(str(i), rank.player_name, f"{rank.time_taken:.2f}")
 
         ranking_panel = Panel(table, title="🏆 Leaderboard")

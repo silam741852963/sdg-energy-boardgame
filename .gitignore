@@ -223,3 +223,5 @@ clean_boost_test.log
 # Persistent players database
 players_database.json
 
+# Leaderboard persistent file
+leaderboard.json
