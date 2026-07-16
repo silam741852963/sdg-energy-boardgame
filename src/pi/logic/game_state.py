@@ -4,6 +4,7 @@ import json
 from typing import List
 from config import MAX_ENERGY_GAUGE, GeneratorType
 from .models import PlayerSession, RankingEntry
+from .smooth_fill import SmoothFiller
 
 
 class GameState:
@@ -37,6 +38,8 @@ class GameState:
         self.simon_says_step = 0
         self.simon_says_sequence = []
         self.simon_says_last_target_time = 0.0
+        
+        self.smooth_filler = SmoothFiller(self)
 
     def start_new_session(self, player_name: str | None = None):
         self.session_count += 1
@@ -47,6 +50,7 @@ class GameState:
         for gen in GeneratorType:
             self._last_gauge_values[gen] = 0.0
             self._last_increase_time[gen] = time.time()
+        self.smooth_filler.active_fills.clear()
 
     def set_active_generator(self, gen_type: GeneratorType | None):
         if gen_type is not None and self.current_session and self.current_session.start_time == 0.0:
@@ -115,6 +119,9 @@ class GameState:
         dt = current_time - self.last_drain_time
         self.last_drain_time = current_time
 
+        # Update smooth gauge filling
+        self.smooth_filler.update()
+
         if self.drain_paused:
             # While draining is paused, keep the timers fresh relative to current_time
             # so that no time elapsed is accumulated towards the 55s inactivity limit.
@@ -159,7 +166,7 @@ class GameState:
     def force_immediate_drain(self, gen_type):
         self._last_increase_time[gen_type] = time.time() - 100.0
 
-    def add_energy(self, gen_type, amount: float, is_clean_boost: bool = False):
+    def add_energy(self, gen_type, amount: float, is_clean_boost: bool = False, smooth: bool = True):
         if not self.current_session:
             return
 
@@ -199,19 +206,25 @@ class GameState:
             return
 
         self.current_session.last_energy_time[target_gen] = time.time()
-        self.current_session.energy_levels[target_gen] += fill_amount
 
-        # Check if any single gauge has reached the max
-        if not self.current_session.completed:
-            if any(
-                level >= MAX_ENERGY_GAUGE
-                for level in self.current_session.energy_levels.values()
-            ):
-                self.current_session.completed = True
-                self.current_session.end_time = time.time()
-                self._save_ranking()
-                if CLEANBOOST_TEST_MODE:
-                    self._write_statistics_log()
+        if smooth and is_clean_boost:
+            # Queue gradual energy accumulation over 0.3s
+            self.smooth_filler.add_fill_request(target_gen, fill_amount, duration=0.3)
+        else:
+            # Instant energy filling
+            self.current_session.energy_levels[target_gen] += fill_amount
+
+            # Check if any single gauge has reached the max
+            if not self.current_session.completed:
+                if any(
+                    level >= MAX_ENERGY_GAUGE
+                    for level in self.current_session.energy_levels.values()
+                ):
+                    self.current_session.completed = True
+                    self.current_session.end_time = time.time()
+                    self._save_ranking()
+                    if CLEANBOOST_TEST_MODE:
+                        self._write_statistics_log()
 
     def _log_clean_boost_signal(self, gen_type, fill_amount):
         self.clean_boost_signals.append({
