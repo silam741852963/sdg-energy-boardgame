@@ -405,8 +405,35 @@ class GameState:
         if self.current_session:
             self.current_session.player_name = name
             if self.current_ranking_entry:
-                self.current_ranking_entry.player_name = name
                 gen = self.current_ranking_entry.generator_type
+                key = name.lower().strip()
+                
+                # Find if this player already has an entry for this generator
+                existing_entry = None
+                if gen in self.rankings:
+                    for r in self.rankings[gen]:
+                        # Skip the current temporary ranking entry we just added
+                        if r is not self.current_ranking_entry and r.player_name.lower().strip() == key:
+                            existing_entry = r
+                            break
+                
+                if existing_entry:
+                    # They have an existing record! Compare times:
+                    if self.current_ranking_entry.time_taken < existing_entry.time_taken:
+                        # The new time is better! Remove the old one, and update the new one's name.
+                        self.rankings[gen].remove(existing_entry)
+                        self.current_ranking_entry.player_name = name
+                    else:
+                        # The new time is worse or equal! Discard the new ranking entry entirely,
+                        # leaving the old one as their personal best.
+                        if gen in self.rankings and self.current_ranking_entry in self.rankings[gen]:
+                            self.rankings[gen].remove(self.current_ranking_entry)
+                        self.current_ranking_entry = None
+                else:
+                    # First record for this player on this generator! Just set their name.
+                    self.current_ranking_entry.player_name = name
+                
+                # Sort rankings by time taken
                 if gen in self.rankings:
                     self.rankings[gen].sort(key=lambda x: x.time_taken)
             self.save_rankings()
