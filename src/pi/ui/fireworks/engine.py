@@ -341,7 +341,7 @@ class FireworkEngine:
                             entered_name = (
                                 self.game_state.current_session.player_name
                                 if self.game_state
-                                else "Student"
+                                else "Player"
                             )
 
                         if self.game_state:
@@ -607,7 +607,7 @@ class FireworkEngine:
                             elif gen == GeneratorType.PIEZO:
                                 gen_color = "orange"
                             elif gen == GeneratorType.COIL:
-                                gen_color = "blue"
+                                gen_color = "lime"
 
                             self.drone_manager.transition_to_pattern(
                                 6, self.gui, self.audio, override_color=gen_color
@@ -1111,7 +1111,7 @@ class FireworkEngine:
                 GeneratorType.WIND: 61,    # Cyan
                 GeneratorType.SOLAR: 31,   # Yellow
                 GeneratorType.PIEZO: 11,   # Orange
-                GeneratorType.COIL: 71     # Blue
+                GeneratorType.COIL: 41     # Lime
             }
             emp_col_idx = gen_colors.get(gen, 51)
 
@@ -1156,7 +1156,7 @@ class FireworkEngine:
             elif self.game_state:
                 current_time_taken = self.game_state.get_elapsed_time()
 
-            times_str = f"Current Time: {current_time_taken:.2f}s"
+            current_time_str = f"Current Time: {current_time_taken:.2f}s"
             recommended_name = self.name_suggestion or self.name_input
             best_time = None
             if recommended_name and self.game_state and self.completed_gen:
@@ -1165,19 +1165,44 @@ class FireworkEngine:
                 if matching_entries:
                     best_time = min(r.time_taken for r in matching_entries)
 
+            best_time_str = ""
             if best_time is not None:
-                times_str += f"  |  {recommended_name}'s Best Time: {best_time:.2f}s"
+                best_time_str = f"  |  {recommended_name}'s Best Time: {best_time:.2f}s"
 
+            total_str = current_time_str + best_time_str
             font_med = self.fonts["medium"]
-            ti_w, _ = font_med.size(times_str)
+            ti_w, _ = font_med.size(total_str)
             ti_x = ox + (overlay_w - ti_w) // 2
+
+            # Color coding Current Time based on comparison to personal best
+            if best_time is None:
+                cur_time_color = palette.get_color(emp_col_idx)  # Default emphasis
+            elif current_time_taken < best_time:
+                cur_time_color = palette.get_color(51)           # Green for lower (better)
+            elif current_time_taken > best_time:
+                cur_time_color = palette.get_color(1)            # Red for higher (worse)
+            else:
+                cur_time_color = palette.get_color(31)           # Yellow/Gold for equal
+
+            # Draw Current Time
             self.renderer.draw_text(
                 ti_x,
                 oy + int(210 * SCALE_Y),
-                times_str,
+                current_time_str,
                 font_med,
-                palette.get_color(emp_col_idx),
+                cur_time_color,
             )
+
+            # Draw Best Time suffix if present
+            if best_time_str:
+                cur_w, _ = font_med.size(current_time_str)
+                self.renderer.draw_text(
+                    ti_x + cur_w,
+                    oy + int(210 * SCALE_Y),
+                    best_time_str,
+                    font_med,
+                    palette.get_color(121),  # White
+                )
 
             # Input box
             box_w = int(800 * SCALE_X)
@@ -1271,7 +1296,7 @@ class FireworkEngine:
                 GeneratorType.WIND: 61,    # Cyan
                 GeneratorType.SOLAR: 31,   # Yellow
                 GeneratorType.PIEZO: 11,   # Orange
-                GeneratorType.COIL: 71     # Blue
+                GeneratorType.COIL: 41     # Lime
             }
             emp_col_idx = gen_colors.get(gen, 51)
 
@@ -1296,10 +1321,28 @@ class FireworkEngine:
                 palette.get_color(emp_col_idx),
             )
 
-            # Left column: Top 5 Fastest Students
-            sub_text = "--- TOP 5 FASTEST STUDENTS ---"
-            font_large = self.fonts["large"]
+            # Display the current time in the final ranking board
+            current_time_taken = 0.0
+            if self.game_state and self.game_state.current_ranking_entry:
+                current_time_taken = self.game_state.current_ranking_entry.time_taken
+            elif self.game_state:
+                current_time_taken = self.game_state.get_elapsed_time()
+
+            cur_time_text = f"Your Time: {current_time_taken:.2f}s"
             font_med = self.fonts["medium"]
+            ct_w, _ = font_med.size(cur_time_text)
+            ct_x = ox + (overlay_w - ct_w) // 2
+            self.renderer.draw_text(
+                ct_x,
+                oy + int(115 * SCALE_Y),
+                cur_time_text,
+                font_med,
+                palette.get_color(emp_col_idx),
+            )
+
+            # Left column: Top 5 Fastest Players
+            sub_text = "--- TOP 5 FASTEST PLAYERS ---"
+            font_large = self.fonts["large"]
             font_small = self.fonts["small"]
             
             sw, _ = font_med.size(sub_text)
@@ -1350,23 +1393,44 @@ class FireworkEngine:
                 palette.get_color(121),
             )
 
-            # Group by unique player to find best times & most recent timestamps
+            # Group by unique player to find best times & most recent timestamps across the entire player base
             player_bests = {}
-            for entry in rankings_list:
-                name = entry.player_name
-                key = name.lower().strip()
+            
+            # Compile all unique player names from the player base and all rankings
+            all_players = set(self.player_base)
+            if self.game_state:
+                for other_ranks in self.game_state.rankings.values():
+                    for r in other_ranks:
+                        all_players.add(r.player_name)
+            
+            for p_name in all_players:
+                key = p_name.lower().strip()
                 if not key:
                     continue
-                ts = getattr(entry, "timestamp", 0.0)
-                if key not in player_bests:
-                    player_bests[key] = {
-                        "player_name": entry.player_name,
-                        "best_time": entry.time_taken,
-                        "most_recent_timestamp": ts
-                    }
-                else:
-                    player_bests[key]["best_time"] = min(player_bests[key]["best_time"], entry.time_taken)
-                    player_bests[key]["most_recent_timestamp"] = max(player_bests[key]["most_recent_timestamp"], ts)
+                
+                # Find best time and most recent timestamp for this generator
+                best_time = None
+                most_recent_timestamp = 0.0
+                
+                if self.game_state:
+                    gen_ranks = self.game_state.rankings.get(gen, [])
+                    p_gen_ranks = [r for r in gen_ranks if r.player_name.lower().strip() == key]
+                    if p_gen_ranks:
+                        best_time = min(r.time_taken for r in p_gen_ranks)
+                        most_recent_timestamp = max(getattr(r, "timestamp", 0.0) for r in p_gen_ranks)
+                    
+                    # If they haven't played this generator, find their most recent activity timestamp across all generators
+                    if most_recent_timestamp == 0.0:
+                        for other_ranks in self.game_state.rankings.values():
+                            p_other = [r for r in other_ranks if r.player_name.lower().strip() == key]
+                            if p_other:
+                                most_recent_timestamp = max(most_recent_timestamp, max(getattr(r, "timestamp", 0.0) for r in p_other))
+                
+                player_bests[key] = {
+                    "player_name": p_name,
+                    "best_time": best_time,
+                    "most_recent_timestamp": most_recent_timestamp
+                }
 
             # Convert to list and sort by most recent timestamp descending
             unique_players = list(player_bests.values())
@@ -1433,14 +1497,15 @@ class FireworkEngine:
                 self.renderer.draw_text(
                     col3_x,
                     y_pos,
-                    f"{i + 1}. {p['player_name']}",
+                    p['player_name'],
                     font_med,
                     palette.get_color(122),
                 )
+                time_str = f"{p['best_time']:.2f}s" if p['best_time'] is not None else "--"
                 self.renderer.draw_text(
                     col4_x,
                     y_pos,
-                    f"{p['best_time']:.2f}s",
+                    time_str,
                     font_med,
                     palette.get_color(emp_col_idx),
                 )

@@ -45,7 +45,7 @@ class GaugeManager:
             GeneratorType.WIND: 61,    # Cyan
             GeneratorType.SOLAR: 31,   # Yellow
             GeneratorType.PIEZO: 11,   # Orange
-            GeneratorType.COIL: 71     # Blue
+            GeneratorType.COIL: 41     # Lime
         }
         
         # Current animated state per generator: {gen: {"y": 0, "scale": 1.0, "alpha": 1.0}}
@@ -191,7 +191,7 @@ class GaugeManager:
                         elif gen == GeneratorType.PIEZO:
                             gen_color = (1.0, 0.5, 0.0, 1.0)
                         elif gen == GeneratorType.COIL:
-                            gen_color = (0.0, 0.4, 1.0, 1.0)
+                            gen_color = (0.5, 1.0, 0.0, 1.0)
                         draw_lightning_arc(renderer, x, y, x + w, y, gen_color, segments=15, max_offset=8 * SCALE_Y)
                         draw_lightning_arc(renderer, x, y + h, x + w, y + h, gen_color, segments=15, max_offset=8 * SCALE_Y)
 

@@ -44,7 +44,7 @@ class GameState:
 
     def start_new_session(self, player_name: str | None = None):
         self.session_count += 1
-        name = player_name if player_name else f"Student {self.session_count}"
+        name = player_name if player_name else f"Player {self.session_count}"
         self.current_session = PlayerSession(player_name=name)
         self.current_session.start_time = 0.0
         self.current_ranking_entry = None
@@ -54,13 +54,6 @@ class GameState:
         self.smooth_filler.active_fills.clear()
 
     def set_active_generator(self, gen_type: GeneratorType | None):
-        if (
-            gen_type is not None
-            and self.current_session
-            and self.current_session.start_time == 0.0
-        ):
-            self.current_session.start_time = time.time()
-
         if self.active_generator != gen_type:
             old_gen = self.active_generator
             self.active_generator = gen_type
@@ -77,6 +70,13 @@ class GameState:
                 self._last_gauge_values[old_gen] = 0.0
                 self._last_increase_time[old_gen] = time.time()
                 self.smooth_filler.cancel_fills_for_generator(old_gen)
+
+            # Reset time counting if player deselects or selects any generator
+            if self.current_session and not self.current_session.completed:
+                if gen_type is not None:
+                    self.current_session.start_time = time.time()
+                else:
+                    self.current_session.start_time = 0.0
 
     def set_active_sensors(self, sensors: List[GeneratorType]):
         current_time = time.time()
@@ -443,7 +443,7 @@ class GameState:
                             for entry in entries:
                                 self.rankings[gen].append(
                                     RankingEntry(
-                                        player_name=entry.get("player_name", "Student"),
+                                        player_name=entry.get("player_name", "Player"),
                                         time_taken=entry.get("time_taken", 0.0),
                                         generator_type=gen,
                                         timestamp=entry.get("timestamp", 0.0)
@@ -459,7 +459,7 @@ class GameState:
                                 gen = GeneratorType.WIND
                             self.rankings[gen].append(
                                 RankingEntry(
-                                    player_name=entry.get("player_name", "Student"),
+                                    player_name=entry.get("player_name", "Player"),
                                     time_taken=entry.get("time_taken", 0.0),
                                     generator_type=gen,
                                     timestamp=entry.get("timestamp", 0.0)

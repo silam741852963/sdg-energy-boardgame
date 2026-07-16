@@ -43,9 +43,9 @@ class CLIRenderer:
 
         # 2. Rankings Layout
         active_gen = self.game_state.active_generator or GeneratorType.WIND
-        table = Table(title=f"Top Students ({active_gen.value})")
+        table = Table(title=f"Top Players ({active_gen.value})")
         table.add_column("Rank", style="cyan", no_wrap=True)
-        table.add_column("Student", style="magenta")
+        table.add_column("Player", style="magenta")
         table.add_column("Time (s)", justify="right", style="green")
 
         rankings_list = []
