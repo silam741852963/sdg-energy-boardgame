@@ -40,6 +40,7 @@ class GameState:
         self.simon_says_last_target_time = 0.0
 
         self.smooth_filler = SmoothFiller(self)
+        self.load_rankings()
 
     def start_new_session(self, player_name: str | None = None):
         self.session_count += 1
@@ -227,8 +228,8 @@ class GameState:
         self.current_session.last_energy_time[target_gen] = time.time()
 
         if smooth and is_clean_boost:
-            # Queue gradual energy accumulation over 2.5s
-            self.smooth_filler.add_fill_request(target_gen, fill_amount, duration=2.5)
+            # Queue gradual energy accumulation over 0.3s
+            self.smooth_filler.add_fill_request(target_gen, fill_amount, duration=0.3)
         else:
             # Instant energy filling
             self.current_session.energy_levels[target_gen] += fill_amount
@@ -369,6 +370,7 @@ class GameState:
         self.rankings.append(self.current_ranking_entry)
         # Sort by fastest time
         self.rankings.sort(key=lambda x: x.time_taken)
+        self.save_rankings()
 
     def get_elapsed_time(self) -> float:
         if not self.current_session:
@@ -386,6 +388,42 @@ class GameState:
                 self.current_ranking_entry.player_name = name
                 # Re-sort rankings
                 self.rankings.sort(key=lambda x: x.time_taken)
+            self.save_rankings()
+
+    def _get_leaderboard_filepath(self) -> str:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
+        return os.path.join(root_dir, "leaderboard.json")
+
+    def load_rankings(self):
+        filepath = self._get_leaderboard_filepath()
+        self.rankings = []
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    data = json.load(f)
+                    for entry in data:
+                        self.rankings.append(
+                            RankingEntry(
+                                player_name=entry.get("player_name", "Student"),
+                                time_taken=entry.get("time_taken", 0.0)
+                            )
+                        )
+                self.rankings.sort(key=lambda x: x.time_taken)
+            except Exception as e:
+                print(f"Error loading rankings: {e}")
+
+    def save_rankings(self):
+        filepath = self._get_leaderboard_filepath()
+        try:
+            data = [
+                {"player_name": r.player_name, "time_taken": r.time_taken}
+                for r in self.rankings
+            ]
+            with open(filepath, "w") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Error saving rankings: {e}")
 
     def _get_players_filepath(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))

@@ -419,7 +419,7 @@ class FireworkEngine:
                             self.game_state.force_immediate_drain(self.completed_gen)
                 
                 if self.congrat_start_time is not None and not self.show_leaderboard and not self.show_name_entry:
-                    if time.time() - self.congrat_start_time >= 8.0:
+                    if time.time() - self.congrat_start_time >= 2.5:
                         self.show_name_entry = True
                         self.name_input = ""
                         self.name_suggestion = ""
@@ -526,9 +526,9 @@ class FireworkEngine:
                         if gen in self.completed_gauges:
                             self.completed_gauges.remove(gen)
 
-            # Delay fireworks show by 4.0 seconds to let user read CLEAR pattern
+            # Delay fireworks show by 1.5 seconds to let user read CLEAR pattern
             if self.completion_time is not None and not self.show_started:
-                if time.time() - self.completion_time >= 4.0:
+                if time.time() - self.completion_time >= 1.5:
                     script_name = "wind.json"
                     if self.completed_gen == GeneratorType.WIND:
                         script_name = "wind.json"
