@@ -5,239 +5,202 @@
             "time": 0.0,
             "type": "Comet",
             "color": "pink",
-            "x": 300,
-            "y": 450
+            "x": 200,
+            "y": 450,
+            "particle_count": 200,
+            "radius": 2.2,
+            "intensity": 2.2,
+            "life_span": 120
         },
         {
             "time": 0.0,
             "type": "Comet",
             "color": "pink",
-            "x": 1620,
-            "y": 450
+            "x": 1720,
+            "y": 450,
+            "particle_count": 200,
+            "radius": 2.2,
+            "intensity": 2.2,
+            "life_span": 120
         },
         {
-            "time": 1.5,
+            "time": 0.4,
             "type": "Pearls",
             "color": "magenta",
-            "x": 400,
-            "y": 400
-        },
-        {
-            "time": 1.5,
-            "type": "Pearls",
-            "color": "magenta",
-            "x": 1520,
-            "y": 400
-        },
-        {
-            "time": 3.0,
-            "type": "Flying Fish",
-            "color": "orange",
             "x": 500,
-            "y": 380
+            "y": 400,
+            "particle_count": 200,
+            "radius": 1.8,
+            "multicolor": 3,
+            "life_span": 150
         },
         {
-            "time": 3.0,
-            "type": "Flying Fish",
-            "color": "orange",
+            "time": 0.4,
+            "type": "Pearls",
+            "color": "magenta",
             "x": 1420,
-            "y": 380
+            "y": 400,
+            "particle_count": 200,
+            "radius": 1.8,
+            "multicolor": 3,
+            "life_span": 150
         },
         {
-            "time": 4.5,
-            "type": "Tourbillion",
-            "color": "red",
-            "x": 960,
-            "y": 350
-        },
-        {
-            "time": 6.0,
-            "type": "Strobe",
-            "color": "pink",
-            "x": 600,
-            "y": 380
-        },
-        {
-            "time": 6.0,
-            "type": "Strobe",
-            "color": "pink",
-            "x": 1320,
-            "y": 380
-        },
-        {
-            "time": 7.5,
-            "type": "Crossette",
-            "color": "magenta",
-            "x": 300,
-            "y": 350
-        },
-        {
-            "time": 7.5,
-            "type": "Crossette",
-            "color": "magenta",
-            "x": 1620,
-            "y": 350
-        },
-        {
-            "time": 9.0,
-            "type": "Peony",
-            "color": "red",
-            "x": 700,
-            "y": 350
-        },
-        {
-            "time": 9.0,
-            "type": "Peony",
-            "color": "red",
-            "x": 1220,
-            "y": 350
-        },
-        {
-            "time": 10.5,
-            "type": "Pistil",
-            "color": "orange",
-            "x": 450,
-            "y": 370
-        },
-        {
-            "time": 10.5,
-            "type": "Pistil",
-            "color": "orange",
-            "x": 1470,
-            "y": 370
-        },
-        {
-            "time": 12.0,
+            "time": 0.8,
             "type": "Brocade",
             "color": "red",
             "x": 960,
-            "y": 330
+            "y": 350,
+            "particle_count": 400,
+            "radius": 2.6,
+            "intensity": 2.6,
+            "life_span": 140
         },
         {
-            "time": 13.5,
-            "type": "Dragon Eggs",
-            "color": "pink",
+            "time": 1.4,
+            "type": "Tourbillion",
+            "color": "orange",
             "x": 350,
-            "y": 350
+            "y": 380,
+            "particle_count": 180,
+            "radius": 2.0,
+            "speed_variance": 12.0
         },
         {
-            "time": 13.5,
+            "time": 1.4,
+            "type": "Tourbillion",
+            "color": "orange",
+            "x": 1570,
+            "y": 380,
+            "particle_count": 180,
+            "radius": 2.0,
+            "speed_variance": 12.0
+        },
+        {
+            "time": 2.0,
+            "type": "Crossette",
+            "color": "red",
+            "x": 600,
+            "y": 350,
+            "particle_count": 80,
+            "radius": 2.2,
+            "life_span": 60
+        },
+        {
+            "time": 2.0,
+            "type": "Crossette",
+            "color": "red",
+            "x": 1320,
+            "y": 350,
+            "particle_count": 80,
+            "radius": 2.2,
+            "life_span": 60
+        },
+        {
+            "time": 2.6,
+            "type": "Strobe",
+            "color": "pink",
+            "x": 400,
+            "y": 380,
+            "particle_count": 250,
+            "radius": 2.0,
+            "life_span": 150
+        },
+        {
+            "time": 2.6,
+            "type": "Strobe",
+            "color": "pink",
+            "x": 1520,
+            "y": 380,
+            "particle_count": 250,
+            "radius": 2.0,
+            "life_span": 150
+        },
+        {
+            "time": 3.2,
+            "type": "Dragon Eggs",
+            "color": "magenta",
+            "x": 700,
+            "y": 350,
+            "particle_count": 350,
+            "radius": 2.6,
+            "intensity": 2.6,
+            "life_span": 120
+        },
+        {
+            "time": 3.2,
+            "type": "Dragon Eggs",
+            "color": "magenta",
+            "x": 1220,
+            "y": 350,
+            "particle_count": 350,
+            "radius": 2.6,
+            "intensity": 2.6,
+            "life_span": 120
+        },
+        {
+            "time": 3.8,
+            "type": "Palm Tree",
+            "color": "red",
+            "x": 300,
+            "y": 320,
+            "particle_count": 45,
+            "radius": 2.5,
+            "intensity": 3.0,
+            "life_span": 80
+        },
+        {
+            "time": 3.8,
+            "type": "Palm Tree",
+            "color": "red",
+            "x": 1620,
+            "y": 320,
+            "particle_count": 45,
+            "radius": 2.5,
+            "intensity": 3.0,
+            "life_span": 80
+        },
+        {
+            "time": 4.4,
+            "type": "Willow",
+            "color": "red",
+            "x": 960,
+            "y": 300,
+            "particle_count": 500,
+            "radius": 3.0,
+            "intensity": 3.0,
+            "life_span": 160
+        },
+        {
+            "time": 5.0,
             "type": "Dragon Eggs",
             "color": "pink",
-            "x": 1570,
-            "y": 350
+            "x": 500,
+            "y": 380,
+            "particle_count": 250,
+            "radius": 2.0,
+            "intensity": 2.0
         },
         {
-            "time": 15.0,
+            "time": 5.0,
+            "type": "Dragon Eggs",
+            "color": "pink",
+            "x": 1420,
+            "y": 380,
+            "particle_count": 250,
+            "radius": 2.0,
+            "intensity": 2.0
+        },
+        {
+            "time": 5.0,
             "type": "Waterfall",
             "color": "red",
             "x": 960,
-            "y": 400
-        },
-        {
-            "time": 16.5,
-            "type": "Palm Tree",
-            "color": "red",
-            "x": 500,
-            "y": 350
-        },
-        {
-            "time": 16.5,
-            "type": "Palm Tree",
-            "color": "red",
-            "x": 1420,
-            "y": 350
-        },
-        {
-            "time": 18.0,
-            "type": "Chrysanthemum",
-            "color": "magenta",
-            "x": 300,
-            "y": 350
-        },
-        {
-            "time": 18.0,
-            "type": "Chrysanthemum",
-            "color": "magenta",
-            "x": 1620,
-            "y": 350
-        },
-        {
-            "time": 19.5,
-            "type": "Rising Tail",
-            "color": "orange",
-            "x": 600,
-            "y": 300
-        },
-        {
-            "time": 19.5,
-            "type": "Rising Tail",
-            "color": "orange",
-            "x": 1320,
-            "y": 300
-        },
-        {
-            "time": 21.0,
-            "type": "Willow",
-            "color": "red",
-            "x": 960,
-            "y": 330
-        },
-        {
-            "time": 22.5,
-            "type": "Brocade",
-            "color": "red",
-            "x": 400,
-            "y": 330
-        },
-        {
-            "time": 22.5,
-            "type": "Brocade",
-            "color": "red",
-            "x": 1520,
-            "y": 330
-        },
-        {
-            "time": 23.5,
-            "type": "Chrysanthemum",
-            "color": "pink",
-            "x": 960,
-            "y": 300
-        },
-        {
-            "time": 24.5,
-            "type": "Willow",
-            "color": "red",
-            "x": 250,
-            "y": 300
-        },
-        {
-            "time": 24.5,
-            "type": "Willow",
-            "color": "red",
-            "x": 1670,
-            "y": 300
-        },
-        {
-            "time": 25.5,
-            "type": "Dragon Eggs",
-            "color": "red",
-            "x": 960,
-            "y": 280
-        },
-        {
-            "time": 26.5,
-            "type": "Palm Tree",
-            "color": "red",
-            "x": 150,
-            "y": 300
-        },
-        {
-            "time": 26.5,
-            "type": "Palm Tree",
-            "color": "red",
-            "x": 1770,
-            "y": 300
+            "y": 400,
+            "particle_count": 500,
+            "radius": 3.0,
+            "intensity": 3.0,
+            "life_span": 180
         }
     ]
 }

@@ -546,9 +546,9 @@ class FireworkEngine:
                     self.show_started = True
                     self.completion_time = time.time()  # Reset timer to be relative to show start
 
-            # Clear drones after 3.0 seconds into the firework show
+            # Clear drones after 1.5 seconds into the firework show
             if self.completion_time is not None and self.show_started and not self.drones_cleared:
-                if time.time() - self.completion_time >= 3.0:
+                if time.time() - self.completion_time >= 1.5:
                     self.drone_manager.clear_all()
                     self.drones_cleared = True
 
