@@ -25,20 +25,20 @@ class GameState:
 
         # Multi-sensor active states (Hall-IC)
         self.active_sensors = []
-        
+
         # Konami sequence history (track transitions)
         self.dial_sequence = []
         self.trigger_konami_combo = False
         self.trigger_reset_combo = False
         self.trigger_love_combo = False
-        
+
         # Simon Says Mode state
         self.simon_says_active = False
         self.simon_says_target = None
         self.simon_says_step = 0
         self.simon_says_sequence = []
         self.simon_says_last_target_time = 0.0
-        
+
         self.smooth_filler = SmoothFiller(self)
 
     def start_new_session(self, player_name: str | None = None):
@@ -53,7 +53,11 @@ class GameState:
         self.smooth_filler.active_fills.clear()
 
     def set_active_generator(self, gen_type: GeneratorType | None):
-        if gen_type is not None and self.current_session and self.current_session.start_time == 0.0:
+        if (
+            gen_type is not None
+            and self.current_session
+            and self.current_session.start_time == 0.0
+        ):
             self.current_session.start_time = time.time()
 
         if self.active_generator != gen_type:
@@ -65,30 +69,36 @@ class GameState:
     def set_active_sensors(self, sensors: List[GeneratorType]):
         current_time = time.time()
         self.active_sensors = sensors
-        
+
         new_active = sensors[0] if sensors else None
-        
+
         # Track dialing sequence for Konami and Overdrive Mode
         if new_active is not None:
-            if not self.dial_sequence or self.dial_sequence[-1][0] != new_active or (current_time - self.dial_sequence[-1][1] > 0.05):
+            if (
+                not self.dial_sequence
+                or self.dial_sequence[-1][0] != new_active
+                or (current_time - self.dial_sequence[-1][1] > 0.05)
+            ):
                 self.dial_sequence.append((new_active, current_time))
                 self.dial_sequence = self.dial_sequence[-15:]
-                
+
                 # Check for Konami code: WIND -> SOLAR -> PIEZO -> COIL
                 deduped = []
                 for item, t in self.dial_sequence:
                     if not deduped or deduped[-1] != item:
                         deduped.append(item)
-                
+
                 if len(deduped) >= 4 and deduped[-4:] == [
                     GeneratorType.WIND,
                     GeneratorType.SOLAR,
                     GeneratorType.PIEZO,
                     GeneratorType.COIL,
                 ]:
-                    if len(self.dial_sequence) >= 4 and (self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0):
+                    if len(self.dial_sequence) >= 4 and (
+                        self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0
+                    ):
                         self.trigger_konami_combo = True
-                
+
                 # Check for Reset combo sequence: COIL -> PIEZO -> SOLAR -> WIND in rapid succession
                 if len(deduped) >= 4 and deduped[-4:] == [
                     GeneratorType.COIL,
@@ -96,7 +106,9 @@ class GameState:
                     GeneratorType.SOLAR,
                     GeneratorType.WIND,
                 ]:
-                    if len(self.dial_sequence) >= 4 and (self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0):
+                    if len(self.dial_sequence) >= 4 and (
+                        self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0
+                    ):
                         self.trigger_reset_combo = True
 
                 # Check for Love combo sequence: SOLAR -> WIND -> SOLAR -> WIND -> PIEZO -> PIEZO in rapid succession (within 7.0 seconds)
@@ -109,9 +121,11 @@ class GameState:
                     GeneratorType.PIEZO,
                     GeneratorType.PIEZO,
                 ]:
-                    if len(self.dial_sequence) >= 6 and (self.dial_sequence[-1][1] - self.dial_sequence[-6][1] <= 7.0):
+                    if len(self.dial_sequence) >= 6 and (
+                        self.dial_sequence[-1][1] - self.dial_sequence[-6][1] <= 7.0
+                    ):
                         self.trigger_love_combo = True
-                
+
         self.set_active_generator(new_active)
 
     def check_inactivity(self):
@@ -128,7 +142,9 @@ class GameState:
             for gen in GeneratorType:
                 self._last_increase_time[gen] = current_time
                 if self.current_session:
-                    self._last_gauge_values[gen] = self.current_session.energy_levels.get(gen, 0.0)
+                    self._last_gauge_values[gen] = (
+                        self.current_session.energy_levels.get(gen, 0.0)
+                    )
             return
 
         # 60s inactivity returns to default None (Ablic)
@@ -166,7 +182,9 @@ class GameState:
     def force_immediate_drain(self, gen_type):
         self._last_increase_time[gen_type] = time.time() - 100.0
 
-    def add_energy(self, gen_type, amount: float, is_clean_boost: bool = False, smooth: bool = True):
+    def add_energy(
+        self, gen_type, amount: float, is_clean_boost: bool = False, smooth: bool = True
+    ):
         if not self.current_session:
             return
 
@@ -183,6 +201,7 @@ class GameState:
         # Determine the amount of energy to add
         if CLEANBOOST_TEST_MODE:
             from config import ENERGY_PER_BEACON
+
             if amount != ENERGY_PER_BEACON:
                 fill_amount = amount
             else:
@@ -199,7 +218,7 @@ class GameState:
 
         self.last_activity_time = time.time()
 
-        # In test mode, fill the received gen_type's gauge. 
+        # In test mode, fill the received gen_type's gauge.
         # In normal mode, fill the currently selected active generator's gauge.
         target_gen = gen_type if CLEANBOOST_TEST_MODE else self.active_generator
         if target_gen is None:
@@ -208,8 +227,8 @@ class GameState:
         self.current_session.last_energy_time[target_gen] = time.time()
 
         if smooth and is_clean_boost:
-            # Queue gradual energy accumulation over 0.3s
-            self.smooth_filler.add_fill_request(target_gen, fill_amount, duration=0.3)
+            # Queue gradual energy accumulation over 2.5s
+            self.smooth_filler.add_fill_request(target_gen, fill_amount, duration=2.5)
         else:
             # Instant energy filling
             self.current_session.energy_levels[target_gen] += fill_amount
@@ -227,31 +246,34 @@ class GameState:
                         self._write_statistics_log()
 
     def _log_clean_boost_signal(self, gen_type, fill_amount):
-        self.clean_boost_signals.append({
-            "time": time.time(),
-            "gen_type": gen_type,
-            "amount": fill_amount,
-            "active_gen": self.active_generator
-        })
+        self.clean_boost_signals.append(
+            {
+                "time": time.time(),
+                "gen_type": gen_type,
+                "amount": fill_amount,
+                "active_gen": self.active_generator,
+            }
+        )
         self._write_statistics_log()
 
     def _write_statistics_log(self):
         import datetime
         import math
-        
+
         import os
+
         current_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
         filepath = os.path.join(root_dir, "clean_boost_test.log")
-        
+
         total_signals = len(self.clean_boost_signals)
         if total_signals == 0:
             return
-            
+
         start_time = self.clean_boost_signals[0]["time"]
         current_time = time.time()
         elapsed = current_time - start_time
-        
+
         # Group by type
         by_type = {}
         for sig in self.clean_boost_signals:
@@ -259,74 +281,91 @@ class GameState:
             if g_type not in by_type:
                 by_type[g_type] = []
             by_type[g_type].append(sig)
-            
+
         lines = []
         lines.append("============================================================")
         lines.append("CLEAN BOOST SIGNAL TEST MODE STATISTICAL INSIGHTS")
         lines.append("============================================================")
-        lines.append(f"Generated at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(
+            f"Generated at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
         lines.append(f"Total Elapsed Time: {elapsed:.2f} seconds")
         lines.append(f"Total Signals Received: {total_signals}")
         lines.append("")
         lines.append("--- STATISTICS BY GENERATOR TYPE ---")
         lines.append("")
-        
+
         from config import GeneratorType
+
         for g_type in GeneratorType:
             sigs = by_type.get(g_type, [])
             count = len(sigs)
             pct = (count / total_signals * 100.0) if total_signals > 0 else 0.0
-            
+
             lines.append(f"[{g_type.value}]")
             lines.append(f"  Signals Received: {count} ({pct:.1f}%)")
-            
+
             if count > 0:
                 total_energy = sum(s["amount"] for s in sigs)
                 lines.append(f"  Total Energy Added: {total_energy:.2f}")
-                
+
                 # Calculate intervals
                 intervals = []
                 for i in range(1, count):
-                    intervals.append(sigs[i]["time"] - sigs[i-1]["time"])
-                    
+                    intervals.append(sigs[i]["time"] - sigs[i - 1]["time"])
+
                 if intervals:
                     avg_int = sum(intervals) / len(intervals)
                     min_int = min(intervals)
                     max_int = max(intervals)
                     # Std dev
-                    variance = sum((x - avg_int) ** 2 for x in intervals) / len(intervals)
+                    variance = sum((x - avg_int) ** 2 for x in intervals) / len(
+                        intervals
+                    )
                     std_dev = math.sqrt(variance)
-                    
+
                     freq = 1.0 / avg_int if avg_int > 0 else 0.0
-                    lines.append(f"  Beacon Frequency: {freq:.2f} Hz (average {avg_int:.2f}s between beacons)")
-                    lines.append(f"  Interval Min/Max/StdDev: {min_int:.2f}s / {max_int:.2f}s / {std_dev:.2f}s")
-                    
+                    lines.append(
+                        f"  Beacon Frequency: {freq:.2f} Hz (average {avg_int:.2f}s between beacons)"
+                    )
+                    lines.append(
+                        f"  Interval Min/Max/StdDev: {min_int:.2f}s / {max_int:.2f}s / {std_dev:.2f}s"
+                    )
+
                     # Suggested filling amounts
                     for target_sec in [15, 30, 45]:
                         expected_beacons = target_sec * freq
                         if expected_beacons > 0:
                             sugg_fill = 100.0 / expected_beacons
-                            lines.append(f"    To fill 100.0 in {target_sec}s ({expected_beacons:.1f} beacons): {sugg_fill:.2f} per beacon")
+                            lines.append(
+                                f"    To fill 100.0 in {target_sec}s ({expected_beacons:.1f} beacons): {sugg_fill:.2f} per beacon"
+                            )
                 else:
                     lines.append("  Beacon Frequency: N/A (Only 1 signal received)")
             else:
                 lines.append("  No signals received for this generator type.")
             lines.append("")
-            
+
         lines.append("============================================================")
         lines.append("CHRONOLOGICAL SIGNAL LOG")
         lines.append("============================================================")
-        
+
         for sig in self.clean_boost_signals:
-            sig_time_str = datetime.datetime.fromtimestamp(sig["time"]).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-            lines.append(f"[{sig_time_str}] Received {sig['gen_type'].name} (amount={sig['amount']}) | Active Generator: {sig['active_gen'].name if sig['active_gen'] else 'None'}")
-            
+            sig_time_str = datetime.datetime.fromtimestamp(sig["time"]).strftime(
+                "%Y-%m-%d %H:%M:%S.%f"
+            )[:-3]
+            lines.append(
+                f"[{sig_time_str}] Received {sig['gen_type'].name} (amount={sig['amount']}) | Active Generator: {sig['active_gen'].name if sig['active_gen'] else 'None'}"
+            )
+
         with open(filepath, "w") as f:
             f.write("\n".join(lines) + "\n")
 
     def _save_ranking(self):
         time_taken = self.current_session.end_time - self.current_session.start_time
-        self.current_ranking_entry = RankingEntry(self.current_session.player_name, time_taken)
+        self.current_ranking_entry = RankingEntry(
+            self.current_session.player_name, time_taken
+        )
         self.rankings.append(self.current_ranking_entry)
         # Sort by fastest time
         self.rankings.sort(key=lambda x: x.time_taken)
