@@ -62,10 +62,21 @@ class GameState:
             self.current_session.start_time = time.time()
 
         if self.active_generator != gen_type:
+            old_gen = self.active_generator
             self.active_generator = gen_type
             self.last_activity_time = time.time()
             if not self.active_sensors:
                 self.active_sensors = [gen_type] if gen_type else []
+
+            if (
+                old_gen is not None
+                and self.current_session
+                and not self.current_session.completed
+            ):
+                self.current_session.energy_levels[old_gen] = 0.0
+                self._last_gauge_values[old_gen] = 0.0
+                self._last_increase_time[old_gen] = time.time()
+                self.smooth_filler.cancel_fills_for_generator(old_gen)
 
     def set_active_sensors(self, sensors: List[GeneratorType]):
         current_time = time.time()
@@ -153,7 +164,7 @@ class GameState:
             self.active_generator is not None
             and (current_time - self.last_activity_time) > 60.0
         ):
-            self.active_generator = None
+            self.set_active_generator(None)
 
         # Auto drain each gauge after 55s of no increase
         if not self.current_session:
@@ -373,7 +384,7 @@ class GameState:
 
         time_taken = self.current_session.end_time - self.current_session.start_time
         self.current_ranking_entry = RankingEntry(
-            self.current_session.player_name, time_taken, completed_gen
+            self.current_session.player_name, time_taken, completed_gen, time.time()
         )
         if completed_gen not in self.rankings:
             self.rankings[completed_gen] = []
@@ -434,7 +445,8 @@ class GameState:
                                     RankingEntry(
                                         player_name=entry.get("player_name", "Student"),
                                         time_taken=entry.get("time_taken", 0.0),
-                                        generator_type=gen
+                                        generator_type=gen,
+                                        timestamp=entry.get("timestamp", 0.0)
                                     )
                                 )
                     elif isinstance(data, list):
@@ -449,7 +461,8 @@ class GameState:
                                 RankingEntry(
                                     player_name=entry.get("player_name", "Student"),
                                     time_taken=entry.get("time_taken", 0.0),
-                                    generator_type=gen
+                                    generator_type=gen,
+                                    timestamp=entry.get("timestamp", 0.0)
                                 )
                             )
                 for gen in GeneratorType:
@@ -465,7 +478,8 @@ class GameState:
                 data[gen.name] = [
                     {
                         "player_name": r.player_name,
-                        "time_taken": r.time_taken
+                        "time_taken": r.time_taken,
+                        "timestamp": getattr(r, "timestamp", 0.0)
                     }
                     for r in entries
                 ]

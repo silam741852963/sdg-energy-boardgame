@@ -121,6 +121,7 @@ class FireworkEngine:
             "medium": pygame.font.SysFont(font_names, int(24 * SCALE_Y)),
             "large": pygame.font.SysFont(font_names, int(36 * SCALE_Y)),
             "xlarge": pygame.font.SysFont(font_names, int(48 * SCALE_Y)),
+            "xxlarge": pygame.font.SysFont(font_names, int(72 * SCALE_Y)),
         }
 
         # Hook up the modular Drone Manager
@@ -138,13 +139,14 @@ class FireworkEngine:
         self.leaderboard_start_activity_time = 0.0
         self.show_started = False
         self.completed_gen = None
+        self.completed_gen_was_active = False
         self.congrat_start_time = None
 
-        # Player name entry state
         self.show_name_entry = False
         self.name_input = ""
         self.name_suggestion = ""
         self.player_base = []
+        self.leaderboard_search_input = ""
 
         self.show_metrics = False
         self.fps_tracker = FPSTracker()
@@ -206,11 +208,13 @@ class FireworkEngine:
         self.leaderboard_start_activity_time = 0.0
         self.show_started = False
         self.completed_gen = None
+        self.completed_gen_was_active = False
         self.congrat_start_time = None
         self.prev_energy_levels = {}
         self.show_name_entry = False
         self.name_input = ""
         self.name_suggestion = ""
+        self.leaderboard_search_input = ""
 
     def _update_name_suggestion(self):
         if not self.name_input:
@@ -228,13 +232,49 @@ class FireworkEngine:
         self.fps_tracker.update()
         self.cpu_tracker.update()
 
-        # Check if ranking board / name entry should be cancelled due to selecting a different generator
+        # Check if ranking board / name entry should be cancelled due to selecting a different generator or magnet removal
         if (self.show_name_entry or self.show_leaderboard) and self.game_state:
             active_gen = self.game_state.active_generator
-            if active_gen is not None and active_gen != self.completed_gen:
+            if active_gen == self.completed_gen:
+                self.completed_gen_was_active = True
+            elif active_gen is not None or getattr(self, "completed_gen_was_active", False):
                 self.game_state.discard_current_ranking()
                 self._restart_game()
                 self.game_state.set_active_generator(active_gen)
+
+        if self.show_leaderboard:
+            close_leaderboard = False
+            for event in events:
+                if event.type == pygame.QUIT:
+                    self.running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_ESCAPE, pygame.K_RETURN):
+                        close_leaderboard = True
+                    elif event.key == pygame.K_BACKSPACE:
+                        self.leaderboard_search_input = self.leaderboard_search_input[:-1]
+                    else:
+                        if (
+                            event.unicode
+                            and event.unicode.isprintable()
+                            and len(self.leaderboard_search_input) < 18
+                        ):
+                            self.leaderboard_search_input += event.unicode
+
+            new_activity = False
+            if (
+                self.game_state
+                and self.game_state.last_activity_time
+                > self.leaderboard_start_activity_time
+            ):
+                new_activity = True
+            if close_leaderboard or new_activity:
+                self._restart_game()
+
+            self.lighting.update()
+            self.firework_manager.update()
+            self.drone_manager.update(self.frame_count, 0.0)
+            self.gauge_manager.update()
+            return
 
         # Get actual logical window size from Pygame
         try:
@@ -471,21 +511,8 @@ class FireworkEngine:
                         self.drone_manager.clear_all()
 
             # Check for key presses or other signals to close leaderboard
-            if self.show_leaderboard:
-                any_key_pressed = False
-                for event in events:
-                    if event.type == pygame.KEYDOWN:
-                        any_key_pressed = True
-                        break
-                new_activity = False
-                if (
-                    self.game_state
-                    and self.game_state.last_activity_time
-                    > self.leaderboard_start_activity_time
-                ):
-                    new_activity = True
-                if any_key_pressed or new_activity:
-                    self._restart_game()
+            # Leaderboard updates are handled in early return at the start of update()
+            pass
 
             if not is_completed:
                 if getattr(self, "love_mode_active", False):
@@ -1072,11 +1099,21 @@ class FireworkEngine:
             self.renderer.set_blend_mode("additive")
 
         if self.show_name_entry:
-            # Draw overlay and name entry
-            overlay_w = int(600 * SCALE_X)
-            overlay_h = int(300 * SCALE_Y)
+            # Draw overlay and name entry (2x larger: 1200x600)
+            overlay_w = int(1200 * SCALE_X)
+            overlay_h = int(600 * SCALE_Y)
             ox = (SCREEN_WIDTH - overlay_w) // 2
             oy = (SCREEN_HEIGHT - overlay_h) // 2
+
+            # Emphasis color index based on completed generator
+            gen = self.completed_gen or GeneratorType.WIND
+            gen_colors = {
+                GeneratorType.WIND: 61,    # Cyan
+                GeneratorType.SOLAR: 31,   # Yellow
+                GeneratorType.PIEZO: 11,   # Orange
+                GeneratorType.COIL: 71     # Blue
+            }
+            emp_col_idx = gen_colors.get(gen, 51)
 
             self.renderer.set_blend_mode("alpha")
             self.renderer.draw_rect(
@@ -1088,41 +1125,71 @@ class FireworkEngine:
 
             # Title
             title_text = "=== ENTER YOUR NAME ==="
-            font_med = self.fonts["medium"]
-            tw, _ = font_med.size(title_text)
+            font_xl = self.fonts["xlarge"]
+            tw, _ = font_xl.size(title_text)
             tx = ox + (overlay_w - tw) // 2
             self.renderer.draw_text(
                 tx,
-                oy + int(40 * SCALE_Y),
+                oy + int(80 * SCALE_Y),
                 title_text,
-                font_med,
-                palette.get_color(51),
+                font_xl,
+                palette.get_color(emp_col_idx),
             )
 
             # Subtitle
             sub_text = "Type name for the Leaderboard"
-            font_small = self.fonts["small"]
-            sw, _ = font_small.size(sub_text)
+            font_med = self.fonts["medium"]
+            sw, _ = font_med.size(sub_text)
             sx = ox + (overlay_w - sw) // 2
             self.renderer.draw_text(
                 sx,
-                oy + int(85 * SCALE_Y),
+                oy + int(150 * SCALE_Y),
                 sub_text,
-                font_small,
+                font_med,
                 palette.get_color(121),
             )
 
+            # Times: current run time & suggested/input player's best time
+            current_time_taken = 0.0
+            if self.game_state and self.game_state.current_ranking_entry:
+                current_time_taken = self.game_state.current_ranking_entry.time_taken
+            elif self.game_state:
+                current_time_taken = self.game_state.get_elapsed_time()
+
+            times_str = f"Current Time: {current_time_taken:.2f}s"
+            recommended_name = self.name_suggestion or self.name_input
+            best_time = None
+            if recommended_name and self.game_state and self.completed_gen:
+                gen_ranks = self.game_state.rankings.get(self.completed_gen, [])
+                matching_entries = [r for r in gen_ranks if r.player_name.lower() == recommended_name.lower()]
+                if matching_entries:
+                    best_time = min(r.time_taken for r in matching_entries)
+
+            if best_time is not None:
+                times_str += f"  |  {recommended_name}'s Best Time: {best_time:.2f}s"
+
+            font_med = self.fonts["medium"]
+            ti_w, _ = font_med.size(times_str)
+            ti_x = ox + (overlay_w - ti_w) // 2
+            self.renderer.draw_text(
+                ti_x,
+                oy + int(210 * SCALE_Y),
+                times_str,
+                font_med,
+                palette.get_color(emp_col_idx),
+            )
+
             # Input box
-            box_w = int(400 * SCALE_X)
-            box_h = int(50 * SCALE_Y)
+            box_w = int(800 * SCALE_X)
+            box_h = int(80 * SCALE_Y)
             bx = ox + (overlay_w - box_w) // 2
-            by = oy + int(130 * SCALE_Y)
+            by = oy + int(280 * SCALE_Y)
 
             self.renderer.draw_rect(
                 bx, by, box_w, box_h, (0.1, 0.1, 0.1, 0.8), fill=True
             )
             self.renderer.draw_rect(
-                bx, by, box_w, box_h, palette.get_color(51), fill=False
+                bx, by, box_w, box_h, palette.get_color(emp_col_idx), fill=False
             )
 
             # Cursor blinking
@@ -1130,8 +1197,8 @@ class FireworkEngine:
 
             # Input text
             input_display_text = self.name_input
-            font_input = self.fonts["medium"]
-            text_x = bx + int(15 * SCALE_X)
+            font_input = self.fonts["xlarge"]
+            text_x = bx + int(30 * SCALE_X)
             text_y = by + (box_h - font_input.size("A")[1]) // 2
 
             self.renderer.draw_text(
@@ -1166,11 +1233,12 @@ class FireworkEngine:
 
                 # Tab hint
                 hint_text = "[ Press 'TAB' or 'RIGHT' to auto-fill ]"
+                font_small = self.fonts["small"]
                 hw, _ = font_small.size(hint_text)
                 hx = ox + (overlay_w - hw) // 2
                 self.renderer.draw_text(
                     hx,
-                    by + box_h + int(10 * SCALE_Y),
+                    by + box_h + int(15 * SCALE_Y),
                     hint_text,
                     font_small,
                     (0.5, 0.5, 0.5, 1.0),
@@ -1178,11 +1246,12 @@ class FireworkEngine:
 
             # Bottom instructions
             bottom_text = "[ PRESS ENTER TO SUBMIT | ESC TO SKIP ]"
+            font_small = self.fonts["small"]
             bw, _ = font_small.size(bottom_text)
             bx_bottom = ox + (overlay_w - bw) // 2
             self.renderer.draw_text(
                 bx_bottom,
-                oy + overlay_h - int(45 * SCALE_Y),
+                oy + overlay_h - int(80 * SCALE_Y),
                 bottom_text,
                 font_small,
                 palette.get_color(121),
@@ -1190,11 +1259,21 @@ class FireworkEngine:
             self.renderer.set_blend_mode("additive")
 
         if self.show_leaderboard:
-            # Draw overlay and leaderboard
-            overlay_w = int(600 * SCALE_X)
-            overlay_h = int(400 * SCALE_Y)
+            # Draw overlay and leaderboard (2x larger: 1200x800)
+            overlay_w = int(1200 * SCALE_X)
+            overlay_h = int(800 * SCALE_Y)
             ox = (SCREEN_WIDTH - overlay_w) // 2
             oy = (SCREEN_HEIGHT - overlay_h) // 2
+
+            # Emphasis color index based on completed generator
+            gen = self.completed_gen or GeneratorType.WIND
+            gen_colors = {
+                GeneratorType.WIND: 61,    # Cyan
+                GeneratorType.SOLAR: 31,   # Yellow
+                GeneratorType.PIEZO: 11,   # Orange
+                GeneratorType.COIL: 71     # Blue
+            }
+            emp_col_idx = gen_colors.get(gen, 51)
 
             self.renderer.set_blend_mode("alpha")
             self.renderer.draw_rect(
@@ -1204,36 +1283,37 @@ class FireworkEngine:
                 ox, oy, overlay_w, overlay_h, palette.get_color(122), fill=False
             )
 
-            # Center title: "=== GENERATOR CHARGED ===" (dynamically generated based on completed generator)
-            gen = self.completed_gen or GeneratorType.WIND
+            # Header
             title_text = f"=== {gen.value.upper()} CHARGED ==="
-            font_med = self.fonts["medium"]
-            tw, _ = font_med.size(title_text)
+            font_xl = self.fonts["xlarge"]
+            tw, _ = font_xl.size(title_text)
             tx = ox + (overlay_w - tw) // 2
             self.renderer.draw_text(
                 tx,
-                oy + int(40 * SCALE_Y),
+                oy + int(60 * SCALE_Y),
                 title_text,
-                font_med,
-                palette.get_color(51),
+                font_xl,
+                palette.get_color(emp_col_idx),
             )
 
-            # Center subtitle: "--- TOP 5 FASTEST STUDENTS ---"
+            # Left column: Top 5 Fastest Students
             sub_text = "--- TOP 5 FASTEST STUDENTS ---"
+            font_large = self.fonts["large"]
+            font_med = self.fonts["medium"]
             font_small = self.fonts["small"]
-            sw, _ = font_small.size(sub_text)
-            sx = ox + (overlay_w - sw) // 2
+            
+            sw, _ = font_med.size(sub_text)
+            sx = ox + int(300 * SCALE_X) - (sw // 2)
             self.renderer.draw_text(
                 sx,
-                oy + int(100 * SCALE_Y),
+                oy + int(170 * SCALE_Y),
                 sub_text,
-                font_small,
+                font_med,
                 palette.get_color(121),
             )
 
-            # Center leaderboard entries as a column block
-            col1_x = ox + int(130 * SCALE_X)
-            col2_x = ox + int(370 * SCALE_X)
+            col1_x = ox + int(80 * SCALE_X)
+            col2_x = ox + int(460 * SCALE_X)
 
             rankings_list = []
             if isinstance(self.game_state.rankings, dict):
@@ -1242,35 +1322,145 @@ class FireworkEngine:
                 rankings_list = self.game_state.rankings
 
             for i, rank in enumerate(rankings_list[:5]):
-                y_pos = oy + int(140 * SCALE_Y) + (i * int(40 * SCALE_Y))
+                y_pos = oy + int(290 * SCALE_Y) + (i * int(70 * SCALE_Y))
                 self.renderer.draw_text(
                     col1_x,
                     y_pos,
                     f"{i + 1}. {rank.player_name}",
-                    font_small,
+                    font_med,
                     palette.get_color(122),
                 )
                 self.renderer.draw_text(
                     col2_x,
                     y_pos,
                     f"{rank.time_taken:.2f}s",
-                    font_small,
-                    palette.get_color(51),
+                    font_med,
+                    palette.get_color(emp_col_idx),
                 )
 
+            # Right column: Personal Bests
+            pb_text = "--- PERSONAL BESTS ---"
+            pbw, _ = font_med.size(pb_text)
+            pbx = ox + int(900 * SCALE_X) - (pbw // 2)
+            self.renderer.draw_text(
+                pbx,
+                oy + int(170 * SCALE_Y),
+                pb_text,
+                font_med,
+                palette.get_color(121),
+            )
+
+            # Group by unique player to find best times & most recent timestamps
+            player_bests = {}
+            for entry in rankings_list:
+                name = entry.player_name
+                key = name.lower().strip()
+                if not key:
+                    continue
+                ts = getattr(entry, "timestamp", 0.0)
+                if key not in player_bests:
+                    player_bests[key] = {
+                        "player_name": entry.player_name,
+                        "best_time": entry.time_taken,
+                        "most_recent_timestamp": ts
+                    }
+                else:
+                    player_bests[key]["best_time"] = min(player_bests[key]["best_time"], entry.time_taken)
+                    player_bests[key]["most_recent_timestamp"] = max(player_bests[key]["most_recent_timestamp"], ts)
+
+            # Convert to list and sort by most recent timestamp descending
+            unique_players = list(player_bests.values())
+            unique_players.sort(key=lambda x: x["most_recent_timestamp"], reverse=True)
+
+            # Filter unique players based on search query
+            if self.leaderboard_search_input:
+                q = self.leaderboard_search_input.lower().strip()
+                unique_players = [p for p in unique_players if q in p["player_name"].lower()]
+
+            # Draw search box for Personal Bests
+            sb_x = ox + int(680 * SCALE_X)
+            sb_y = oy + int(220 * SCALE_Y)
+            sb_w = int(440 * SCALE_X)
+            sb_h = int(45 * SCALE_Y)
+
+            self.renderer.draw_rect(sb_x, sb_y, sb_w, sb_h, (0.1, 0.1, 0.1, 0.8), fill=True)
+            self.renderer.draw_rect(sb_x, sb_y, sb_w, sb_h, palette.get_color(emp_col_idx), fill=False)
+
+            search_prefix = "Search: "
+            pref_w, _ = font_med.size(search_prefix)
+            self.renderer.draw_text(
+                sb_x + int(10 * SCALE_X),
+                sb_y + (sb_h - font_med.size("A")[1]) // 2,
+                search_prefix,
+                font_med,
+                palette.get_color(121),
+            )
+
+            query_display = self.leaderboard_search_input
+            if not query_display:
+                if (self.frame_count // 30) % 2 == 0:
+                    self.renderer.draw_text(
+                        sb_x + int(10 * SCALE_X) + pref_w,
+                        sb_y + (sb_h - font_med.size("A")[1]) // 2,
+                        "[Type name...]",
+                        font_med,
+                        (0.4, 0.4, 0.4, 0.8),
+                    )
+            else:
+                self.renderer.draw_text(
+                    sb_x + int(10 * SCALE_X) + pref_w,
+                    sb_y + (sb_h - font_med.size("A")[1]) // 2,
+                    query_display,
+                    font_med,
+                    palette.get_color(122),
+                )
+                cursor_char = "_" if (self.frame_count // 30) % 2 == 0 else " "
+                query_w, _ = font_med.size(query_display)
+                self.renderer.draw_text(
+                    sb_x + int(10 * SCALE_X) + pref_w + query_w,
+                    sb_y + (sb_h - font_med.size("A")[1]) // 2,
+                    cursor_char,
+                    font_med,
+                    palette.get_color(122),
+                )
+
+            # Draw Personal Bests entries
+            col3_x = ox + int(680 * SCALE_X)
+            col4_x = ox + int(1060 * SCALE_X)
+
+            for i, p in enumerate(unique_players[:5]):
+                y_pos = oy + int(290 * SCALE_Y) + (i * int(70 * SCALE_Y))
+                self.renderer.draw_text(
+                    col3_x,
+                    y_pos,
+                    f"{i + 1}. {p['player_name']}",
+                    font_med,
+                    palette.get_color(122),
+                )
+                self.renderer.draw_text(
+                    col4_x,
+                    y_pos,
+                    f"{p['best_time']:.2f}s",
+                    font_med,
+                    palette.get_color(emp_col_idx),
+                )
+
+            # Restart/Close Instruction
             if self.mock_ble or self.mock_hall:
-                # Center bottom text: "[ PRESS 'R' TO RESTART CHALLENGE ]"
-                restart_text = "[ PRESS 'R' TO RESTART CHALLENGE ]"
-                rw, _ = font_small.size(restart_text)
+                restart_text = "[ PRESS ESCAPE OR ENTER TO RESTART CHALLENGE ]"
+                rw, _ = font_med.size(restart_text)
                 rx = ox + (overlay_w - rw) // 2
                 self.renderer.draw_text(
                     rx,
-                    oy + overlay_h - int(60 * SCALE_Y),
+                    oy + overlay_h - int(70 * SCALE_Y),
                     restart_text,
-                    font_small,
+                    font_med,
                     palette.get_color(121),
                 )
             self.renderer.set_blend_mode("additive")
+
+
+
 
         # 8. End frame (blits the offscreen framebuffer to the centered screen viewport)
         try:

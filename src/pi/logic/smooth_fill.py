@@ -17,6 +17,9 @@ class SmoothFiller:
             "start": time.time()
         })
 
+    def cancel_fills_for_generator(self, gen_type: GeneratorType):
+        self.active_fills = [fill for fill in self.active_fills if fill["gen"] != gen_type]
+
     def update(self):
         if not self.game_state or not self.game_state.current_session:
             self.active_fills.clear()
