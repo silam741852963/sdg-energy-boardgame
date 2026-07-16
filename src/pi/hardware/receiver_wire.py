@@ -1,8 +1,8 @@
 import asyncio
 import os
 from gpiozero import Button
-from config import GeneratorType, ENERGY_PER_BEACON
-from logic.game_state import GameState
+from ..config import GeneratorType, ENERGY_PER_BEACON
+from ..logic.game_state import GameState
 
 # Pin mapping: BCM GPIO Pin numbers
 GPIO_PINS = {

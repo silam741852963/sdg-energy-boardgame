@@ -1,5 +1,5 @@
 import time
-from config import GeneratorType, MAX_ENERGY_GAUGE
+from ..config import GeneratorType, MAX_ENERGY_GAUGE
 
 class SmoothFiller:
     def __init__(self, game_state):
@@ -61,7 +61,7 @@ class SmoothFiller:
                     session.completed = True
                     session.end_time = time.time()
                     self.game_state._save_ranking()
-                    from config import CLEANBOOST_TEST_MODE
+                    from ..config import CLEANBOOST_TEST_MODE
                     if CLEANBOOST_TEST_MODE:
                         self.game_state._write_statistics_log()
                     self.active_fills.clear()

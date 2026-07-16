@@ -4,8 +4,8 @@ from rich.table import Table
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.progress import Progress, BarColumn, TextColumn
-from config import MAX_ENERGY_GAUGE, UI_REFRESH_RATE, GeneratorType
-from logic.game_state import GameState
+from ..config import MAX_ENERGY_GAUGE, UI_REFRESH_RATE, GeneratorType
+from ..logic.game_state import GameState
 
 
 class CLIRenderer:

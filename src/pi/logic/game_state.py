@@ -2,7 +2,7 @@ import time
 import os
 import json
 from typing import List, Dict
-from config import MAX_ENERGY_GAUGE, GeneratorType
+from ..config import MAX_ENERGY_GAUGE, GeneratorType
 from .models import PlayerSession, RankingEntry
 from .smooth_fill import SmoothFiller
 
@@ -204,7 +204,7 @@ class GameState:
         if self.active_generator is None or self.active_generator != gen_type:
             return
 
-        from config import CLEANBOOST_TEST_MODE, ENERGY_PER_BEACON_BY_TYPE
+        from ..config import CLEANBOOST_TEST_MODE, ENERGY_PER_BEACON_BY_TYPE
 
         # In test mode, only clean boost signals can add energy
         if CLEANBOOST_TEST_MODE and not is_clean_boost:
@@ -212,7 +212,7 @@ class GameState:
 
         # Determine the amount of energy to add
         if CLEANBOOST_TEST_MODE:
-            from config import ENERGY_PER_BEACON
+            from ..config import ENERGY_PER_BEACON
 
             if amount != ENERGY_PER_BEACON:
                 fill_amount = amount
@@ -307,7 +307,7 @@ class GameState:
         lines.append("--- STATISTICS BY GENERATOR TYPE ---")
         lines.append("")
 
-        from config import GeneratorType
+        from ..config import GeneratorType
 
         for g_type in GeneratorType:
             sigs = by_type.get(g_type, [])

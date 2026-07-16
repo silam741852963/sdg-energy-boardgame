@@ -1,7 +1,7 @@
 import random
 import math
 from .config import SCREEN_WIDTH, SCREEN_HEIGHT, SCALE_X, SCALE_Y
-from config import GeneratorType, MAX_ENERGY_GAUGE
+from ...config import GeneratorType, MAX_ENERGY_GAUGE
 from . import palette
 
 def draw_lightning_arc(renderer, x1, y1, x2, y2, color, segments=10, max_offset=12.0):

@@ -1,7 +1,7 @@
 import asyncio
 import random
-from config import GeneratorType, ENERGY_PER_BEACON
-from logic.game_state import GameState
+from ..config import GeneratorType, ENERGY_PER_BEACON
+from ..logic.game_state import GameState
 
 
 class MockReceiver:

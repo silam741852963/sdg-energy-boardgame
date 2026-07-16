@@ -1,26 +1,26 @@
 import asyncio
 import threading
 import argparse
-from logic.game_state import GameState
-from ui.fireworks.engine import FireworkEngine
+from .logic.game_state import GameState
+from .ui.fireworks.engine import FireworkEngine
 
 async def async_main(state: GameState, mock_ble: bool, mock_hall: bool):
     receivers = []
     
     # 1. BLE Clean Boost receiver
     if mock_ble:
-        from hardware.receiver_mock import MockReceiver
+        from .hardware.receiver_mock import MockReceiver
         ble_receiver = MockReceiver(state)
         receivers.append(ble_receiver.start_scanning())
     else:
-        from hardware.receiver_ble import BLEReceiver
+        from .hardware.receiver_ble import BLEReceiver
         ble_receiver = BLEReceiver(state)
         receivers.append(ble_receiver.start_scanning())
     
     # 2. Hardware GPIO receiver (Hall effect selection pins)
     if not mock_hall:
-        from hardware.receiver_wire import WireReceiver
-        from hardware.pwm_out import PWMController
+        from .hardware.receiver_wire import WireReceiver
+        from .hardware.pwm_out import PWMController
         
         wire_receiver = WireReceiver(state)
         receivers.append(wire_receiver.start_listening())

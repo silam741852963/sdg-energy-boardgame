@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict
-from config import GeneratorType
+from ..config import GeneratorType
 import time
 
 

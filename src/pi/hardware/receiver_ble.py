@@ -2,8 +2,8 @@ import asyncio
 from bleak import BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
-from config import CLEANBOOST_MACS, ENERGY_PER_BEACON
-from logic.game_state import GameState
+from ..config import CLEANBOOST_MACS, ENERGY_PER_BEACON
+from ..logic.game_state import GameState
 
 
 class BLEReceiver:

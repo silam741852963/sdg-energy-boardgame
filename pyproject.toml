@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sdg-energy-boardgame"
+version = "0.1.0"
+description = "Hardware-integrated SDG energy education board game for Raspberry Pi"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "bleak==3.0.2",
+    "colorzero==2.0",
+    "dbus-fast==5.0.22",
+    "glcontext==3.0.0",
+    "gpiozero==2.0.1",
+    "moderngl==5.12.0",
+    "numpy==2.4.6",
+    "pygame-ce==2.5.7",
+    "rich==15.0.0",
+]
+
+[project.scripts]
+sdg-energy-boardgame = "pi.main:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

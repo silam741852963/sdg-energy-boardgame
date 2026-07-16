@@ -60,7 +60,7 @@ from .particles import Particle
 from .renderer import Renderer
 from . import palette
 
-from config import GeneratorType
+from ...config import GeneratorType
 
 
 class FireworkEngine:
@@ -702,7 +702,7 @@ class FireworkEngine:
             and self.game_state.active_generator
             and self.game_state.current_session
         ):
-            from config import MAX_ENERGY_GAUGE
+            from ...config import MAX_ENERGY_GAUGE
 
             active_gen = self.game_state.active_generator
             st_level = self.gauge_manager.state.get(active_gen, {}).get("level", 0.0)
@@ -943,7 +943,7 @@ class FireworkEngine:
 
         # --- COMPARE ENERGY LEVELS FOR FILL SOUND ---
         if self.game_state and self.game_state.current_session:
-            from config import MAX_ENERGY_GAUGE
+            from ...config import MAX_ENERGY_GAUGE
 
             for gen in self.gauge_manager.generators:
                 prev_val = self.prev_energy_levels.get(gen, 0.0)
