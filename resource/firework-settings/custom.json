@@ -1,27 +1,28 @@
 {
-    "name": "Dragon Eggs",
-    "particle_count": 250,
-    "base_color": "sakura",
-    "variant": 0,
-    "speed_variance": 11.0,
-    "radius": 2.0,
-    "gravity_mod": 0.5,
+    "name": "Brocade",
+    "particle_count": 300,
+    "base_color": "red",
+    "variant": 1,
+    "speed_variance": 10.0,
+    "radius": 1.5,
+    "gravity_mod": 0.4,
     "drag": 0.06,
-    "life_span": 300,
+    "life_span": 140,
     "burst": true,
     "pistil": false,
-    "split": true,
+    "split": false,
     "multicolor": 1,
-    "intensity": 2.5,
+    "intensity": 1.0,
     "has_trails": true,
     "flicker": false,
-    "crackle": true,
-    "swim": true,
+    "crackle": false,
+    "swim": false,
     "spin": false,
     "waterfall": false,
-    "palm_tail": false,
+    "palm_tail": true,
     "glitter": true,
     "colors": [
-        "sakura"
-    ]
+        "red"
+    ],
+    "pistil_color": ""
 }

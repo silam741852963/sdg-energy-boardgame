@@ -171,7 +171,10 @@ a `RankingResult` containing run time, prior best, improvement, retained status,
 and final personal rank. Names use collapsed whitespace and case-insensitive
 identity. Loading removes invalid times and duplicate player records, retaining
 each player's fastest result. Ranking and player databases use atomic replacement
-to avoid partial JSON writes.
+to avoid partial JSON writes. Completed runs remain provisional and in memory
+until name confirmation; confirmation clears the provisional marker before the
+leaderboard can be dismissed. A storage parse failure blocks later writes so a
+damaged file cannot be silently replaced with an empty database.
 
 ```text
 RECORD_REVEAL -> CHOOSE_SHAPE -> CHOOSE_PALETTE -> CHOOSE_EFFECT

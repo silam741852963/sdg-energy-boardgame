@@ -462,7 +462,10 @@ class FireworkEngine:
                             ranking_result = self.game_state.update_player_name(
                                 entered_name
                             )
-                            self.game_state.add_player_to_base(entered_name)
+                            if ranking_result is not None:
+                                self.game_state.add_player_to_base(
+                                    ranking_result.player_name
+                                )
 
                         self.show_name_entry = False
                         self.name_entry_completed = True

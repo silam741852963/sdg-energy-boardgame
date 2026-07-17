@@ -25,6 +25,8 @@ class GameState:
         self.clean_boost_signals = []
         self.current_ranking_entry: RankingEntry | None = None
         self.last_ranking_result: RankingResult | None = None
+        self._rankings_storage_safe = True
+        self._players_storage_safe = True
 
         # Multi-sensor active states (Hall-IC)
         self.active_sensors = []
@@ -46,8 +48,22 @@ class GameState:
         self.load_rankings()
 
     def start_new_session(self, player_name: str | None = None):
+        # A completed run is provisional until its player name is confirmed.
+        # Never let an abandoned provisional entry leak into the next session.
+        if self.current_ranking_entry is not None:
+            self.discard_current_ranking()
         self.session_count += 1
-        name = player_name if player_name else f"Player {self.session_count}"
+        name = self.normalize_player_name(player_name)
+        if not name:
+            existing_names = {
+                self.normalize_player_name(entry.player_name).casefold()
+                for entries in self.rankings.values()
+                for entry in entries
+            }
+            name = f"Player {self.session_count}"
+            while name.casefold() in existing_names:
+                self.session_count += 1
+                name = f"Player {self.session_count}"
         self.current_session = PlayerSession(player_name=name)
         self.current_session.start_time = 0.0
         self.current_ranking_entry = None
@@ -378,24 +394,40 @@ class GameState:
             f.write("\n".join(lines) + "\n")
 
     def _save_ranking(self):
+        if self.current_ranking_entry is not None:
+            self.discard_current_ranking()
+
         # Determine completed generator type by checking which gauge >= MAX_ENERGY_GAUGE
         completed_gen = next(
-            (gen for gen, level in self.current_session.energy_levels.items() if level >= MAX_ENERGY_GAUGE),
-            None
+            (
+                gen
+                for gen, level in self.current_session.energy_levels.items()
+                if level >= MAX_ENERGY_GAUGE
+            ),
+            None,
         )
         if not completed_gen:
             completed_gen = self.active_generator or GeneratorType.WIND
 
         time_taken = self.current_session.end_time - self.current_session.start_time
+        if not self._valid_elapsed_time(time_taken):
+            self.current_ranking_entry = None
+            self.last_ranking_result = None
+            return
+
         self.current_ranking_entry = RankingEntry(
-            self.current_session.player_name, time_taken, completed_gen, time.time()
+            self.normalize_player_name(self.current_session.player_name) or "Player",
+            time_taken,
+            completed_gen,
+            time.time(),
         )
         if completed_gen not in self.rankings:
             self.rankings[completed_gen] = []
         self.rankings[completed_gen].append(self.current_ranking_entry)
         self.rankings[completed_gen].sort(key=lambda x: x.time_taken)
         self.last_ranking_result = None
-        self.save_rankings()
+        # Do not persist generated placeholder names. The provisional entry is
+        # visible to the result flow, but is saved only after name confirmation.
 
     def get_elapsed_time(self) -> float:
         if not self.current_session:
@@ -453,14 +485,18 @@ class GameState:
         if not self.current_session:
             return None
 
+        current = self.current_ranking_entry
+        if current is None:
+            # Confirmation is deliberately idempotent. Once a run has been
+            # finalized, another submit cannot rename or remove any score.
+            return self.last_ranking_result
+
         clean_name = self.normalize_player_name(name)
         if not clean_name:
             clean_name = self.normalize_player_name(self.current_session.player_name)
+        if not clean_name:
+            clean_name = "Player"
         self.current_session.player_name = clean_name
-        current = self.current_ranking_entry
-        if not current:
-            self.save_rankings()
-            return self.last_ranking_result
 
         gen = current.generator_type
         key = clean_name.casefold()
@@ -485,6 +521,7 @@ class GameState:
         )
         current.player_name = clean_name
         personal_best_entry = current
+        kept_run = True
         if previous_best is not None:
             best_entry = min(
                 [*same_player, current], key=lambda entry: entry.time_taken
@@ -492,8 +529,8 @@ class GameState:
             # Keep exactly one personal best for this name. Every differently
             # named player remains untouched, regardless of relative time.
             self.rankings[gen] = [*different_players, best_entry]
-            self.current_ranking_entry = current if best_entry is current else None
             personal_best_entry = best_entry
+            kept_run = best_entry is current
             best_entry.timestamp = max(
                 [current.timestamp, *(entry.timestamp for entry in same_player)]
             )
@@ -502,8 +539,11 @@ class GameState:
             self.rankings[gen] = [*previous_entries, current]
 
         self.rankings[gen].sort(key=lambda entry: entry.time_taken)
-        kept_run = self.current_ranking_entry is current
-        final_rank = self.rankings[gen].index(personal_best_entry) + 1
+        final_rank = next(
+            index
+            for index, entry in enumerate(self.rankings[gen], start=1)
+            if entry is personal_best_entry
+        )
         self.last_ranking_result = RankingResult(
             player_name=clean_name,
             run_time=current.time_taken,
@@ -512,14 +552,22 @@ class GameState:
             kept_run=kept_run,
         )
         self.save_rankings()
+        # From this point onward the score is confirmed, not cancellable. This
+        # prevents selector movement while leaving the leaderboard from deleting
+        # the finalized result.
+        self.current_ranking_entry = None
         return self.last_ranking_result
 
     def discard_current_ranking(self):
-        if self.current_ranking_entry:
-            gen = self.current_ranking_entry.generator_type
-            if gen in self.rankings and self.current_ranking_entry in self.rankings[gen]:
-                self.rankings[gen].remove(self.current_ranking_entry)
-                self.save_rankings()
+        if self.current_ranking_entry is not None:
+            current = self.current_ranking_entry
+            gen = current.generator_type
+            if gen in self.rankings:
+                # Dataclass equality can consider two distinct records equal.
+                # Filter by identity so cancellation removes only the pending run.
+                self.rankings[gen] = [
+                    entry for entry in self.rankings[gen] if entry is not current
+                ]
             self.current_ranking_entry = None
         self.last_ranking_result = None
 
@@ -530,84 +578,112 @@ class GameState:
 
     def load_rankings(self):
         filepath = self._get_leaderboard_filepath()
-        self.rankings = {gen: [] for gen in GeneratorType}
-        if os.path.exists(filepath):
-            try:
-                with open(filepath, "r") as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        for gen_name, entries in data.items():
-                            if not isinstance(entries, list):
-                                continue
-                            try:
-                                gen = GeneratorType[gen_name]
-                            except KeyError:
-                                try:
-                                    gen = next(g for g in GeneratorType if g.name.lower() == gen_name.lower() or g.value.lower() == gen_name.lower())
-                                except StopIteration:
-                                    continue
-                            for entry in entries:
-                                if not isinstance(entry, dict):
-                                    continue
-                                time_taken = entry.get("time_taken", 0.0)
-                                if not self._valid_elapsed_time(time_taken):
-                                    continue
-                                self.rankings[gen].append(
-                                    RankingEntry(
-                                        player_name=self.normalize_player_name(
-                                            entry.get("player_name", "Player")
-                                        ) or "Player",
-                                        time_taken=float(time_taken),
-                                        generator_type=gen,
-                                        timestamp=self._clean_timestamp(
-                                            entry.get("timestamp", 0.0)
-                                        )
-                                    )
-                                )
-                    elif isinstance(data, list):
-                        # Backward compatibility for old flat list leaderboard format
-                        for entry in data:
-                            if not isinstance(entry, dict):
-                                continue
-                            gen_name = entry.get("generator_type")
-                            try:
-                                gen = GeneratorType[gen_name] if gen_name else GeneratorType.WIND
-                            except KeyError:
-                                gen = GeneratorType.WIND
-                            time_taken = entry.get("time_taken", 0.0)
-                            if not self._valid_elapsed_time(time_taken):
-                                continue
-                            self.rankings[gen].append(
-                                RankingEntry(
-                                    player_name=self.normalize_player_name(
-                                        entry.get("player_name", "Player")
-                                    ) or "Player",
-                                    time_taken=float(time_taken),
-                                    generator_type=gen,
-                                    timestamp=self._clean_timestamp(
-                                        entry.get("timestamp", 0.0)
-                                    )
-                                )
-                            )
-                for gen in GeneratorType:
-                    best_by_player = {}
-                    for entry in self.rankings[gen]:
-                        key = self.normalize_player_name(entry.player_name).casefold()
-                        previous = best_by_player.get(key)
-                        if previous is None:
-                            best_by_player[key] = entry
-                        elif entry.time_taken < previous.time_taken:
-                            entry.timestamp = max(entry.timestamp, previous.timestamp)
-                            best_by_player[key] = entry
-                        else:
-                            previous.timestamp = max(previous.timestamp, entry.timestamp)
-                    self.rankings[gen] = sorted(
-                        best_by_player.values(), key=lambda x: x.time_taken
+        if not os.path.exists(filepath):
+            self.rankings = {gen: [] for gen in GeneratorType}
+            self._rankings_storage_safe = True
+            return
+
+        try:
+            with open(filepath, "r", encoding="utf-8") as file:
+                data = json.load(file)
+            loaded = self._deserialize_rankings(data)
+        except Exception as error:
+            # Keep any rankings already in memory and block writes. Otherwise a
+            # malformed file could be silently replaced by an empty leaderboard.
+            self._rankings_storage_safe = False
+            print(f"Error loading rankings: {error}")
+            return
+
+        self.rankings = loaded
+        self.current_ranking_entry = None
+        self.last_ranking_result = None
+        self._rankings_storage_safe = True
+
+    def _deserialize_rankings(self, data) -> Dict[GeneratorType, List[RankingEntry]]:
+        loaded = {gen: [] for gen in GeneratorType}
+
+        if isinstance(data, dict):
+            groups = []
+            for gen_name, entries in data.items():
+                if not isinstance(entries, list):
+                    raise ValueError(f"ranking group {gen_name!r} is not a list")
+                gen = self._generator_from_name(gen_name)
+                if gen is not None:
+                    groups.append((gen, entries))
+        elif isinstance(data, list):
+            # Backward compatibility for the old flat leaderboard format.
+            groups = []
+            for raw_entry in data:
+                if not isinstance(raw_entry, dict):
+                    continue
+                gen_name = raw_entry.get("generator_type")
+                gen = (
+                    GeneratorType.WIND
+                    if gen_name is None
+                    else self._generator_from_name(gen_name)
+                )
+                if gen is not None:
+                    groups.append((gen, [raw_entry]))
+        else:
+            raise ValueError("leaderboard root must be an object or list")
+
+        for gen, entries in groups:
+            for raw_entry in entries:
+                if not isinstance(raw_entry, dict):
+                    continue
+                time_taken = raw_entry.get("time_taken", 0.0)
+                if not self._valid_elapsed_time(time_taken):
+                    continue
+                loaded[gen].append(
+                    RankingEntry(
+                        player_name=self.normalize_player_name(
+                            raw_entry.get("player_name", "Player")
+                        )
+                        or "Player",
+                        time_taken=float(time_taken),
+                        generator_type=gen,
+                        timestamp=self._clean_timestamp(
+                            raw_entry.get("timestamp", 0.0)
+                        ),
                     )
-            except Exception as e:
-                print(f"Error loading rankings: {e}")
+                )
+
+        for gen in GeneratorType:
+            best_by_player = {}
+            for entry in loaded[gen]:
+                key = self.normalize_player_name(entry.player_name).casefold()
+                previous = best_by_player.get(key)
+                if previous is None:
+                    best_by_player[key] = entry
+                elif entry.time_taken < previous.time_taken:
+                    entry.timestamp = max(entry.timestamp, previous.timestamp)
+                    best_by_player[key] = entry
+                else:
+                    previous.timestamp = max(previous.timestamp, entry.timestamp)
+            loaded[gen] = sorted(
+                best_by_player.values(), key=lambda entry: entry.time_taken
+            )
+
+        return loaded
+
+    @staticmethod
+    def _generator_from_name(value: object) -> GeneratorType | None:
+        if not isinstance(value, str):
+            return None
+        key = value.casefold()
+        return next(
+            (
+                gen
+                for gen in GeneratorType
+                if gen.name.casefold() == key or gen.value.casefold() == key
+            ),
+            None,
+        )
 
     def save_rankings(self):
+        if not getattr(self, "_rankings_storage_safe", True):
+            print("Refusing to overwrite leaderboard after a load error")
+            return False
         filepath = self._get_leaderboard_filepath()
         try:
             data = {}
@@ -621,8 +697,10 @@ class GameState:
                     for r in entries
                 ]
             self._write_json_atomic(filepath, data)
+            return True
         except Exception as e:
             print(f"Error saving rankings: {e}")
+            return False
 
     @staticmethod
     def _write_json_atomic(filepath: str, data) -> None:
@@ -640,33 +718,40 @@ class GameState:
 
     def load_player_base(self) -> List[str]:
         filepath = self._get_players_filepath()
-        if os.path.exists(filepath):
-            try:
-                with open(filepath, "r") as f:
-                    data = json.load(f)
-                if not isinstance(data, list):
-                    return []
-                players = []
-                seen = set()
-                for value in data:
-                    if not isinstance(value, str):
-                        continue
-                    name = self.normalize_player_name(value)
-                    key = name.casefold()
-                    if name and key not in seen:
-                        players.append(name)
-                        seen.add(key)
-                return players
-            except Exception as e:
-                print(f"Error loading player base: {e}")
-        return []
+        if not os.path.exists(filepath):
+            self._players_storage_safe = True
+            return []
+        try:
+            with open(filepath, "r", encoding="utf-8") as file:
+                data = json.load(file)
+            if not isinstance(data, list):
+                raise ValueError("player database root must be a list")
+            players = []
+            seen = set()
+            for value in data:
+                name = self.normalize_player_name(value)
+                key = name.casefold()
+                if name and key not in seen:
+                    players.append(name)
+                    seen.add(key)
+            self._players_storage_safe = True
+            return players
+        except Exception as error:
+            self._players_storage_safe = False
+            print(f"Error loading player base: {error}")
+            return []
 
     def save_player_base(self, players: List[str]):
+        if not getattr(self, "_players_storage_safe", True):
+            print("Refusing to overwrite player database after a load error")
+            return False
         filepath = self._get_players_filepath()
         try:
             self._write_json_atomic(filepath, players)
+            return True
         except Exception as e:
             print(f"Error saving player base: {e}")
+            return False
 
     def add_player_to_base(self, name: str):
         if not name or not self.normalize_player_name(name):
