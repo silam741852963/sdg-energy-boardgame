@@ -130,10 +130,10 @@ The device is closed in the task's `finally` block.
 - `DroneManager`: parses and animates ASCII formation resources
 - `ScriptManager`: schedules JSON firework events against wall-clock time
 - `LightingSystem`: sky flashes and ground reflections
-- `AudioSystem`: samples, music, spatial panning, and generated UI tones
+- `AudioSystem`: synthesized samples, spatial panning, and generated UI tones
 - `ControlPanel`: mouse and keyboard customization UI
 - `UltimateFireworkForge`: record presentation, four-input choices, persistent
-  colored energy core, and the capped multi-stage finale
+  colored energy core, and the capped five-instance finale
 
 The simulation uses NumPy arrays for high particle counts and ModernGL instancing
 for rendering. `SCREEN_WIDTH`, `SCREEN_HEIGHT`, and `FULLSCREEN` are currently
@@ -175,8 +175,8 @@ Only stable transitions into a Hall position count. Choice phases are text-free,
 fade four glowing options alongside screen dimming once, then time out after ten
 seconds and choose
 non-repeating defaults. There is no timing or failure
-phase: shape, three-color palette, effect behavior, and all secondary stages are
-always composed within hard caps of 650 particles per shell, 3.4 radius, and 3.5
+phase: shape, three-color palette, and effect behavior are always composed within
+hard caps of 650 particles per shell, 3.4 radius, and 3.5
 intensity. Each choice adds a cyan/yellow/orange/lime generator ring to the core.
 Each lock also animates a bright particle head and fading trail from option ring
 along energy line into core. Final lock holds rings stationary for 1.6 seconds so
@@ -185,17 +185,18 @@ The rings and connecting geometry use broad layered alpha halos. After the third
 choice, every prompt, container, and dim overlay is removed. The three rings move
 downward as their halo and core intensity decay, and the shells launch from that
 moving core. Ring bloom also uses `Renderer.draw_particles`, matching firework
-glow texture and additive blending. A 10.5-second decay keeps rings visible while
-secondary and crown shells launch at deliberately separated intervals. Effect
-selection chooses launch choreography (helix, sunrise fan, rhythmic pairs, or
-orbit); shape chooses hero altitude and crown spacing; palette colors all stages.
-A per-run variant changes mirror direction, cadence, and hero offset while keeping
-combination identity recognizable. The normal
-authored show is then completely unobstructed.
+glow texture and additive blending. Five identical Ultimate instances leave the
+shared ring center and target 10%, 30%, 50%, 70%, and 90% of screen width, ordered
+left to right at 0.8-second intervals. Rings use a smooth 11.5-second fade ending
+near invisibility. Shape chooses shared altitude; palette and effect selections
+apply to every instance. Drones use their normal exit animation when Forge starts,
+remain absent during active phases, then use their normal enter animation to
+restore saved pattern and uniform override color. The normal authored show is
+unobstructed.
 The record flow waits 3.5 seconds after show playback begins before fading into
 the forge. Its launch phase returns to the normal background immediately, lowers
-the selected energy rings to the launch position, then emits the ultra shell,
-secondary transformation, and crown shells from that location.
+the selected energy rings to the launch position, then emits five ultra shells
+sequentially across the screen.
 
 `--ultimate-debug` forces both inputs to mock mode, pauses mock energy and drain,
 and drives the normal-show/forge presentation from dedicated engine timers. It

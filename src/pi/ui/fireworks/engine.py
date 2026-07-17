@@ -151,6 +151,9 @@ class FireworkEngine:
         self.ultimate_forge = UltimateFireworkForge(
             self.firework_manager, self.audio, self.lighting
         )
+        self.ultimate_drones_were_active = False
+        self.ultimate_drone_restore_pattern = None
+        self.ultimate_drone_restore_color = None
         self.completed_gauges = set()
         self.completion_time = None
         self.drones_cleared = False
@@ -209,6 +212,36 @@ class FireworkEngine:
             if event.get("source", "ultimate_firework") == "ultimate_firework":
                 self.ultimate_forge.request_launch()
 
+    def _sync_ultimate_drone_animation(self):
+        """Animate drones out for Ultimate Forge, then restore them naturally."""
+        forge_active = self.ultimate_forge.active
+        if forge_active:
+            if not self.ultimate_drones_were_active:
+                self.ultimate_drone_restore_pattern = self.drone_manager.current_index
+                colors = {
+                    drone.target_color
+                    for drone in self.drone_manager.drones
+                    if drone.active and not drone.clearing
+                }
+                self.ultimate_drone_restore_color = (
+                    next(iter(colors)) if len(colors) == 1 else None
+                )
+                self.drone_manager.clear_all()
+                self.drone_manager.patterns_suspended = True
+        elif self.ultimate_drones_were_active:
+            self.drone_manager.patterns_suspended = False
+            pattern = self.ultimate_drone_restore_pattern
+            if pattern is not None and pattern >= 0:
+                self.drone_manager.transition_to_pattern(
+                    pattern,
+                    self.gui,
+                    override_color=self.ultimate_drone_restore_color,
+                )
+            self.ultimate_drone_restore_pattern = None
+            self.ultimate_drone_restore_color = None
+
+        self.ultimate_drones_were_active = forge_active
+
     def get_memory_usage(self):
         try:
             with open("/proc/self/status", "r") as f:
@@ -232,11 +265,15 @@ class FireworkEngine:
             self.firework_manager.shells.clear()
             self.script_manager.active_scripts.clear()
             self.ultimate_forge.reset()
+            self.ultimate_drones_were_active = False
+            self.ultimate_drone_restore_pattern = None
+            self.ultimate_drone_restore_color = None
+            self.drone_manager.patterns_suspended = False
             self.konami_unlocked = False
             self.love_mode_active = False
             self.love_celebration_count = 0
             self.love_celebration_timer = 0
-            self.drone_manager.transition_to_pattern(0, self.gui, self.audio)
+            self.drone_manager.transition_to_pattern(0, self.gui)
             if hasattr(self, "last_seen_gen_after_completion"):
                 delattr(self, "last_seen_gen_after_completion")
             # Reset animated levels of all gauges to 0.0 to prevent visual autoplay re-trigger
@@ -537,9 +574,6 @@ class FireworkEngine:
                     key_6_pressed = True
                 elif event.key == pygame.K_7:
                     key_7_pressed = True
-                elif event.key == pygame.K_s:
-                    self.audio.toggle_music()
-
         if key_e_pressed:
             self.gui.export_current_spec()
 
@@ -597,7 +631,7 @@ class FireworkEngine:
                 if fireworks_done and self.congrat_start_time is None:
                     # Transition drones to END pattern (index 7) with a gold color override
                     self.drone_manager.transition_to_pattern(
-                        7, self.gui, self.audio, override_color="gold"
+                        7, self.gui, override_color="gold"
                     )
                     self.congrat_start_time = time.time()
                     if self.game_state:
@@ -658,7 +692,7 @@ class FireworkEngine:
                     if self.drone_manager.current_index != -1:
                         self.audio.play_switch_sound()
                     self.drone_manager.transition_to_pattern(
-                        target_pattern, self.gui, self.audio, override_color=override_c
+                        target_pattern, self.gui, override_color=override_c
                     )
 
             if self.is_mock or self.mock_hall:
@@ -738,7 +772,7 @@ class FireworkEngine:
                                 gen_color = "lime"
 
                             self.drone_manager.transition_to_pattern(
-                                6, self.gui, self.audio, override_color=gen_color
+                                6, self.gui, override_color=gen_color
                             )
                     else:
                         if gen in self.completed_gauges:
@@ -804,13 +838,13 @@ class FireworkEngine:
         # --- KEYBOARD SHORTCUTS FOR DRONE TRANSITIONS (Manual) ---
         if not self.game_state and self.is_mock:
             if key_d_pressed:
-                self.drone_manager.transition_to_pattern(0, self.gui, self.audio)
+                self.drone_manager.transition_to_pattern(0, self.gui)
             if key_right_pressed:
-                self.drone_manager.next_pattern(self.gui, self.audio)
+                self.drone_manager.next_pattern(self.gui)
             if key_left_pressed:
-                self.drone_manager.prev_pattern(self.gui, self.audio)
+                self.drone_manager.prev_pattern(self.gui)
             if key_c_pressed:
-                self.drone_manager.clear_all(self.audio)
+                self.drone_manager.clear_all()
 
         if (
             self.is_mock
@@ -873,7 +907,7 @@ class FireworkEngine:
                 self.konami_unlocked = True
                 # Rainbow shifting Ablic logo
                 self.drone_manager.transition_to_pattern(
-                    0, self.gui, self.audio, override_color="rainbow"
+                    0, self.gui, override_color="rainbow"
                 )
                 # Trigger continuous supernova count
                 self.konami_supernova_count = 35
@@ -906,7 +940,7 @@ class FireworkEngine:
                 self.script_manager.play_sequence(script_path)
 
                 self.drone_manager.transition_to_pattern(
-                    8, self.gui, self.audio, override_color="red"
+                    8, self.gui, override_color="red"
                 )
 
             # Spawn supernova fireworks for Konami combo
@@ -1139,6 +1173,7 @@ class FireworkEngine:
         self.firework_manager.draw(self.renderer, self.frame_count)
 
         # 4. Draw drones
+        self._sync_ultimate_drone_animation()
         show_debug = self.mock_ble or self.mock_hall
         self.drone_manager.draw(
             self.renderer,

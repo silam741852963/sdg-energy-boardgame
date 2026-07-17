@@ -106,8 +106,6 @@ class FireworkManager:
         gravity = 0.3
         vx, vy, vz = calculate_launch_velocity((sx, sy, sz), (tx, ty, tz), gravity)
 
-        self.audio.play_launch(sx)
-        
         # In launch strategies, they call manager.particle_system.spawn(...)
         # Wait, how does it track the spawned shell's spec?
         # The launch strategy apply methods will run and spawn a shell.
@@ -193,6 +191,9 @@ class FireworkManager:
     def update(self):
         # Update particles/shells (positions, physics, culling, split)
         self.particle_system.update()
+        if self.particle_system.split_sound_position is not None:
+            x, y = self.particle_system.split_sound_position
+            self.audio.play_crossette_split(x, y)
 
         # Check for exploding shells
         explode_mask = (

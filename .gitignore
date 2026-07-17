@@ -225,3 +225,6 @@ players_database.json
 
 # Leaderboard persistent file
 leaderboard.json
+
+# Local test suite
+tests/

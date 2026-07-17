@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import math
 import random
 import time
@@ -79,7 +78,6 @@ class UltimateFireworkForge:
         self.pending_launches = []
         self.launched = False
         self.launch_origin_y = SCREEN_HEIGHT // 2
-        self.finale_variant = random.randrange(3)
         self.visual_started_at = 0.0
         self.selection_pulses = []
         self.choice_locked_at = {
@@ -168,7 +166,7 @@ class UltimateFireworkForge:
                 SCREEN_HEIGHT // 2 + int(300 * SCALE_Y) * travel_progress
             )
             if elapsed >= 2.25 and not self.launched:
-                self._launch_ultimate(now, self.launch_origin_y)
+                self._launch_ultimate(now)
             if elapsed >= self.LAUNCH_SECONDS:
                 self.phase = ForgePhase.COMPLETE
 
@@ -198,37 +196,22 @@ class UltimateFireworkForge:
             self.energy_strength = 8
             self._advance(ForgePhase.LOCK_IN, now)
 
-    def _build_spec(self, stage=0, role=None):
+    def _build_spec(self):
         shape_gen = self.shape_gen or GeneratorType.WIND
         palette_gen = self.palette_gen or GeneratorType.SOLAR
         effect_gen = self.effect_gen or GeneratorType.COIL
         _, fw_type = SHAPES[shape_gen]
         _, colors = PALETTES[palette_gen]
-        role_types = {
-            "spiral": "Strobe",
-            "sunray": "Peony",
-            "pulse": "Pearls",
-            "orbit": "Pistil",
-            "crown": "Brocade",
-        }
-        is_hero = stage == 0 or role == "hero"
-        spec = generate_spec(fw_type if is_hero else role_types.get(role, "Pistil"))
-        spec.base_color = colors[stage % len(colors)]
+        spec = generate_spec(fw_type)
+        spec.base_color = colors[0]
         spec.colors = colors[:]
         spec.multicolor = len(colors)
         boost = min(1.0, self.energy_strength / 8.0)
-        spec.particle_count = min(650, int((360 if stage == 0 else 220) * (1.0 + 0.35 * boost)))
-        spec.radius = min(3.4, (2.3 if stage == 0 else 1.7) + 0.7 * boost)
+        spec.particle_count = min(650, int(360 * (1.0 + 0.35 * boost)))
+        spec.radius = min(3.4, 2.3 + 0.7 * boost)
         spec.intensity = min(3.5, 2.2 + boost)
         spec.life_span = min(190, int(spec.life_span * (1.15 + 0.25 * boost)))
         spec.speed_variance = min(24.0, spec.speed_variance * (1.15 + 0.2 * boost))
-        if not is_hero:
-            limit = 210 if role == "crown" else 150
-            spec.particle_count = min(limit, spec.particle_count)
-            spec.radius = min(1.45, spec.radius)
-            spec.intensity = min(1.65, spec.intensity)
-            spec.life_span = min(115, spec.life_span)
-
         if effect_gen == GeneratorType.WIND:
             spec.has_trails = True
             spec.spin = True
@@ -240,112 +223,46 @@ class UltimateFireworkForge:
             spec.flicker = True
         elif effect_gen == GeneratorType.COIL:
             spec.pistil = True
-            spec.split = stage > 0
         return spec
 
-    def _launch_ultimate(self, now, source_y):
+    def _launch_ultimate(self, now):
         if self.launched:
             return
         self.launched = True
         self.audio.play_overdrive_unlock()
         self.lighting.trigger_sky_flash(COLOR_MAP.get("silver", 121))
-        hero_heights = {
+        self._schedule_combination_show(now)
+
+    def _schedule_combination_show(self, now):
+        """Schedule exactly five Ultimate shells from left to right."""
+        target_y = {
             GeneratorType.WIND: 190,
             GeneratorType.SOLAR: 250,
             GeneratorType.PIEZO: 315,
             GeneratorType.COIL: 225,
-        }
-        hero_x = SCREEN_WIDTH // 2
-        if self.finale_variant == 1:
-            hero_x -= int(110 * SCALE_X)
-        elif self.finale_variant == 2:
-            hero_x += int(110 * SCALE_X)
-        self.firework_manager.launch(
-            hero_x,
-            int(hero_heights[self.shape_gen or GeneratorType.WIND] * SCALE_Y),
-            forced_spec=self._build_spec(0),
-            source_px=SCREEN_WIDTH // 2,
-            source_py=source_y,
-        )
-        self._schedule_combination_show(now)
-
-    def _schedule_combination_show(self, now):
-        """Create launch choreography from selected effect and per-run variant."""
-        effect = self.effect_gen or GeneratorType.COIL
-        mirror = -1 if self.finale_variant == 1 else 1
-        cadence = (0.86, 1.0, 1.14)[self.finale_variant]
-        events = []
-
-        if effect == GeneratorType.WIND:
-            # Alternating expanding helix. Wind selection feels like rotation.
-            offsets = (-180, 250, -360, 470)
-            for index, offset in enumerate(offsets):
-                events.append((0.9 + index * 0.72 * cadence, offset * mirror, 330 - (index % 3) * 55, "spiral"))
-        elif effect == GeneratorType.SOLAR:
-            # Rays rise from center, then open into a wide symmetrical sunrise.
-            rays = ((0, 245), (-280, 315), (280, 315), (0, 390))
-            for index, (offset, y) in enumerate(rays):
-                events.append((1.0 + index * 0.58 * cadence, offset * mirror, y, "sunray"))
-        elif effect == GeneratorType.PIEZO:
-            # Strong musical pairs, followed by central heart pulse echoes.
-            pairs = ((-350, 350), (350, 350), (-570, 430), (570, 430))
-            pair_times = (1.0, 1.0, 2.8, 2.8)
-            for (offset, y), event_time in zip(pairs, pair_times):
-                events.append((event_time * cadence, offset * mirror, y, "pulse"))
-        else:
-            # Coil alternates around an orbit before discharging through center.
-            orbit = ((-500, 400), (380, 280), (530, 440), (-320, 260))
-            for index, (offset, y) in enumerate(orbit):
-                events.append((0.9 + index * 0.78 * cadence, offset * mirror, y, "orbit"))
-
-        # Shape contributes recognizable crown spacing beyond hero-shell geometry.
-        shape_spreads = {
-            GeneratorType.WIND: (-620, -210, 260, 650),
-            GeneratorType.SOLAR: (-720, -360, 0, 360, 720),
-            GeneratorType.PIEZO: (-430, 0, 430),
-            GeneratorType.COIL: (-680, -340, 340, 680),
-        }
-        crown_offsets = shape_spreads[self.shape_gen or GeneratorType.WIND]
-        for index, offset in enumerate((crown_offsets[0], crown_offsets[-1])):
-            events.append((5.5 + index * 0.8 * cadence, offset * mirror, 430, "crown"))
-
-        # Hero geometry dominates: same custom selected shape launches three times.
-        events.extend(
-            [
-                (3.8 * cadence, -190 * mirror, 250, "hero"),
-                (7.2 * cadence, 190 * mirror, 205, "hero"),
-            ]
-        )
-
-        self.pending_launches.extend(
+        }[self.shape_gen or GeneratorType.WIND]
+        self.pending_launches = [
             (
-                now + delay,
-                offset,
-                y,
-                0 if role == "hero" else (2 if role == "crown" else 1),
-                role,
+                now + index * 0.8,
+                int(SCREEN_WIDTH * fraction),
+                target_y,
             )
-            for delay, offset, y, role in events
-        )
+            for index, fraction in enumerate((0.1, 0.3, 0.5, 0.7, 0.9))
+        ]
 
     def _update_pending_launches(self, now):
         remaining = []
-        for launch_time, x_offset, y, stage, role in self.pending_launches:
+        for launch_time, target_x, target_y in self.pending_launches:
             if now >= launch_time:
-                spec = self._build_spec(stage, role=role)
-                if stage == 2:
-                    spec = copy.copy(spec)
-                    spec.particle_count = min(spec.particle_count, 260)
-                    spec.crackle = self.energy_strength >= 7
                 self.firework_manager.launch(
-                    SCREEN_WIDTH // 2 + int(x_offset * SCALE_X),
-                    int(y * SCALE_Y),
-                    forced_spec=spec,
+                    target_x,
+                    int(target_y * SCALE_Y),
+                    forced_spec=self._build_spec(),
                     source_px=SCREEN_WIDTH // 2,
                     source_py=self.launch_origin_y,
                 )
             else:
-                remaining.append((launch_time, x_offset, y, stage, role))
+                remaining.append((launch_time, target_x, target_y))
         self.pending_launches = remaining
 
     def draw(self, renderer, fonts, frame_count):
@@ -439,7 +356,9 @@ class UltimateFireworkForge:
 
 
     def _draw_launch(self, renderer, fonts, elapsed):
-        fade = max(0.04, 1.0 - elapsed / self.LAUNCH_SECONDS)
+        progress = min(1.0, max(0.0, elapsed / self.LAUNCH_SECONDS))
+        smooth_fade = 1.0 - (3.0 * progress**2 - 2.0 * progress**3)
+        fade = 0.002 + 0.998 * smooth_fade
         travel_progress = min(1.0, elapsed / 2.2)
         center_y = int(SCREEN_HEIGHT // 2 + int(300 * SCALE_Y) * travel_progress)
         self._draw_energy_core(

@@ -126,7 +126,9 @@ An all-time generator record or returning player's personal best starts a short
 interactive finale using the same four Hall positions. First-time players do not
 trigger it. All-time records are known immediately; personal bests start only
 after player confirms existing name. Player chooses shape, palette, and special
-effect; every result launches complete capped multi-stage ultra firework.
+effect; every result launches exactly five capped ultra fireworks in sequence
+from left to right. Drone patterns animate out when Forge starts, remain absent
+during its presentation, then animate back into their saved pattern afterward.
 Inactivity selects varied defaults, so no failure state or timing minigame.
 
 In mocked Hall mode, hold number keys `1` through `4` for Wind, Solar, Piezo, and
@@ -136,16 +138,11 @@ generator's consistent color: cyan Wind, yellow Solar, orange Piezo, and lime
 Coil. After the third ring forms, the forge interface disappears and the normal
 show becomes fully visible. The three rings descend together toward the bottom of
 the screen, slowly lose their glow as stored energy is spent, and launch the
-complete firework sequence from their final position. Rings use the same additive
-soft-particle texture as fireworks. Finale stages are spaced over several seconds
-so each transformation remains readable.
-
-Finale choreography also comes from chosen combination, not only shell settings.
-Wind power creates expanding alternating spirals; Solar opens a rising fan; Piezo
-fires rhythmic mirrored pairs and heart pulses; Coil travels around an alternating
-orbit before discharging through center. Shape changes hero trajectory and crown
-spacing, palette colors every stage, and each combination has mirrored/cadence/
-altitude variants across repeat plays.
+complete five-firework sequence from their final position. Rings use the same
+additive soft-particle texture as fireworks. All five shells leave the shared ring
+center, target 10% through 90% of screen width, and remain 0.8 seconds apart. The
+rings smoothly fade to near invisibility across the unchanged launch phase. Shape
+controls altitude while palette and effect selections apply to every instance.
 
 Launch the isolated presentation while developing the forge with:
 
@@ -189,7 +186,8 @@ if rankings must survive a redeployment.
 
 ## Resources
 
-- `resource/audio/` contains WAV effects and music.
+- `resource/audio/` contains three synthesized WAV variants per exploding firework
+  sound role.
 - `resource/firework-scripts/` contains timed JSON show definitions.
 - `resource/firework-settings/` contains reusable firework specifications.
 - `resource/drone-pattern/` contains metadata and ASCII drone formations.

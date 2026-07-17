@@ -8,7 +8,6 @@ class AudioSystem:
     def __init__(self):
         self.enabled = False
         self.sounds = {}
-        self.music_muted = True
 
         try:
             pygame.init()
@@ -32,13 +31,12 @@ class AudioSystem:
         root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "..", ".."))
         self.audio_dir = os.path.join(root_dir, "resource", "audio")
 
-        self._load_sound("launch", "Firework_launch.wav")
-        self._load_sound("blast_near", "Firework_blast.wav")
-        self._load_sound("blast_far", "Firework_blast_far.wav")
-        self._load_sound("large_blast_near", "Firework_large_blast.wav")
-        self._load_sound("large_blast_far", "Firework_large_blast_far.wav")
-        self._load_sound("twinkle_near", "Firework_twinkle.wav")
-        self._load_sound("twinkle_far", "Firework_twinkle_far.wav")
+        self._load_sound_variants("blast_near", "Firework_blast")
+        self._load_sound_variants("blast_far", "Firework_blast_far")
+        self._load_sound_variants("large_blast_near", "Firework_large_blast")
+        self._load_sound_variants("large_blast_far", "Firework_large_blast_far")
+        self._load_sound_variants("twinkle_near", "Firework_twinkle")
+        self._load_sound_variants("twinkle_far", "Firework_twinkle_far")
 
         if self.enabled:
             try:
@@ -68,63 +66,25 @@ class AudioSystem:
             except Exception as e:
                 print(f"Failed to synthesize UI sounds: {e}")
 
-    def _load_sound(self, key, filename):
-        if not self.enabled:
-            return
-
-        path = os.path.join(self.audio_dir, filename)
-        if os.path.exists(path):
+    def _load_sound_variants(self, key, stem, count=3):
+        variants = []
+        for index in range(1, count + 1):
+            suffix = "" if index == 1 else f"_{index}"
+            path = os.path.join(self.audio_dir, f"{stem}{suffix}.wav")
+            if not os.path.exists(path):
+                print(f"Audio file missing: {path}")
+                continue
             try:
-                self.sounds[key] = pygame.mixer.Sound(path)
+                variants.append(pygame.mixer.Sound(path))
             except Exception as e:
-                print(f"Failed to load {filename}: {e}")
-                self.enabled = False
-        else:
-            print(f"Audio file missing: {path}")
-
-    # --- NEW: Background Music Controls ---
-    def play_music(self, filename):
-        if not self.enabled or self.music_muted:
-            return
-        path = os.path.join(self.audio_dir, filename)
-        if os.path.exists(path):
-            try:
-                pygame.mixer.music.load(path)
-                pygame.mixer.music.set_volume(0.4) # Tune background music volume (0.0 to 1.0)
-                pygame.mixer.music.play(-1)  # -1 loops the track indefinitely
-            except Exception as e:
-                print(f"Failed to play music {filename}: {e}")
-        else:
-            print(f"Music file missing: {path}")
-
-    def stop_music(self):
-        if not self.enabled:
-            return
-        pygame.mixer.music.fadeout(2000)  # Smooth 2-second fade out
-
-    def toggle_music(self):
-        if not self.enabled:
-            return
-        self.music_muted = not self.music_muted
-        if self.music_muted:
-            pygame.mixer.music.stop()
-        else:
-            self.play_music("ablic-theme.wav")
+                print(f"Failed to load {path}: {e}")
+        if variants:
+            self.sounds[key] = variants
 
     def _get_stereo_pan(self, x_position):
         max_x = 600.0 * SCALE_X
         pan = (x_position + max_x) / (max_x * 2.0)
         return max(0.1, min(0.9, pan))
-
-    def play_launch(self, x_position):
-        if not self.enabled or "launch" not in self.sounds:
-            return
-        base_vol = random.uniform(0.5, 0.9)
-        pan = self._get_stereo_pan(x_position)
-        channel = pygame.mixer.find_channel()
-        if channel:
-            channel.set_volume((1.0 - pan) * base_vol, pan * base_vol)
-            channel.play(self.sounds["launch"])
 
     def play_explosion(self, spec, x_position, y_position):
         if not self.enabled:
@@ -152,13 +112,33 @@ class AudioSystem:
 
         if key in self.sounds:
             base_vol = (
-                random.uniform(0.6, 1.0) if not is_far else random.uniform(0.4, 0.7)
+                random.uniform(0.85, 1.0)
+                if not is_far
+                else random.uniform(0.58, 0.78)
             )
             pan = self._get_stereo_pan(x_position)
             channel = pygame.mixer.find_channel()
             if channel:
-                channel.set_volume((1.0 - pan) * base_vol, pan * base_vol)
-                channel.play(self.sounds[key])
+                channel.set_volume(
+                    ((1.0 - pan) ** 0.5) * base_vol, (pan**0.5) * base_vol
+                )
+                channel.play(random.choice(self.sounds[key]))
+
+    def play_crossette_split(self, x_position, y_position):
+        if not self.enabled:
+            return
+        is_far = y_position < -150
+        key = "blast_far" if is_far else "blast_near"
+        if key not in self.sounds:
+            return
+        base_vol = random.uniform(0.58, 0.74) if not is_far else random.uniform(0.4, 0.56)
+        pan = self._get_stereo_pan(x_position)
+        channel = pygame.mixer.find_channel()
+        if channel:
+            channel.set_volume(
+                ((1.0 - pan) ** 0.5) * base_vol, (pan**0.5) * base_vol
+            )
+            channel.play(random.choice(self.sounds[key]))
 
     def _generate_success_chime_samples(self):
         import numpy as np

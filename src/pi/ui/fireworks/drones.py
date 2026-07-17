@@ -192,6 +192,7 @@ class DroneManager:
         self.drones = []
         self.patterns = []
         self.current_index = -1
+        self.patterns_suspended = False
         self._load_all_patterns()
 
     def _load_all_patterns(self):
@@ -286,14 +287,13 @@ class DroneManager:
 
         return coords
 
-    def transition_to_pattern(self, index, gui, audio=None, override_color=None):
+    def transition_to_pattern(self, index, gui, override_color=None):
+        if self.patterns_suspended:
+            return
         if not self.patterns:
             return
         if index < 0 or index >= len(self.patterns):
             return
-
-        if self.current_index == -1 and audio:
-            audio.play_music("ablic-theme.wav")
 
         self.current_index = index
         target_coords = self._get_target_coords(
@@ -331,13 +331,13 @@ class DroneManager:
             for i in range(len(target_coords), len(available_drones)):
                 available_drones[i].clear()
 
-    def next_pattern(self, gui, audio=None):
+    def next_pattern(self, gui):
         if not self.patterns:
             return
         next_idx = (self.current_index + 1) % len(self.patterns)
-        self.transition_to_pattern(next_idx, gui, audio)
+        self.transition_to_pattern(next_idx, gui)
 
-    def prev_pattern(self, gui, audio=None):
+    def prev_pattern(self, gui):
         if not self.patterns:
             return
         prev_idx = (
@@ -345,14 +345,12 @@ class DroneManager:
             if self.current_index == -1
             else (self.current_index - 1) % len(self.patterns)
         )
-        self.transition_to_pattern(prev_idx, gui, audio)
+        self.transition_to_pattern(prev_idx, gui)
 
-    def clear_all(self, audio=None):
+    def clear_all(self):
         for d in self.drones:
             d.clear()
         self.current_index = -1
-        if audio:
-            audio.stop_music()
 
     def update(self, frame_count, fill_pct=0.0):
         # Apply heartbeat scaling to targets if we are in Heart pattern (index 5) or Love pattern (index 8)

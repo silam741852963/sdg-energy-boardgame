@@ -27,6 +27,7 @@ class Particle:
 class ParticleSystem:
     def __init__(self, max_particles=100000):
         self.max_particles = max_particles
+        self.split_sound_position = None
 
         # 3D Positions, velocities, launch velocities (float32)
         self.x = np.zeros(max_particles, dtype=np.float32)
@@ -360,6 +361,7 @@ class ParticleSystem:
         return self.intensity[indices]
 
     def update(self):
+        self.split_sound_position = None
         active_mask = self.active
         if not np.any(active_mask):
             return
@@ -457,6 +459,15 @@ class ParticleSystem:
             should_split[split_eligible] = self.age[split_eligible] == half_life
             split_indices = np.where(should_split)[0]
             if len(split_indices) > 0:
+                crossette_type = FIREWORK_NAME_TO_TYPE["Crossette"]
+                sound_indices = split_indices[
+                    self.spec_name_type[split_indices] == crossette_type
+                ]
+                if len(sound_indices) > 0:
+                    self.split_sound_position = (
+                        float(np.mean(self.x[sound_indices])),
+                        float(np.mean(self.y[sound_indices])),
+                    )
                 self.active[split_indices] = False
                 self.free_indices.extend(split_indices)
                 self.spawn_split_children(split_indices)
