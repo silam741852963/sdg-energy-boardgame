@@ -1,9 +1,10 @@
 import time
 import os
 import json
+import math
 from typing import List, Dict
 from ..config import MAX_ENERGY_GAUGE, GeneratorType
-from .models import PlayerSession, RankingEntry
+from .models import PlayerSession, RankingEntry, RankingResult
 from .smooth_fill import SmoothFiller
 
 
@@ -22,6 +23,8 @@ class GameState:
         self._last_increase_time = {}
         self.session_count = 0
         self.clean_boost_signals = []
+        self.current_ranking_entry: RankingEntry | None = None
+        self.last_ranking_result: RankingResult | None = None
 
         # Multi-sensor active states (Hall-IC)
         self.active_sensors = []
@@ -48,6 +51,7 @@ class GameState:
         self.current_session = PlayerSession(player_name=name)
         self.current_session.start_time = 0.0
         self.current_ranking_entry = None
+        self.last_ranking_result = None
         for gen in GeneratorType:
             self._last_gauge_values[gen] = 0.0
             self._last_increase_time[gen] = time.time()
@@ -390,6 +394,7 @@ class GameState:
             self.rankings[completed_gen] = []
         self.rankings[completed_gen].append(self.current_ranking_entry)
         self.rankings[completed_gen].sort(key=lambda x: x.time_taken)
+        self.last_ranking_result = None
         self.save_rankings()
 
     def get_elapsed_time(self) -> float:
@@ -401,16 +406,61 @@ class GameState:
             return self.current_session.end_time - self.current_session.start_time
         return time.time() - self.current_session.start_time
 
-    def update_player_name(self, name: str):
-        if not self.current_session:
-            return
+    @staticmethod
+    def normalize_player_name(name: object) -> str:
+        if not isinstance(name, str):
+            return ""
+        return " ".join(name.strip().split())[:18]
 
-        clean_name = name.strip() or self.current_session.player_name
+    @staticmethod
+    def _valid_elapsed_time(value: object) -> bool:
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value > 0.0
+        )
+
+    @staticmethod
+    def _clean_timestamp(value: object) -> float:
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value >= 0.0
+        ):
+            return float(value)
+        return 0.0
+
+    def get_personal_best(
+        self,
+        name: str,
+        generator: GeneratorType,
+        exclude_current: bool = False,
+    ) -> float | None:
+        key = self.normalize_player_name(name).casefold()
+        if not key:
+            return None
+        matches = [
+            entry.time_taken
+            for entry in self.rankings.get(generator, [])
+            if (not exclude_current or entry is not self.current_ranking_entry)
+            and self.normalize_player_name(entry.player_name).casefold() == key
+        ]
+        return min(matches) if matches else None
+
+    def update_player_name(self, name: str) -> RankingResult | None:
+        if not self.current_session:
+            return None
+
+        clean_name = self.normalize_player_name(name)
+        if not clean_name:
+            clean_name = self.normalize_player_name(self.current_session.player_name)
         self.current_session.player_name = clean_name
         current = self.current_ranking_entry
         if not current:
             self.save_rankings()
-            return
+            return self.last_ranking_result
 
         gen = current.generator_type
         key = clean_name.casefold()
@@ -422,16 +472,20 @@ class GameState:
         same_player = [
             entry
             for entry in previous_entries
-            if entry.player_name.strip().casefold() == key
+            if self.normalize_player_name(entry.player_name).casefold() == key
         ]
         different_players = [
             entry
             for entry in previous_entries
-            if entry.player_name.strip().casefold() != key
+            if self.normalize_player_name(entry.player_name).casefold() != key
         ]
 
+        previous_best = (
+            min(entry.time_taken for entry in same_player) if same_player else None
+        )
         current.player_name = clean_name
-        if same_player:
+        personal_best_entry = current
+        if previous_best is not None:
             best_entry = min(
                 [*same_player, current], key=lambda entry: entry.time_taken
             )
@@ -439,12 +493,26 @@ class GameState:
             # named player remains untouched, regardless of relative time.
             self.rankings[gen] = [*different_players, best_entry]
             self.current_ranking_entry = current if best_entry is current else None
+            personal_best_entry = best_entry
+            best_entry.timestamp = max(
+                [current.timestamp, *(entry.timestamp for entry in same_player)]
+            )
         else:
             # New name: rename provisional entry only. No existing player removed.
             self.rankings[gen] = [*previous_entries, current]
 
         self.rankings[gen].sort(key=lambda entry: entry.time_taken)
+        kept_run = self.current_ranking_entry is current
+        final_rank = self.rankings[gen].index(personal_best_entry) + 1
+        self.last_ranking_result = RankingResult(
+            player_name=clean_name,
+            run_time=current.time_taken,
+            previous_best=previous_best,
+            final_rank=final_rank,
+            kept_run=kept_run,
+        )
         self.save_rankings()
+        return self.last_ranking_result
 
     def discard_current_ranking(self):
         if self.current_ranking_entry:
@@ -453,6 +521,7 @@ class GameState:
                 self.rankings[gen].remove(self.current_ranking_entry)
                 self.save_rankings()
             self.current_ranking_entry = None
+        self.last_ranking_result = None
 
     def _get_leaderboard_filepath(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -468,6 +537,8 @@ class GameState:
                     data = json.load(f)
                     if isinstance(data, dict):
                         for gen_name, entries in data.items():
+                            if not isinstance(entries, list):
+                                continue
                             try:
                                 gen = GeneratorType[gen_name]
                             except KeyError:
@@ -476,32 +547,63 @@ class GameState:
                                 except StopIteration:
                                     continue
                             for entry in entries:
+                                if not isinstance(entry, dict):
+                                    continue
+                                time_taken = entry.get("time_taken", 0.0)
+                                if not self._valid_elapsed_time(time_taken):
+                                    continue
                                 self.rankings[gen].append(
                                     RankingEntry(
-                                        player_name=entry.get("player_name", "Player"),
-                                        time_taken=entry.get("time_taken", 0.0),
+                                        player_name=self.normalize_player_name(
+                                            entry.get("player_name", "Player")
+                                        ) or "Player",
+                                        time_taken=float(time_taken),
                                         generator_type=gen,
-                                        timestamp=entry.get("timestamp", 0.0)
+                                        timestamp=self._clean_timestamp(
+                                            entry.get("timestamp", 0.0)
+                                        )
                                     )
                                 )
                     elif isinstance(data, list):
                         # Backward compatibility for old flat list leaderboard format
                         for entry in data:
+                            if not isinstance(entry, dict):
+                                continue
                             gen_name = entry.get("generator_type")
                             try:
                                 gen = GeneratorType[gen_name] if gen_name else GeneratorType.WIND
                             except KeyError:
                                 gen = GeneratorType.WIND
+                            time_taken = entry.get("time_taken", 0.0)
+                            if not self._valid_elapsed_time(time_taken):
+                                continue
                             self.rankings[gen].append(
                                 RankingEntry(
-                                    player_name=entry.get("player_name", "Player"),
-                                    time_taken=entry.get("time_taken", 0.0),
+                                    player_name=self.normalize_player_name(
+                                        entry.get("player_name", "Player")
+                                    ) or "Player",
+                                    time_taken=float(time_taken),
                                     generator_type=gen,
-                                    timestamp=entry.get("timestamp", 0.0)
+                                    timestamp=self._clean_timestamp(
+                                        entry.get("timestamp", 0.0)
+                                    )
                                 )
                             )
                 for gen in GeneratorType:
-                    self.rankings[gen].sort(key=lambda x: x.time_taken)
+                    best_by_player = {}
+                    for entry in self.rankings[gen]:
+                        key = self.normalize_player_name(entry.player_name).casefold()
+                        previous = best_by_player.get(key)
+                        if previous is None:
+                            best_by_player[key] = entry
+                        elif entry.time_taken < previous.time_taken:
+                            entry.timestamp = max(entry.timestamp, previous.timestamp)
+                            best_by_player[key] = entry
+                        else:
+                            previous.timestamp = max(previous.timestamp, entry.timestamp)
+                    self.rankings[gen] = sorted(
+                        best_by_player.values(), key=lambda x: x.time_taken
+                    )
             except Exception as e:
                 print(f"Error loading rankings: {e}")
 
@@ -518,10 +620,18 @@ class GameState:
                     }
                     for r in entries
                 ]
-            with open(filepath, "w") as f:
-                json.dump(data, f, indent=4)
+            self._write_json_atomic(filepath, data)
         except Exception as e:
             print(f"Error saving rankings: {e}")
+
+    @staticmethod
+    def _write_json_atomic(filepath: str, data) -> None:
+        temp_path = f"{filepath}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temp_path, filepath)
 
     def _get_players_filepath(self) -> str:
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -533,7 +643,20 @@ class GameState:
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                if not isinstance(data, list):
+                    return []
+                players = []
+                seen = set()
+                for value in data:
+                    if not isinstance(value, str):
+                        continue
+                    name = self.normalize_player_name(value)
+                    key = name.casefold()
+                    if name and key not in seen:
+                        players.append(name)
+                        seen.add(key)
+                return players
             except Exception as e:
                 print(f"Error loading player base: {e}")
         return []
@@ -541,16 +664,15 @@ class GameState:
     def save_player_base(self, players: List[str]):
         filepath = self._get_players_filepath()
         try:
-            with open(filepath, "w") as f:
-                json.dump(players, f, indent=4)
+            self._write_json_atomic(filepath, players)
         except Exception as e:
             print(f"Error saving player base: {e}")
 
     def add_player_to_base(self, name: str):
-        if not name or name.strip() == "":
+        if not name or not self.normalize_player_name(name):
             return
-        name = name.strip()
+        name = self.normalize_player_name(name)
         players = self.load_player_base()
-        if not any(p.lower() == name.lower() for p in players):
+        if not any(p.casefold() == name.casefold() for p in players):
             players.append(name)
             self.save_player_base(players)

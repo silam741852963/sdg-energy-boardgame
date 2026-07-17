@@ -457,31 +457,18 @@ class FireworkEngine:
                                 else "Player"
                             )
 
-                        personal_best = False
-                        if self.game_state and self.completed_gen:
-                            current_entry = self.game_state.current_ranking_entry
-                            previous = [
-                                rank
-                                for rank in self.game_state.rankings.get(self.completed_gen, [])
-                                if rank is not current_entry
-                                and rank.player_name.lower().strip()
-                                == entered_name.lower().strip()
-                            ]
-                            personal_best = bool(
-                                current_entry
-                                and previous
-                                and current_entry.time_taken
-                                < min(rank.time_taken for rank in previous)
-                            )
-
+                        ranking_result = None
                         if self.game_state:
-                            self.game_state.update_player_name(entered_name)
+                            ranking_result = self.game_state.update_player_name(
+                                entered_name
+                            )
                             self.game_state.add_player_to_base(entered_name)
 
                         self.show_name_entry = False
                         self.name_entry_completed = True
                         if (
-                            personal_best
+                            ranking_result is not None
+                            and ranking_result.is_personal_best
                             and self.ultimate_enabled
                             and not self.ultimate_was_played
                         ):
@@ -1346,6 +1333,8 @@ class FireworkEngine:
             current_time_taken = 0.0
             if self.game_state and self.game_state.current_ranking_entry:
                 current_time_taken = self.game_state.current_ranking_entry.time_taken
+            elif self.game_state and self.game_state.last_ranking_result:
+                current_time_taken = self.game_state.last_ranking_result.run_time
             elif self.game_state:
                 current_time_taken = self.game_state.get_elapsed_time()
 
@@ -1353,10 +1342,11 @@ class FireworkEngine:
             recommended_name = self.name_suggestion or self.name_input
             best_time = None
             if recommended_name and self.game_state and self.completed_gen:
-                gen_ranks = self.game_state.rankings.get(self.completed_gen, [])
-                matching_entries = [r for r in gen_ranks if r.player_name.lower() == recommended_name.lower()]
-                if matching_entries:
-                    best_time = min(r.time_taken for r in matching_entries)
+                best_time = self.game_state.get_personal_best(
+                    recommended_name,
+                    self.completed_gen,
+                    exclude_current=True,
+                )
 
             best_time_str = ""
             if best_time is not None:
@@ -1508,7 +1498,7 @@ class FireworkEngine:
             tx = ox + (overlay_w - tw) // 2
             self.renderer.draw_text(
                 tx,
-                oy + int(60 * SCALE_Y),
+                oy + int(45 * SCALE_Y),
                 title_text,
                 font_xl,
                 palette.get_color(emp_col_idx),
@@ -1518,6 +1508,8 @@ class FireworkEngine:
             current_time_taken = 0.0
             if self.game_state and self.game_state.current_ranking_entry:
                 current_time_taken = self.game_state.current_ranking_entry.time_taken
+            elif self.game_state and self.game_state.last_ranking_result:
+                current_time_taken = self.game_state.last_ranking_result.run_time
             elif self.game_state:
                 current_time_taken = self.game_state.get_elapsed_time()
 
@@ -1527,11 +1519,42 @@ class FireworkEngine:
             ct_x = ox + (overlay_w - ct_w) // 2
             self.renderer.draw_text(
                 ct_x,
-                oy + int(115 * SCALE_Y),
+                oy + int(120 * SCALE_Y),
                 cur_time_text,
                 font_med,
                 palette.get_color(emp_col_idx),
             )
+
+            ranking_result = (
+                self.game_state.last_ranking_result if self.game_state else None
+            )
+            if ranking_result:
+                if ranking_result.is_first_result:
+                    result_text = "FIRST PERSONAL RESULT SAVED"
+                    result_color = palette.get_color(31)
+                elif ranking_result.is_personal_best:
+                    result_text = (
+                        f"NEW PERSONAL BEST - {ranking_result.improvement:.2f}s FASTER"
+                    )
+                    result_color = palette.get_color(51)
+                elif ranking_result.difference_from_best == 0.0:
+                    result_text = "MATCHED YOUR PERSONAL BEST"
+                    result_color = palette.get_color(31)
+                else:
+                    result_text = (
+                        f"{ranking_result.difference_from_best:.2f}s FROM YOUR BEST"
+                    )
+                    result_color = palette.get_color(121)
+                if ranking_result.final_rank is not None:
+                    result_text += f"  |  RANK #{ranking_result.final_rank}"
+                result_w, _ = font_med.size(result_text)
+                self.renderer.draw_text(
+                    ox + (overlay_w - result_w) // 2,
+                    oy + int(170 * SCALE_Y),
+                    result_text,
+                    font_med,
+                    result_color,
+                )
 
             # Left column: Top 5 Fastest Players
             sub_text = "--- TOP 5 FASTEST PLAYERS ---"
@@ -1542,7 +1565,7 @@ class FireworkEngine:
             sx = ox + int(300 * SCALE_X) - (sw // 2)
             self.renderer.draw_text(
                 sx,
-                oy + int(170 * SCALE_Y),
+                oy + int(235 * SCALE_Y),
                 sub_text,
                 font_med,
                 palette.get_color(121),
@@ -1550,6 +1573,7 @@ class FireworkEngine:
 
             col1_x = ox + int(80 * SCALE_X)
             col2_x = ox + int(460 * SCALE_X)
+            ranking_row_spacing = int(82 * SCALE_Y)
 
             rankings_list = []
             if isinstance(self.game_state.rankings, dict):
@@ -1558,7 +1582,7 @@ class FireworkEngine:
                 rankings_list = self.game_state.rankings
 
             for i, rank in enumerate(rankings_list[:5]):
-                y_pos = oy + int(290 * SCALE_Y) + (i * int(70 * SCALE_Y))
+                y_pos = oy + int(340 * SCALE_Y) + i * ranking_row_spacing
                 self.renderer.draw_text(
                     col1_x,
                     y_pos,
@@ -1580,7 +1604,7 @@ class FireworkEngine:
             pbx = ox + int(900 * SCALE_X) - (pbw // 2)
             self.renderer.draw_text(
                 pbx,
-                oy + int(170 * SCALE_Y),
+                oy + int(235 * SCALE_Y),
                 pb_text,
                 font_med,
                 palette.get_color(121),
@@ -1636,7 +1660,7 @@ class FireworkEngine:
 
             # Draw search box for Personal Bests
             sb_x = ox + int(680 * SCALE_X)
-            sb_y = oy + int(220 * SCALE_Y)
+            sb_y = oy + int(275 * SCALE_Y)
             sb_w = int(440 * SCALE_X)
             sb_h = int(45 * SCALE_Y)
 
@@ -1686,7 +1710,7 @@ class FireworkEngine:
             col4_x = ox + int(1060 * SCALE_X)
 
             for i, p in enumerate(unique_players[:5]):
-                y_pos = oy + int(290 * SCALE_Y) + (i * int(70 * SCALE_Y))
+                y_pos = oy + int(340 * SCALE_Y) + i * ranking_row_spacing
                 self.renderer.draw_text(
                     col3_x,
                     y_pos,

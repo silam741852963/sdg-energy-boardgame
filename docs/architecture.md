@@ -163,8 +163,15 @@ launched as shells. Supported finale actions are:
 
 Forge starts for provisional position one only when generator already had a prior
 ranking. First-ever entry is excluded. Returning-player personal best is evaluated
-against prior same-name entries before `update_player_name()` and starts only after
-name confirmation; leaderboard waits for that finale to finish.
+by `update_player_name()` after name confirmation; leaderboard waits for that
+finale to finish.
+
+`GameState.update_player_name()` is the authoritative ranking decision. It returns
+a `RankingResult` containing run time, prior best, improvement, retained status,
+and final personal rank. Names use collapsed whitespace and case-insensitive
+identity. Loading removes invalid times and duplicate player records, retaining
+each player's fastest result. Ranking and player databases use atomic replacement
+to avoid partial JSON writes.
 
 ```text
 RECORD_REVEAL -> CHOOSE_SHAPE -> CHOOSE_PALETTE -> CHOOSE_EFFECT

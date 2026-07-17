@@ -116,6 +116,10 @@ polarity are configured in [`receiver_wire.py`](src/pi/hardware/receiver_wire.py
 4. A gauge reaching 100 completes the session and stores a ranking.
 5. The UI runs the associated fireworks and drone celebration.
 
+Name confirmation compares players case-insensitively with normalized whitespace.
+The result screen identifies first results, new personal bests, matched times, or
+distance from the saved best while preserving completed run time and rank.
+
 Changing generators clears the previously selected unfinished gauge. A non-zero
 gauge begins draining after 55 seconds without an increase, and selection returns
 to neutral after 60 seconds without activity.
