@@ -162,10 +162,10 @@ then starts the forge. It does not complete a session or write leaderboard/playe
 data. Press `R` to clear the presentation and replay it. Choice windows are three
 seconds and all unattended choices receive safe visual defaults.
 
-Production can keep normal generator shows while disabling forge interaction:
+Ultimate mode is disabled by default. Enable forge interaction in production with:
 
 ```bash
-./run.sh --disable-ultimate
+./run.sh --enable-ultimate
 ```
 
 Forge selection phases last ten seconds. Configuration is intentionally text-free:

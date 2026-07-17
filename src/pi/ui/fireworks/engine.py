@@ -72,7 +72,7 @@ class FireworkEngine:
         mock_ble=False,
         mock_hall=False,
         ultimate_debug=False,
-        ultimate_enabled=True,
+        ultimate_enabled=False,
     ):
         self.game_state = game_state
         if is_mock is not None:

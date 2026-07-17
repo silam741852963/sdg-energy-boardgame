@@ -212,9 +212,11 @@ sequentially across the screen.
 and drives the normal-show/forge presentation from dedicated engine timers. It
 never completes `PlayerSession`, calls ranking persistence, or updates the player
 database. `R` resets only the in-memory preview lifecycle and starts it again.
-`--disable-ultimate` bypasses record/script forge activation while retaining normal
-production fireworks, leaderboard, and player flow. It cannot be combined with
-`--ultimate-debug`.
+Ultimate mode defaults to disabled. `--enable-ultimate` enables record/script
+forge activation while retaining normal production fireworks, leaderboard, and
+player flow. `--ultimate-debug` explicitly enables the isolated forge preview.
+The legacy `--disable-ultimate` flag remains available and cannot be combined
+with `--ultimate-debug`.
 
 Forge hero shapes use custom vectorized burst strategies: three-arm parametric
 Galaxy, five-point Star, Heart, and Diamond. These change actual particle velocity

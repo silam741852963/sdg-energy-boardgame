@@ -62,10 +62,16 @@ def main():
         action="store_true",
         help="Preview only the Ultimate Firework Forge with mocked inputs and no score writes",
     )
-    parser.add_argument(
+    ultimate_group = parser.add_mutually_exclusive_group()
+    ultimate_group.add_argument(
+        "--enable-ultimate",
+        action="store_true",
+        help="Enable Ultimate Firework Forge for records and personal bests",
+    )
+    ultimate_group.add_argument(
         "--disable-ultimate",
         action="store_true",
-        help="Disable Ultimate Firework Forge while keeping normal production shows",
+        help="Keep Ultimate Firework Forge disabled (the default)",
     )
     args = parser.parse_args()
     if args.ultimate_debug and args.disable_ultimate:
@@ -129,7 +135,7 @@ def main():
         mock_ble=mock_ble,
         mock_hall=mock_hall,
         ultimate_debug=args.ultimate_debug,
-        ultimate_enabled=not args.disable_ultimate,
+        ultimate_enabled=args.enable_ultimate or args.ultimate_debug,
     )
     app.run()
 
