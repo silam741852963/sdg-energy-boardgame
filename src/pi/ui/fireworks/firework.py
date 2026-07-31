@@ -70,14 +70,7 @@ class FireworkManager:
     def shells(self, val):
         pass
 
-    def launch(
-        self,
-        target_px,
-        target_py,
-        forced_spec=None,
-        source_px=None,
-        source_py=None,
-    ):
+    def launch(self, target_px, target_py, forced_spec=None):
         tz = random.uniform(-100, 100)
         
         factor = FOV / (VIEWER_DISTANCE + tz) if (VIEWER_DISTANCE + tz) != 0 else 1.0
@@ -90,12 +83,7 @@ class FireworkManager:
 
         spec = forced_spec if forced_spec else get_random_preset()
 
-        if source_px is not None and source_py is not None:
-            source_factor = FOV / VIEWER_DISTANCE
-            sx = (source_px - (SCREEN_WIDTH / 2)) / source_factor
-            sy = (source_py - (SCREEN_HEIGHT / 2)) / source_factor
-            sz = 0.0
-        elif spec.name == "Rising Tail":
+        if spec.name == "Rising Tail":
             sx = tx
             sz = tz
             sy = SCREEN_HEIGHT / 2

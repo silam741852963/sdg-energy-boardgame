@@ -132,8 +132,6 @@ The device is closed in the task's `finally` block.
 - `LightingSystem`: sky flashes and ground reflections
 - `AudioSystem`: synthesized samples, spatial panning, and generated UI tones
 - `ControlPanel`: mouse and keyboard customization UI
-- `UltimateFireworkForge`: record presentation, four-input choices, persistent
-  colored energy core, and the capped five-instance finale
 
 The simulation uses NumPy arrays for high particle counts and ModernGL instancing
 for rendering. `SCREEN_WIDTH`, `SCREEN_HEIGHT`, and `FULLSCREEN` are currently
@@ -150,21 +148,9 @@ sorts events and launches every event whose scheduled time has passed.
 
 Each playback may apply one bounded variation to the source events: original,
 horizontal mirroring, 12% faster cadence, or palette rotation. The source JSON is
-never modified. Events with an `action` field are routed to the engine rather than
-launched as shells. Supported finale actions are:
+never modified.
 
-```json
-{"time": 2.0, "action": "begin_ultimate_forge", "duration": 8.0}
-{"time": 12.0, "action": "launch_ultimate"}
-{"time": 12.0, "action": "launch_custom", "source": "ultimate_firework"}
-```
-
-### Ultimate finale state
-
-Forge starts for provisional position one only when generator already had a prior
-ranking. First-ever entry is excluded. Returning-player personal best is evaluated
-by `update_player_name()` after name confirmation; leaderboard waits for that
-finale to finish.
+### Personal best state
 
 `GameState.update_player_name()` is the authoritative ranking decision. It returns
 a `RankingResult` containing run time, prior best, improvement, retained status,
@@ -175,52 +161,6 @@ to avoid partial JSON writes. Completed runs remain provisional and in memory
 until name confirmation; confirmation clears the provisional marker before the
 leaderboard can be dismissed. A storage parse failure blocks later writes so a
 damaged file cannot be silently replaced with an empty database.
-
-```text
-RECORD_REVEAL -> CHOOSE_SHAPE -> CHOOSE_PALETTE -> CHOOSE_EFFECT
-              -> LOCK_IN -> LAUNCH -> COMPLETE
-```
-
-Only stable transitions into a Hall position count. Choice phases are text-free,
-fade four glowing options alongside screen dimming once, then time out after ten
-seconds and choose
-non-repeating defaults. There is no timing or failure
-phase: shape, three-color palette, and effect behavior are always composed within
-hard caps of 650 particles per shell, 3.4 radius, and 3.5
-intensity. Each choice adds a cyan/yellow/orange/lime generator ring to the core.
-Each lock also animates a bright particle head and fading trail from option ring
-along energy line into core. Final lock holds rings stationary for 1.6 seconds so
-its enlarged impact bloom completes before downward launch movement begins.
-The rings and connecting geometry use broad layered alpha halos. After the third
-choice, every prompt, container, and dim overlay is removed. The three rings move
-downward as their halo and core intensity decay, and the shells launch from that
-moving core. Ring bloom also uses `Renderer.draw_particles`, matching firework
-glow texture and additive blending. Five identical Ultimate instances leave the
-shared ring center and target 10%, 30%, 50%, 70%, and 90% of screen width, ordered
-left to right at 0.8-second intervals. Rings use a smooth 11.5-second fade ending
-near invisibility. Shape chooses shared altitude; palette and effect selections
-apply to every instance. Drones use their normal exit animation when Forge starts,
-remain absent during active phases, then use their normal enter animation to
-restore saved pattern and uniform override color. The normal authored show is
-unobstructed.
-The record flow waits 3.5 seconds after show playback begins before fading into
-the forge. Its launch phase returns to the normal background immediately, lowers
-the selected energy rings to the launch position, then emits five ultra shells
-sequentially across the screen.
-
-`--ultimate-debug` forces both inputs to mock mode, pauses mock energy and drain,
-and drives the normal-show/forge presentation from dedicated engine timers. It
-never completes `PlayerSession`, calls ranking persistence, or updates the player
-database. `R` resets only the in-memory preview lifecycle and starts it again.
-Ultimate mode defaults to disabled. `--enable-ultimate` enables record/script
-forge activation while retaining normal production fireworks, leaderboard, and
-player flow. `--ultimate-debug` explicitly enables the isolated forge preview.
-The legacy `--disable-ultimate` flag remains available and cannot be combined
-with `--ultimate-debug`.
-
-Forge hero shapes use custom vectorized burst strategies: three-arm parametric
-Galaxy, five-point Star, Heart, and Diamond. These change actual particle velocity
-geometry; effect selection separately changes launch choreography.
 
 ### Firework settings
 

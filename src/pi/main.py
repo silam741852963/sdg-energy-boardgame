@@ -48,7 +48,7 @@ def run_asyncio_thread(state: GameState, mock_ble: bool, mock_hall: bool):
         loop.close()
 
 def main():
-    # Parse command line arguments for the 4 modes
+    # Parse command line arguments
     parser = argparse.ArgumentParser(description="SDG Energy Boardgame Main Script")
     parser.add_argument(
         '--debug',
@@ -57,35 +57,12 @@ def main():
         choices=['ble', 'hall-ic', 'all'],
         help="Run in debug mode. Option: 'ble', 'hall-ic', or 'all' (default if --debug is set)"
     )
-    parser.add_argument(
-        "--ultimate-debug",
-        action="store_true",
-        help="Preview only the Ultimate Firework Forge with mocked inputs and no score writes",
-    )
-    ultimate_group = parser.add_mutually_exclusive_group()
-    ultimate_group.add_argument(
-        "--enable-ultimate",
-        action="store_true",
-        help="Enable Ultimate Firework Forge for records and personal bests",
-    )
-    ultimate_group.add_argument(
-        "--disable-ultimate",
-        action="store_true",
-        help="Keep Ultimate Firework Forge disabled (the default)",
-    )
     args = parser.parse_args()
-    if args.ultimate_debug and args.disable_ultimate:
-        parser.error("--ultimate-debug cannot be combined with --disable-ultimate")
 
     mock_ble = False
     mock_hall = False
 
-    if args.ultimate_debug:
-        mock_ble = True
-        mock_hall = True
-        print("[INIT] Ultimate Forge debug: hardware mocked; scores and players untouched.")
-
-    elif args.debug == 'all':
+    if args.debug == 'all':
         mock_ble = True
         mock_hall = True
         print("[INIT] Debug mode: BOTH BLE and Hall-IC mocked.")
@@ -116,9 +93,6 @@ def main():
 
     # Start a test session immediately
     state.start_new_session()
-    if args.ultimate_debug:
-        state.mock_paused = True
-        state.drain_paused = True
 
     # 2. Start Asyncio Logic in a Background Thread
     bg_thread = threading.Thread(
@@ -134,8 +108,6 @@ def main():
         state,
         mock_ble=mock_ble,
         mock_hall=mock_hall,
-        ultimate_debug=args.ultimate_debug,
-        ultimate_enabled=args.enable_ultimate or args.ultimate_debug,
     )
     app.run()
 

@@ -192,7 +192,6 @@ class DroneManager:
         self.drones = []
         self.patterns = []
         self.current_index = -1
-        self.patterns_suspended = False
         self._load_all_patterns()
 
     def _load_all_patterns(self):
@@ -288,8 +287,6 @@ class DroneManager:
         return coords
 
     def transition_to_pattern(self, index, gui, override_color=None):
-        if self.patterns_suspended:
-            return
         if not self.patterns:
             return
         if index < 0 or index >= len(self.patterns):

@@ -4,9 +4,8 @@ import time
 from .models import generate_spec
 
 class ScriptManager:
-    def __init__(self, firework_manager, action_handler=None):
+    def __init__(self, firework_manager):
         self.firework_manager = firework_manager
-        self.action_handler = action_handler
         self.active_scripts = [] # List of {"events": [...], "start_time": float, "index": int}
 
     def play_sequence(self, json_path: str, variation: int = 0):
@@ -68,11 +67,6 @@ class ScriptManager:
             while idx < len(events):
                 ev = events[idx]
                 if current_time - start_time >= ev["time"]:
-                    if "action" in ev:
-                        if self.action_handler:
-                            self.action_handler(ev["action"], ev)
-                        idx += 1
-                        continue
                     # Trigger this event
                     fw_type = ev.get("type", "Peony")
                     if love_mode_active:

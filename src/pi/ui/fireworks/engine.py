@@ -58,7 +58,6 @@ from .gauges import GaugeManager
 from .scripting import ScriptManager
 from .particles import Particle
 from .renderer import Renderer
-from .ultimate_forge import ForgePhase, UltimateFireworkForge
 from . import palette
 
 from ...config import GeneratorType
@@ -71,8 +70,6 @@ class FireworkEngine:
         is_mock=None,
         mock_ble=False,
         mock_hall=False,
-        ultimate_debug=False,
-        ultimate_enabled=False,
     ):
         self.game_state = game_state
         if is_mock is not None:
@@ -83,8 +80,6 @@ class FireworkEngine:
             self.is_mock = mock_hall
             self.mock_ble = mock_ble
         self.mock_hall = mock_hall
-        self.ultimate_debug = ultimate_debug
-        self.ultimate_enabled = ultimate_enabled
         self.audio = AudioSystem()
 
         # Initialize Pygame and ModernGL
@@ -145,15 +140,7 @@ class FireworkEngine:
 
         self.firework_manager = FireworkManager(self.audio, self.lighting)
         self.gauge_manager = GaugeManager(self.game_state)
-        self.script_manager = ScriptManager(
-            self.firework_manager, action_handler=self._handle_script_action
-        )
-        self.ultimate_forge = UltimateFireworkForge(
-            self.firework_manager, self.audio, self.lighting
-        )
-        self.ultimate_drones_were_active = False
-        self.ultimate_drone_restore_pattern = None
-        self.ultimate_drone_restore_color = None
+        self.script_manager = ScriptManager(self.firework_manager)
         self.completed_gauges = set()
         self.completion_time = None
         self.drones_cleared = False
@@ -169,13 +156,7 @@ class FireworkEngine:
         self.name_suggestion = ""
         self.player_base = []
         self.leaderboard_search_input = ""
-        self.is_generator_record = False
-        self.ultimate_was_played = False
         self.name_entry_completed = False
-        self.pending_leaderboard_after_forge = False
-        self.ultimate_debug_started_at = time.time()
-        self.ultimate_debug_show_started = False
-        self.ultimate_debug_forge_started = False
 
         self.show_metrics = False
         self.fps_tracker = FPSTracker()
@@ -199,49 +180,6 @@ class FireworkEngine:
         # Load or initialize easter egg specs from files
         self._init_easter_egg_specs()
 
-    def _handle_script_action(self, action, event):
-        """Handle non-firework timeline markers without coupling scripts to UI internals."""
-        if (
-            action == "begin_ultimate_forge"
-            and self.ultimate_enabled
-            and self.is_generator_record
-        ):
-            if self.ultimate_forge.phase == ForgePhase.INACTIVE:
-                self.ultimate_forge.start("NEW GENERATOR RECORD")
-        elif self.ultimate_enabled and action in ("launch_ultimate", "launch_custom"):
-            if event.get("source", "ultimate_firework") == "ultimate_firework":
-                self.ultimate_forge.request_launch()
-
-    def _sync_ultimate_drone_animation(self):
-        """Animate drones out for Ultimate Forge, then restore them naturally."""
-        forge_active = self.ultimate_forge.active
-        if forge_active:
-            if not self.ultimate_drones_were_active:
-                self.ultimate_drone_restore_pattern = self.drone_manager.current_index
-                colors = {
-                    drone.target_color
-                    for drone in self.drone_manager.drones
-                    if drone.active and not drone.clearing
-                }
-                self.ultimate_drone_restore_color = (
-                    next(iter(colors)) if len(colors) == 1 else None
-                )
-                self.drone_manager.clear_all()
-                self.drone_manager.patterns_suspended = True
-        elif self.ultimate_drones_were_active:
-            self.drone_manager.patterns_suspended = False
-            pattern = self.ultimate_drone_restore_pattern
-            if pattern is not None and pattern >= 0:
-                self.drone_manager.transition_to_pattern(
-                    pattern,
-                    self.gui,
-                    override_color=self.ultimate_drone_restore_color,
-                )
-            self.ultimate_drone_restore_pattern = None
-            self.ultimate_drone_restore_color = None
-
-        self.ultimate_drones_were_active = forge_active
-
     def get_memory_usage(self):
         try:
             with open("/proc/self/status", "r") as f:
@@ -264,11 +202,6 @@ class FireworkEngine:
             self.firework_manager.particles.clear()
             self.firework_manager.shells.clear()
             self.script_manager.active_scripts.clear()
-            self.ultimate_forge.reset()
-            self.ultimate_drones_were_active = False
-            self.ultimate_drone_restore_pattern = None
-            self.ultimate_drone_restore_color = None
-            self.drone_manager.patterns_suspended = False
             self.konami_unlocked = False
             self.love_mode_active = False
             self.love_celebration_count = 0
@@ -292,41 +225,7 @@ class FireworkEngine:
         self.name_input = ""
         self.name_suggestion = ""
         self.leaderboard_search_input = ""
-        self.is_generator_record = False
-        self.ultimate_was_played = False
         self.name_entry_completed = False
-        self.pending_leaderboard_after_forge = False
-        if self.ultimate_debug:
-            self.game_state.mock_paused = True
-            self.game_state.drain_paused = True
-            self.ultimate_debug_started_at = time.time()
-            self.ultimate_debug_show_started = False
-            self.ultimate_debug_forge_started = False
-
-    def _update_ultimate_debug(self):
-        """Run the presentation without completing a session or writing rankings."""
-        if not self.ultimate_debug or not self.ultimate_enabled:
-            return
-        now = time.time()
-        elapsed = now - self.ultimate_debug_started_at
-        if not self.ultimate_debug_show_started and elapsed >= 0.8:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            script_path = os.path.abspath(
-                os.path.join(
-                    current_dir, "..", "..", "..", "..", "resource",
-                    "firework-scripts", "hybrid.json"
-                )
-            )
-            if not os.path.exists(script_path):
-                script_path = os.path.join(
-                    current_dir, "..", "..", "..", "..", "resource",
-                    "firework-scripts", "solar.json"
-                )
-            self.script_manager.play_sequence(script_path, variation=random.randrange(4))
-            self.ultimate_debug_show_started = True
-        if not self.ultimate_debug_forge_started and elapsed >= 4.0:
-            self.ultimate_forge.start("ULTIMATE FORGE PREVIEW")
-            self.ultimate_debug_forge_started = True
 
     def _update_name_suggestion(self):
         if not self.name_input:
@@ -469,20 +368,10 @@ class FireworkEngine:
 
                         self.show_name_entry = False
                         self.name_entry_completed = True
-                        if (
-                            ranking_result is not None
-                            and ranking_result.is_personal_best
-                            and self.ultimate_enabled
-                            and not self.ultimate_was_played
-                        ):
-                            self.ultimate_forge.start("PERSONAL BEST")
-                            self.ultimate_was_played = True
-                            self.pending_leaderboard_after_forge = True
-                        else:
-                            self.show_leaderboard = True
-                            self.leaderboard_start_activity_time = (
-                                self.game_state.last_activity_time
-                            )
+                        self.show_leaderboard = True
+                        self.leaderboard_start_activity_time = (
+                            self.game_state.last_activity_time
+                        )
                     else:
                         if (
                             event.unicode
@@ -567,7 +456,7 @@ class FireworkEngine:
         if key_e_pressed:
             self.gui.export_current_spec()
 
-        if self.is_mock and not self.ultimate_debug:
+        if self.is_mock:
             gui_captured_mouse = self.gui.update(events, click_pos, mouse_clicked_left)
             if gui_captured_mouse:
                 self.audio.play_tick_sound()
@@ -607,13 +496,6 @@ class FireworkEngine:
                 len(self.script_manager.active_scripts) == 0
                 and len(self.firework_manager.shells) == 0
                 and len(self.firework_manager.particles) == 0
-                and not self.ultimate_forge.blocks_show_completion
-                and not (
-                    self.is_generator_record
-                    and self.ultimate_enabled
-                    and self.show_started
-                    and self.ultimate_forge.phase == ForgePhase.INACTIVE
-                )
             )
 
             # After fireworks are done, show END drones first, then the leaderboard
@@ -644,11 +526,6 @@ class FireworkEngine:
                         else:
                             self.player_base = []
                         self.drone_manager.clear_all()
-
-                if self.pending_leaderboard_after_forge and fireworks_done:
-                    self.pending_leaderboard_after_forge = False
-                    self.show_leaderboard = True
-                    self.leaderboard_start_activity_time = self.game_state.last_activity_time
 
             # Check for key presses or other signals to close leaderboard
             # Leaderboard updates are handled in early return at the start of update()
@@ -713,12 +590,7 @@ class FireworkEngine:
                 if set(mock_active_sensors) != set(self.game_state.active_sensors):
                     self.game_state.set_active_sensors(mock_active_sensors)
 
-            # The forge consumes transitions of the same four Hall positions used
-            # during play. It intentionally remains active after session completion.
-            self.ultimate_forge.update(self.game_state.active_generator)
-            self._update_ultimate_debug()
-
-            if self.mock_ble and not self.ultimate_debug:
+            if self.mock_ble:
                 if key_space_pressed:
                     if self.game_state.active_generator:
                         self.game_state.add_energy(
@@ -740,13 +612,6 @@ class FireworkEngine:
                             self.drones_cleared = False
                             self.show_started = False
                             self.completed_gen = gen
-                            entry = self.game_state.current_ranking_entry
-                            gen_rankings = self.game_state.rankings.get(gen, [])
-                            self.is_generator_record = bool(
-                                entry is not None
-                                and len(gen_rankings) > 1
-                                and gen_rankings[0] is entry
-                            )
                             if self.game_state:
                                 self.game_state.drain_paused = True
 
@@ -802,8 +667,6 @@ class FireworkEngine:
                     self.completion_time = (
                         time.time()
                     )  # Reset timer to be relative to show start
-                    # Let the authored show breathe before the forge slowly takes
-                    # focus. The update loop starts it after this prelude.
 
             # Clear drones after 1.5 seconds into the firework show
             if (
@@ -814,16 +677,6 @@ class FireworkEngine:
                 if time.time() - self.completion_time >= 1.5:
                     self.drone_manager.clear_all()
                     self.drones_cleared = True
-
-            if (
-                self.is_generator_record
-                and self.ultimate_enabled
-                and self.show_started
-                and self.ultimate_forge.phase == ForgePhase.INACTIVE
-                and time.time() - self.completion_time >= 3.5
-            ):
-                self.ultimate_forge.start("NEW GENERATOR RECORD")
-                self.ultimate_was_played = True
 
         # --- KEYBOARD SHORTCUTS FOR DRONE TRANSITIONS (Manual) ---
         if not self.game_state and self.is_mock:
@@ -838,7 +691,6 @@ class FireworkEngine:
 
         if (
             self.is_mock
-            and not self.ultimate_debug
             and mouse_clicked_left
             and not gui_captured_mouse
         ):
@@ -1163,7 +1015,6 @@ class FireworkEngine:
         self.firework_manager.draw(self.renderer, self.frame_count)
 
         # 4. Draw drones
-        self._sync_ultimate_drone_animation()
         show_debug = self.mock_ble or self.mock_hall
         self.drone_manager.draw(
             self.renderer,
@@ -1173,12 +1024,8 @@ class FireworkEngine:
         )
 
         # 5. Draw gauges
-        if not self.in_attract_mode and not self.ultimate_debug:
+        if not self.in_attract_mode:
             self.gauge_manager.draw(self.renderer, self.fonts, self.frame_count)
-
-        # The forge dims the background itself while leaving the authored show
-        # visible underneath, then yields to the multi-stage ultra firework.
-        self.ultimate_forge.draw(self.renderer, self.fonts, self.frame_count)
 
         if not self.in_attract_mode:
             # Draw debug mode label
@@ -1209,9 +1056,7 @@ class FireworkEngine:
         # 6. Draw laboratory GUI
         if (
             self.is_mock
-            and not self.ultimate_debug
             and not self.in_attract_mode
-            and not self.ultimate_forge.active
         ):
             self.gui.draw(self.renderer, self.fonts)
             self.draw_cursor()
