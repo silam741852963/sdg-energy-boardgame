@@ -542,7 +542,7 @@ class FireworkEngine:
                         target_pattern = 1
                     elif active_gen == GeneratorType.SOLAR:
                         target_pattern = 2
-                    elif active_gen == GeneratorType.PIEZO:
+                    elif active_gen == GeneratorType.HAND_CRANK:
                         target_pattern = 3
                     elif active_gen == GeneratorType.COIL:
                         target_pattern = 4
@@ -570,7 +570,7 @@ class FireworkEngine:
                 if pressed_keys[pygame.K_2]:
                     mock_active_sensors.append(GeneratorType.SOLAR)
                 if pressed_keys[pygame.K_3]:
-                    mock_active_sensors.append(GeneratorType.PIEZO)
+                    mock_active_sensors.append(GeneratorType.HAND_CRANK)
                 if pressed_keys[pygame.K_4]:
                     mock_active_sensors.append(GeneratorType.COIL)
 
@@ -578,12 +578,12 @@ class FireworkEngine:
                 if pressed_keys[pygame.K_5]:
                     mock_active_sensors = [GeneratorType.WIND, GeneratorType.SOLAR]
                 elif pressed_keys[pygame.K_6]:
-                    mock_active_sensors = [GeneratorType.PIEZO, GeneratorType.COIL]
+                    mock_active_sensors = [GeneratorType.HAND_CRANK, GeneratorType.COIL]
                 elif pressed_keys[pygame.K_7]:
                     mock_active_sensors = [
                         GeneratorType.WIND,
                         GeneratorType.SOLAR,
-                        GeneratorType.PIEZO,
+                        GeneratorType.HAND_CRANK,
                         GeneratorType.COIL,
                     ]
 
@@ -621,7 +621,7 @@ class FireworkEngine:
                                 gen_color = "cyan"
                             elif gen == GeneratorType.SOLAR:
                                 gen_color = "yellow"
-                            elif gen == GeneratorType.PIEZO:
+                            elif gen == GeneratorType.HAND_CRANK:
                                 gen_color = "orange"
                             elif gen == GeneratorType.COIL:
                                 gen_color = "lime"
@@ -641,8 +641,8 @@ class FireworkEngine:
                         script_name = "wind.json"
                     elif self.completed_gen == GeneratorType.SOLAR:
                         script_name = "solar.json"
-                    elif self.completed_gen == GeneratorType.PIEZO:
-                        script_name = "piezo.json"
+                    elif self.completed_gen == GeneratorType.HAND_CRANK:
+                        script_name = "hand_crank.json"
                     elif self.completed_gen == GeneratorType.COIL:
                         script_name = "coil.json"
 
@@ -760,7 +760,7 @@ class FireworkEngine:
                 self.game_state.trigger_reset_combo = False
                 self._restart_game()
 
-            # Love Combo (101022 - Solar/Wind/Solar/Wind/Piezo/Piezo)
+            # Love Combo (101022 - Solar/Wind/Solar/Wind/Hand Crank/Hand Crank)
             if getattr(self.game_state, "trigger_love_combo", False):
                 self.game_state.trigger_love_combo = False
                 self.audio.play_combo_unlock()
@@ -823,7 +823,7 @@ class FireworkEngine:
                 GeneratorType.WIND in sensors and GeneratorType.SOLAR in sensors
             )
             is_kinetic_induction = (
-                GeneratorType.PIEZO in sensors and GeneratorType.COIL in sensors
+                GeneratorType.HAND_CRANK in sensors and GeneratorType.COIL in sensors
             )
             is_super_overload = len(sensors) == 4
 
@@ -1138,7 +1138,7 @@ class FireworkEngine:
             gen_colors = {
                 GeneratorType.WIND: 61,    # Cyan
                 GeneratorType.SOLAR: 31,   # Yellow
-                GeneratorType.PIEZO: 11,   # Orange
+                GeneratorType.HAND_CRANK: 11,   # Orange
                 GeneratorType.COIL: 41     # Lime
             }
             emp_col_idx = gen_colors.get(gen, 51)
@@ -1326,7 +1326,7 @@ class FireworkEngine:
             gen_colors = {
                 GeneratorType.WIND: 61,    # Cyan
                 GeneratorType.SOLAR: 31,   # Yellow
-                GeneratorType.PIEZO: 11,   # Orange
+                GeneratorType.HAND_CRANK: 11,   # Orange
                 GeneratorType.COIL: 41     # Lime
             }
             emp_col_idx = gen_colors.get(gen, 51)

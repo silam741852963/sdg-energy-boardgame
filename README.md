@@ -11,7 +11,7 @@ Linux computer.
 
 ## Features
 
-- Wind, solar, piezoelectric, and coil generator modes
+- Wind, solar, hand-crank, and coil generator modes
 - BLE energy input from four configured CleanBoost devices
 - GPIO Hall-effect selection with automatic GPIO fallback
 - Full-HD Pygame and ModernGL interface with GPU particle effects
@@ -101,7 +101,7 @@ Default BCM Hall sensor pins:
 | --- | ---: |
 | Wind | 17 |
 | Solar | 27 |
-| Piezoelectric | 22 |
+| Hand Crank | 22 |
 | Coil | 23 |
 
 The PWM square wave uses BCM pin 2 at 1 kHz and 50% duty cycle. GPIO is 3.3 V;

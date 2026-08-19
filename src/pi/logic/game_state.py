@@ -114,7 +114,7 @@ class GameState:
                 self.dial_sequence.append((new_active, current_time))
                 self.dial_sequence = self.dial_sequence[-15:]
 
-                # Check for Konami code: WIND -> SOLAR -> PIEZO -> COIL
+                # Check for Konami code: WIND -> SOLAR -> HAND_CRANK -> COIL
                 deduped = []
                 for item, t in self.dial_sequence:
                     if not deduped or deduped[-1] != item:
@@ -123,7 +123,7 @@ class GameState:
                 if len(deduped) >= 4 and deduped[-4:] == [
                     GeneratorType.WIND,
                     GeneratorType.SOLAR,
-                    GeneratorType.PIEZO,
+                    GeneratorType.HAND_CRANK,
                     GeneratorType.COIL,
                 ]:
                     if len(self.dial_sequence) >= 4 and (
@@ -131,10 +131,10 @@ class GameState:
                     ):
                         self.trigger_konami_combo = True
 
-                # Check for Reset combo sequence: COIL -> PIEZO -> SOLAR -> WIND in rapid succession
+                # Check for Reset combo sequence: COIL -> HAND_CRANK -> SOLAR -> WIND in rapid succession
                 if len(deduped) >= 4 and deduped[-4:] == [
                     GeneratorType.COIL,
-                    GeneratorType.PIEZO,
+                    GeneratorType.HAND_CRANK,
                     GeneratorType.SOLAR,
                     GeneratorType.WIND,
                 ]:
@@ -143,15 +143,15 @@ class GameState:
                     ):
                         self.trigger_reset_combo = True
 
-                # Check for Love combo sequence: SOLAR -> WIND -> SOLAR -> WIND -> PIEZO -> PIEZO in rapid succession (within 7.0 seconds)
+                # Check for Love combo sequence: SOLAR -> WIND -> SOLAR -> WIND -> HAND_CRANK -> HAND_CRANK in rapid succession (within 7.0 seconds)
                 types_seq = [item[0] for item in self.dial_sequence]
                 if len(types_seq) >= 6 and types_seq[-6:] == [
                     GeneratorType.SOLAR,
                     GeneratorType.WIND,
                     GeneratorType.SOLAR,
                     GeneratorType.WIND,
-                    GeneratorType.PIEZO,
-                    GeneratorType.PIEZO,
+                    GeneratorType.HAND_CRANK,
+                    GeneratorType.HAND_CRANK,
                 ]:
                     if len(self.dial_sequence) >= 6 and (
                         self.dial_sequence[-1][1] - self.dial_sequence[-6][1] <= 7.0
@@ -671,6 +671,8 @@ class GameState:
         if not isinstance(value, str):
             return None
         key = value.casefold()
+        if key in {"piezo", "piezoelectric"}:
+            return GeneratorType.HAND_CRANK
         return next(
             (
                 gen

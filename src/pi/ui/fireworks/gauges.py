@@ -36,7 +36,7 @@ class GaugeManager:
         self.generators = [
             GeneratorType.WIND,
             GeneratorType.SOLAR,
-            GeneratorType.PIEZO,
+            GeneratorType.HAND_CRANK,
             GeneratorType.COIL
         ]
         
@@ -44,7 +44,7 @@ class GaugeManager:
         self.colors = {
             GeneratorType.WIND: 61,    # Cyan
             GeneratorType.SOLAR: 31,   # Yellow
-            GeneratorType.PIEZO: 11,   # Orange
+            GeneratorType.HAND_CRANK: 11,   # Orange
             GeneratorType.COIL: 41     # Lime
         }
         
@@ -163,9 +163,10 @@ class GaugeManager:
                     renderer.draw_rect(x + 2, y + 2, (w - 4) * draw_pct, h - 4, fill_col, fill=True)
                 
                 # Draw label
-                text = f"{gen.name} - {int(fill_pct*100)}%"
+                display_name = gen.name.replace("_", " ")
+                text = f"{display_name} - {int(fill_pct*100)}%"
                 if is_simon_target:
-                    text = f"🎯 DIAL THIS: {gen.name}!"
+                    text = f"🎯 DIAL THIS: {display_name}!"
                     
                 text_col_idx = 122 if st["dim"] and not is_full and not is_simon_target else 121
                 if (is_full or is_simon_target) and (frame_count % 10) < 5:
@@ -188,7 +189,7 @@ class GaugeManager:
                         gen_color = (0.0, 0.75, 1.0, 1.0)
                         if gen == GeneratorType.SOLAR:
                             gen_color = (1.0, 0.9, 0.0, 1.0)
-                        elif gen == GeneratorType.PIEZO:
+                        elif gen == GeneratorType.HAND_CRANK:
                             gen_color = (1.0, 0.5, 0.0, 1.0)
                         elif gen == GeneratorType.COIL:
                             gen_color = (0.5, 1.0, 0.0, 1.0)

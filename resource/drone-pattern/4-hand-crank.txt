@@ -1,0 +1,18 @@
+{
+  "spacing": 50,
+  "altitude": -150,
+  "legend": {
+    "T": {"color": "orange", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "U": {"color": "orange", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "R": {"color": "orange", "radius": 2.0, "intensity": 1.5, "z": 0},
+    "N": {"color": "orange", "radius": 2.0, "intensity": 1.5, "z": 0}
+  }
+}
+===
+T T T T T   U       U   R R R R     N       N
+    T       U       U   R       R   N N     N
+    T       U       U   R       R   N   N   N
+    T       U       U   R R R R     N     N N
+    T       U       U   R   R       N       N
+    T       U       U   R     R     N       N
+    T         U U U     R       R   N       N

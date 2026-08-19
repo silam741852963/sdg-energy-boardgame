@@ -50,7 +50,7 @@ class AudioSystem:
                 # Pre-generate Simon Says notes & interactive combo sounds
                 self.sounds["simon_note_wind"] = pygame.mixer.Sound(array=self._generate_note_samples(523.25))
                 self.sounds["simon_note_solar"] = pygame.mixer.Sound(array=self._generate_note_samples(659.25))
-                self.sounds["simon_note_piezo"] = pygame.mixer.Sound(array=self._generate_note_samples(783.99))
+                self.sounds["simon_note_hand_crank"] = pygame.mixer.Sound(array=self._generate_note_samples(783.99))
                 self.sounds["simon_note_coil"] = pygame.mixer.Sound(array=self._generate_note_samples(1046.50))
                 self.sounds["overdrive_unlock"] = pygame.mixer.Sound(array=self._generate_overdrive_unlock_samples())
                 self.sounds["combo_unlock"] = pygame.mixer.Sound(array=self._generate_combo_unlock_samples())
@@ -311,7 +311,7 @@ class AudioSystem:
     def play_simon_note(self, gen_type_name):
         if not self.enabled:
             return
-        # gen_type_name should match WIND, SOLAR, PIEZO, COIL
+        # gen_type_name should match WIND, SOLAR, HAND_CRANK, COIL
         key = f"simon_note_{gen_type_name.lower()}"
         if key in self.sounds:
             channel = pygame.mixer.find_channel()
