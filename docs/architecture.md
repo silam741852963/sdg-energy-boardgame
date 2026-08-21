@@ -34,9 +34,12 @@ the receiver loop does not run a competing inactivity update.
 - Energy is accepted only when its matching generator is selected.
 - There is no energy drain or selection timeout.
 - A cell crossing 100% emits one `CELL_FILLED` event.
-- At least two cells must be reserved and full.
-- Satisfying that rule atomically records `launch_generators`, locks the battery,
-  and emits `LAUNCH_COMMITTED`. Removal may make the remaining battery ready.
+- At least two cells must be reserved and full. Two and three cells enter an
+  eight-second `launch_ready` continuation window; selecting a new unfinished
+  cell cancels it, filling that cell starts a fresh window, and four cells bypass
+  the wait.
+- Countdown expiry atomically records `launch_generators`, locks the battery,
+  and emits `LAUNCH_COMMITTED` after the final `CELL_FILLED` event.
 - After commitment, physical presence is still tracked while battery changes and
   further energy are ignored.
 - The engine creates a new mission as soon as the return transition restores the
@@ -67,8 +70,10 @@ transition.
    logo is restored, gameplay unlocks and the rocket and camera return to their
    initial transforms.
 
-Two-, three-, and four-cell launches use 2+4, 3+6, and 4+8 second
-ignition/ascent timings followed by the shared 2.2-second departure. Larger batteries increase plume layers, source-color
+Two-, three-, and four-cell launches use 4+8, 5+10, and 6+12 second
+ignition/ascent timings followed by the shared 2.2-second departure. The
+two-cell tier matches the former four-cell impact baseline; larger batteries
+increase plume layers, firework density and lifetime, source-color
 variety, dust, shockwave strength, audio intensity, and screen shake.
 
 `GaugeManager` animates additions, removals, and reflow inside one horizontally
@@ -77,6 +82,12 @@ and Coil lime. `PixelFont` contains a compact
 code-defined bitmap alphabet and renders all production mission text without
 Pyxel, another font package, or a system-font dependency. Sot-kun is referenced
 only by messages and has no visual character.
+
+The rocket body carries four recessed charge ports ordered by reserved cell.
+The first completed cell pulses its source-colored port, starts a gentle
+body-only tremble, and leaks sparse particles across the nozzle. Each additional
+cell increases the movement and vent rate through the optional-cell countdown.
+These particles use the existing scene-effect pool and foreground light path.
 
 ## Particle, rendering, and audio budgets
 

@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import List, Dict
 
-from ..config import MAX_ENERGY_GAUGE, RANKINGS_ENABLED, GeneratorType
+from ..config import (
+    LAUNCH_CONTINUE_SECONDS,
+    MAX_ENERGY_GAUGE,
+    RANKINGS_ENABLED,
+    GeneratorType,
+)
 from .models import PlayerSession, RankingEntry, RankingResult
 from .smooth_fill import SmoothFiller
 
@@ -32,12 +37,19 @@ class GameSnapshot:
     energy_levels: Dict[GeneratorType, float]
     filled_generators: frozenset[GeneratorType]
     launch_generators: tuple[GeneratorType, ...]
+    launch_ready: bool
+    launch_wait_remaining: float
     launch_committed: bool
     completed: bool
 
 
 class GameState:
-    def __init__(self, rankings_enabled: bool = RANKINGS_ENABLED):
+    def __init__(
+        self,
+        rankings_enabled: bool = RANKINGS_ENABLED,
+        launch_wait_seconds: float = LAUNCH_CONTINUE_SECONDS,
+        mission_clock=None,
+    ):
         self._lock = threading.RLock()
         self.current_session: PlayerSession | None = None
         self.rankings: Dict[GeneratorType, List[RankingEntry]] = {gen: [] for gen in GeneratorType}
@@ -50,6 +62,9 @@ class GameState:
         self.filled_generators: set[GeneratorType] = set()
         self._sensor_rearm_blocked: set[GeneratorType] = set()
         self._mission_events: deque[MissionEvent] = deque()
+        self.launch_wait_seconds = max(0.0, float(launch_wait_seconds))
+        self._mission_clock = mission_clock or time.monotonic
+        self._launch_deadline: float | None = None
         self.last_activity_time = time.time()
         self.mock_paused = False
         self.session_count = 0
@@ -99,6 +114,7 @@ class GameState:
         self.filled_generators.clear()
         self._sensor_rearm_blocked.clear()
         self._mission_events.clear()
+        self._launch_deadline = None
         self.active_generator = None
         self.smooth_filler.active_fills.clear()
 
@@ -164,10 +180,11 @@ class GameState:
             self._evaluate_launch_locked()
 
     def check_inactivity(self):
-        # Kept as the engine's public tick hook. The rocket design deliberately
-        # has no inactivity drain or selector timeout.
+        # Engine tick hook: energy never drains and selectors never expire, but
+        # a ready battery's visible continuation deadline must advance.
         with self._lock:
             self.smooth_filler.update()
+            self._evaluate_launch_locked()
 
     def force_immediate_drain(self, gen_type):
         # Dormant ranking UI compatibility. Draining is disabled by design.
@@ -242,12 +259,30 @@ class GameState:
             return
         selected = tuple(self.selected_generators)
         if len(selected) < 2:
+            self._launch_deadline = None
             return
         if not all(
             session.energy_levels.get(generator, 0.0) >= MAX_ENERGY_GAUGE
             for generator in selected
         ):
+            self._launch_deadline = None
             return
+
+        if len(selected) >= len(GeneratorType) or self.launch_wait_seconds <= 0.0:
+            self._commit_launch_locked(selected)
+            return
+
+        now = self._mission_clock()
+        if self._launch_deadline is None:
+            self._launch_deadline = now + self.launch_wait_seconds
+        elif now >= self._launch_deadline:
+            self._commit_launch_locked(selected)
+
+    def _commit_launch_locked(self, selected):
+        session = self.current_session
+        if not session or session.launch_committed:
+            return
+        self._launch_deadline = None
         session.launch_committed = True
         session.launch_generators = selected
         # Remember only sensors that are physically held at launch. Calls to
@@ -267,6 +302,16 @@ class GameState:
     def snapshot(self) -> GameSnapshot:
         with self._lock:
             session = self.current_session
+            launch_ready = bool(
+                session
+                and not session.launch_committed
+                and self._launch_deadline is not None
+            )
+            launch_wait_remaining = (
+                max(0.0, self._launch_deadline - self._mission_clock())
+                if launch_ready
+                else 0.0
+            )
             levels = (
                 dict(session.energy_levels)
                 if session
@@ -278,6 +323,8 @@ class GameState:
                 energy_levels=levels,
                 filled_generators=frozenset(self.filled_generators),
                 launch_generators=session.launch_generators if session else (),
+                launch_ready=launch_ready,
+                launch_wait_remaining=launch_wait_remaining,
                 launch_committed=bool(session and session.launch_committed),
                 completed=bool(session and session.completed),
             )

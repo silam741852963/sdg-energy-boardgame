@@ -1,7 +1,7 @@
 import os
 import pygame
 import random
-from .config import SCALE_X
+from .config import LAUNCH_TIER_TIMINGS, SCALE_X
 from ...config import GeneratorType
 
 
@@ -67,7 +67,8 @@ class AudioSystem:
                         array=self._generate_hall_sensor_samples(frequency, selected=False)
                     )
 
-                for cells, duration in ((2, 6.0), (3, 9.0), (4, 12.0)):
+                for cells, timing in LAUNCH_TIER_TIMINGS.items():
+                    duration = sum(timing)
                     samples = self._generate_rocket_thrust_samples(cells, duration)
                     self.sounds[f"rocket_thrust_{cells}"] = pygame.mixer.Sound(array=samples)
 

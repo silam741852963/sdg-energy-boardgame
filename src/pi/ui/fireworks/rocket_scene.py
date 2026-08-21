@@ -5,7 +5,13 @@ import random
 
 import numpy as np
 
-from .config import SCREEN_WIDTH, SCREEN_HEIGHT, SCALE_X, SCALE_Y
+from .config import (
+    LAUNCH_TIER_TIMINGS,
+    SCREEN_WIDTH,
+    SCREEN_HEIGHT,
+    SCALE_X,
+    SCALE_Y,
+)
 from . import palette
 from ...config import GeneratorType, MAX_ENERGY_GAUGE
 
@@ -37,9 +43,11 @@ class SceneActions:
 
 
 TIERS = {
-    2: LaunchTier(2, 2.0, 4.0, 75.0, 5.0, 1),
-    3: LaunchTier(3, 3.0, 6.0, 145.0, 9.0, 2),
-    4: LaunchTier(4, 4.0, 8.0, 250.0, 14.0, 3),
+    # Two cells inherit the former four-cell spectacle. Three and four cells
+    # build above that baseline while adaptive density protects Pi fill rate.
+    2: LaunchTier(2, *LAUNCH_TIER_TIMINGS[2], 250.0, 14.0, 3),
+    3: LaunchTier(3, *LAUNCH_TIER_TIMINGS[3], 330.0, 19.0, 4),
+    4: LaunchTier(4, *LAUNCH_TIER_TIMINGS[4], 420.0, 25.0, 5),
 }
 
 GENERATOR_PARTICLE_COLORS = {
@@ -47,6 +55,13 @@ GENERATOR_PARTICLE_COLORS = {
     GeneratorType.SOLAR: "yellow",
     GeneratorType.HAND_CRANK: "orange",
     GeneratorType.COIL: "lime",
+}
+
+GENERATOR_STATUS_COLOR_INDICES = {
+    GeneratorType.WIND: 61,
+    GeneratorType.SOLAR: 31,
+    GeneratorType.HAND_CRANK: 11,
+    GeneratorType.COIL: 41,
 }
 
 
@@ -62,6 +77,7 @@ class RocketScene:
         self.phase_elapsed = 0.0
         self.launch_tier = None
         self.launch_generators = ()
+        self.reserved_generators = ()
         self.rocket_offset_y = 0.0
         self.camera_y = 0.0
         self._return_camera_start = 0.0
@@ -69,6 +85,7 @@ class RocketScene:
         self._slow_seconds = 0.0
         self._fast_seconds = 0.0
         self._emission_accumulator = 0.0
+        self._prelaunch_emission_accumulator = 0.0
         self._cell_message = None
         self._cell_message_time = 0.0
         self._shockwave_age = None
@@ -266,11 +283,14 @@ class RocketScene:
         self.phase_elapsed = 0.0
         self.launch_tier = None
         self.launch_generators = ()
+        self.reserved_generators = ()
         self.rocket_offset_y = 0.0
         self.camera_y = 0.0
         self._return_camera_start = 0.0
         self._emission_accumulator = 0.0
+        self._prelaunch_emission_accumulator = 0.0
         self._cell_message = None
+        self._cell_message_time = 0.0
         self._shockwave_age = None
         self.firework_manager.clear_scene_effects()
         self.audio.stop_rocket_thrust()
@@ -299,6 +319,12 @@ class RocketScene:
         if self._cell_message_time > 0.0:
             self._cell_message_time = max(0.0, self._cell_message_time - dt)
 
+        self.reserved_generators = tuple(
+            generator
+            for generator in snapshot.selected_generators
+            if generator in snapshot.filled_generators
+        )
+
         has_selection = bool(snapshot.selected_generators)
         if self.phase is MissionPhase.ATTRACT:
             if snapshot.launch_committed:
@@ -324,6 +350,13 @@ class RocketScene:
                     self.phase = MissionPhase.ATTRACT
                     self.camera_y = 0.0
                     actions.reset_requested = True
+
+        if (
+            self.phase is MissionPhase.CHARGING
+            and len(self.reserved_generators) >= 1
+            and not snapshot.launch_committed
+        ):
+            self._emit_prelaunch_vent(dt)
 
         if self.phase is MissionPhase.IGNITION:
             self.phase_elapsed += dt
@@ -360,6 +393,67 @@ class RocketScene:
                 actions.launch_completed = True
 
         return actions
+
+    def charge_shake(self, frame_count):
+        """Return a body-only tremble that grows with reserved charge."""
+        count = len(self.reserved_generators)
+        if self.phase is not MissionPhase.CHARGING or count < 1:
+            return 0.0, 0.0
+        amount = 0.58 + (count - 1) * 0.72
+        return (
+            math.sin(frame_count * 0.71) * amount * SCALE_X,
+            math.sin(frame_count * 0.93 + 0.8) * amount * 0.34 * SCALE_Y,
+        )
+
+    def _emit_prelaunch_vent(self, dt):
+        """Leak low-energy charge particles from the full nozzle width."""
+        charge_count = len(self.reserved_generators)
+        rate = 6.0 + (charge_count - 1) * 7.0
+        self._prelaunch_emission_accumulator += rate * dt
+        count = int(self._prelaunch_emission_accumulator)
+        self._prelaunch_emission_accumulator -= count
+        if count <= 0:
+            return
+
+        rocket_x = SCREEN_WIDTH / 2
+        tail_half_width = (19 + charge_count * 3) * SCALE_X
+        x = np.array(
+            [
+                rocket_x + self._rng.uniform(-tail_half_width, tail_half_width)
+                for _ in range(count)
+            ],
+            dtype=np.float32,
+        )
+        y = np.array(
+            [805 * SCALE_Y + self._rng.uniform(-2.0, 4.0) * SCALE_Y for _ in range(count)],
+            dtype=np.float32,
+        )
+        vx = np.array(
+            [self._rng.uniform(-0.75, 0.75) for _ in range(count)],
+            dtype=np.float32,
+        )
+        vy = np.array(
+            [self._rng.uniform(0.8, 2.1 + charge_count * 0.25) for _ in range(count)],
+            dtype=np.float32,
+        )
+        colors = [
+            GENERATOR_PARTICLE_COLORS[generator]
+            for generator in self.reserved_generators
+        ]
+        self.firework_manager.emit_scene_effect(
+            screen_x=x,
+            screen_y=y,
+            vx=vx,
+            vy=vy,
+            colors=colors,
+            count=count,
+            life=34 + charge_count * 5,
+            size=7.0 + charge_count * 1.4,
+            gravity=0.018,
+            drag=0.045,
+            trail_len=1,
+            intensity=0.62 + charge_count * 0.08,
+        )
 
     def _update_adaptive_density(self, fps, dt):
         if fps <= 0.0:
@@ -557,7 +651,7 @@ class RocketScene:
         self._draw_launch_base(renderer, ground_y, alpha, firework_lights, launch_lights)
 
         rocket_y = reveal_offset + self.rocket_offset_y + self.camera_y
-        shake_x = shake_y = 0.0
+        shake_x, shake_y = self.charge_shake(frame_count)
         if self.phase is MissionPhase.IGNITION and self.launch_tier:
             build = min(1.0, self.phase_elapsed / self.launch_tier.ignition_seconds)
             amount = self.launch_tier.shake * build
@@ -571,6 +665,7 @@ class RocketScene:
             alpha,
             firework_lights,
             launch_lights,
+            frame_count,
         )
         renderer.set_blend_mode("additive")
 
@@ -751,7 +846,16 @@ class RocketScene:
                 x = cx - 176 * SCALE_X + index * stripe_width
                 renderer.draw_rect(x, ground_y - 22 * SCALE_Y, stripe_width, 7 * SCALE_Y, (*hazard, alpha), fill=True)
 
-    def _draw_rocket(self, renderer, y_offset, x_offset, alpha, firework_lights, launch_lights):
+    def _draw_rocket(
+        self,
+        renderer,
+        y_offset,
+        x_offset,
+        alpha,
+        firework_lights,
+        launch_lights,
+        frame_count,
+    ):
         cx = SCREEN_WIDTH / 2 + x_offset
         top = 455 * SCALE_Y + y_offset
         block = 24 * SCALE_X
@@ -803,6 +907,74 @@ class RocketScene:
             for row in (4.0, 7.5, 11.5):
                 renderer.draw_rect(cx + dx * block - 2 * SCALE_X, top + row * block, 4 * SCALE_X, 4 * SCALE_Y, (*rivet, alpha), fill=True)
 
+        self._draw_charge_ports(renderer, cx, top, block, alpha, frame_count)
+
+    def _draw_charge_ports(self, renderer, cx, top, block, alpha, frame_count):
+        """Draw four rocket-mounted indicators for reserved battery cells."""
+        port_width = 19 * SCALE_X
+        port_height = 13 * SCALE_Y
+        gap = 9 * SCALE_X
+        total_width = port_width * 4 + gap * 3
+        start_x = cx - total_width / 2
+        port_y = top + 8.55 * block
+        reserved = self.reserved_generators
+
+        for index in range(4):
+            x = start_x + index * (port_width + gap)
+            renderer.set_blend_mode("alpha")
+            renderer.draw_rect(
+                x - 3 * SCALE_X,
+                port_y - 3 * SCALE_Y,
+                port_width + 6 * SCALE_X,
+                port_height + 6 * SCALE_Y,
+                (0.035, 0.045, 0.06, alpha * 0.95),
+                fill=True,
+            )
+            renderer.draw_rect(
+                x,
+                port_y,
+                port_width,
+                port_height,
+                (0.08, 0.10, 0.12, alpha),
+                fill=True,
+            )
+            renderer.draw_rect(
+                x,
+                port_y,
+                port_width,
+                port_height,
+                (0.38, 0.43, 0.48, alpha * 0.72),
+                fill=False,
+            )
+            if index >= len(reserved):
+                continue
+
+            color = palette.get_color(GENERATOR_STATUS_COLOR_INDICES[reserved[index]])
+            pulse = 0.72 + 0.28 * math.sin(frame_count * 0.12 + index * 0.7)
+            # The first filled cell gets an unmistakable calm heartbeat. More
+            # cells retain the glow while venting/shake carry the urgency.
+            glow_gain = 0.34 if len(reserved) == 1 else 0.24
+            renderer.set_blend_mode("additive")
+            renderer.draw_rect(
+                x - 6 * SCALE_X,
+                port_y - 6 * SCALE_Y,
+                port_width + 12 * SCALE_X,
+                port_height + 12 * SCALE_Y,
+                (*color, alpha * pulse * glow_gain),
+                fill=True,
+            )
+            renderer.set_blend_mode("alpha")
+            renderer.draw_rect(
+                x + 2 * SCALE_X,
+                port_y + 2 * SCALE_Y,
+                port_width - 4 * SCALE_X,
+                port_height - 4 * SCALE_Y,
+                (*color, alpha * (0.82 + pulse * 0.18)),
+                fill=True,
+            )
+
+        renderer.set_blend_mode("alpha")
+
     def _draw_ground_impact(self, renderer, ground_y, alpha):
         if not self.launch_tier or self.phase not in (MissionPhase.IGNITION, MissionPhase.ASCENT):
             return
@@ -839,6 +1011,13 @@ class RocketScene:
         if self._cell_message_time > 0.0 and self._cell_message is not None:
             name = "CRANK" if self._cell_message is GeneratorType.HAND_CRANK else self._cell_message.name
             return f"{name} CELL READY!", "GREAT JOB! SOT-KUN IS ONE STEP CLOSER TO HOME."
+        if snapshot.launch_ready:
+            cell_count = len(snapshot.filled_generators)
+            seconds = max(1, math.ceil(snapshot.launch_wait_remaining))
+            return (
+                f"{cell_count} CELLS READY! LAUNCH IN {seconds}",
+                f"MOVE THE MAGNET TO ADD CELL {cell_count + 1}.",
+            )
         selected = snapshot.selected_generators
         if len(selected) == 1:
             level = snapshot.energy_levels.get(selected[0], 0.0)

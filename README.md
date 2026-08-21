@@ -123,12 +123,16 @@ polarity are configured in [`receiver_wire.py`](src/pi/hardware/receiver_wire.py
 4. Matching CleanBoost advertisements animate into their selected cell over 0.3
    seconds. Energy does not drain.
 5. Each cell reaching 100% plays an extended generator-colored firework sequence.
-   One full cell asks for another energy source.
-6. When at least two reserved cells are full, the battery atomically locks
-   the battery. The final firework, grounded rocket shake, and tail plume begin
-   together.
-7. Two-, three-, and four-cell launches last approximately 8.2, 11.2, and 14.2 seconds,
-   with progressively richer exhaust, color, impact, and screen shake.
+   Four recessed ports on the rocket light in the completed generators' colors.
+   The first full cell starts a gentle tremble and sparse source-colored nozzle
+   leak; each additional cell increases both effects.
+6. At two and three full cells, an eight-second on-screen countdown lets the
+   player move the magnet to an optional next cell. A new Hall selection cancels
+   the countdown immediately. Four full cells launch without another wait.
+7. When the countdown expires, the battery atomically locks. Two-cell launches
+   use the former four-cell spectacle as their baseline; three- and four-cell
+   launches add progressively richer exhaust, fireworks, impact, and shake.
+   Their launch animations last approximately 14.2, 17.2, and 20.2 seconds.
 8. The camera follows the rocket high above the initial scene, then automatically
    returns to Ablic. The next mission unlocks as soon as the logo returns, with
    the rocket restored to its launch base. A magnet held through reset must be

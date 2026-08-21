@@ -66,6 +66,14 @@ from ...config import GeneratorType
 from ...logic.game_state import MissionEventKind
 
 
+LAUNCH_FIREWORK_SCALES = {
+    # The two-cell celebration starts at the previous four-cell intensity.
+    2: (1.16, 1.12, 1.10),
+    3: (1.35, 1.28, 1.18),
+    4: (1.58, 1.46, 1.28),
+}
+
+
 class FireworkEngine:
     def __init__(
         self,
@@ -420,13 +428,16 @@ class FireworkEngine:
             "firework-scripts",
             "launch.json",
         )
-        scale = {2: 0.88, 3: 1.0, 4: 1.16}.get(cell_count, 1.0)
+        count_scale, intensity_scale, life_scale = LAUNCH_FIREWORK_SCALES.get(
+            cell_count,
+            (1.0, 1.0, 1.0),
+        )
         self.script_manager.play_sequence(
             script_path,
             variation=random.choice((0, 1)),
-            count_scale=scale,
-            intensity_scale=0.92 + (cell_count - 2) * 0.10,
-            life_scale=0.94 + (cell_count - 2) * 0.08,
+            count_scale=count_scale,
+            intensity_scale=intensity_scale,
+            life_scale=life_scale,
         )
 
     def _draw_rocket_mission(self):

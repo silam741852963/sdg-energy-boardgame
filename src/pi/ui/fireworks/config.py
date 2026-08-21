@@ -6,6 +6,13 @@ FULLSCREEN = True
 SCALE_X = SCREEN_WIDTH / 1920.0
 SCALE_Y = SCREEN_HEIGHT / 1080.0
 
+# Ignition and ascent durations are shared with synthesized thrust audio.
+LAUNCH_TIER_TIMINGS = {
+    2: (4.0, 8.0),
+    3: (5.0, 10.0),
+    4: (6.0, 12.0),
+}
+
 FOV = 600 * SCALE_Y
 VIEWER_DISTANCE = 600 * SCALE_Y
 

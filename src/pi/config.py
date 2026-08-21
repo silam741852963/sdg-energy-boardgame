@@ -19,6 +19,7 @@ CLEANBOOST_MACS = {
 MAX_ENERGY_GAUGE = 100.0  # Total energy needed to complete the task
 ENERGY_PER_BEACON = 4.25  # How much gauge fills per CleanBoost signal (scaled by 1.7 for 1.7x faster filling)
 UI_REFRESH_RATE = 0.5  # UI updates 2 times a second
+LAUNCH_CONTINUE_SECONDS = 8.0  # Time to move the magnet toward an optional cell 3/4
 
 CLEANBOOST_TEST_MODE = True
 
