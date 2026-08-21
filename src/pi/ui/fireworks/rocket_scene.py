@@ -95,7 +95,7 @@ CHARGE_CUE_LEVELS = {
 
 class RocketScene:
     REVEAL_SECONDS = 2.0
-    DEPARTURE_SECONDS = 2.2
+    DEPARTURE_SECONDS = 3.6
 
     def __init__(self, firework_manager, audio):
         self.firework_manager = firework_manager
@@ -118,7 +118,12 @@ class RocketScene:
         self._cell_message_time = 0.0
         self._shockwave_age = None
         self._rng = random.Random(1427)
+        self._sky_rng = random.Random(2849)
         self._stars = self._build_stars()
+        self._comet = None
+        # Guarantee an early pass so the ambient effect is visible after boot.
+        self._comet_wait = self._sky_rng.uniform(1.5, 4.0)
+        self._cosmic_events = []
         self._skyscrapers = self._build_city_layer(78, 168, 190, 445, 4181)
         self._homes = self._build_city_layer(132, 238, 105, 235, 6113)
         self._ground_marks = self._build_ground_marks()
@@ -164,6 +169,7 @@ class RocketScene:
         stars = []
         for _ in range(190):
             depth = self._rng.choice((0.25, 0.45, 0.7))
+            pronounced_blink = self._sky_rng.random() < 0.22
             stars.append(
                 (
                     self._rng.uniform(0, SCREEN_WIDTH),
@@ -172,9 +178,98 @@ class RocketScene:
                     self._rng.uniform(0.35, 0.9),
                     depth,
                     self._rng.uniform(0, math.tau),
+                    self._sky_rng.uniform(0.045, 0.105),
+                    self._sky_rng.uniform(0.75, 1.30)
+                    if pronounced_blink
+                    else self._sky_rng.uniform(0.16, 0.34),
                 )
             )
         return stars
+
+    def _update_comet(self, dt):
+        if self._comet is None:
+            launch_active = self.phase in (
+                MissionPhase.IGNITION,
+                MissionPhase.ASCENT,
+                MissionPhase.DEPARTURE,
+            )
+            self._comet_wait -= dt * (2.2 if launch_active else 1.0)
+            if self._comet_wait > 0.0:
+                return
+            self._spawn_comet(launch_boost=launch_active)
+            return
+
+        comet = self._comet
+        comet["age"] += dt
+        comet["x"] += comet["vx"] * dt
+        comet["y"] += comet["vy"] * dt
+        outside = (
+            comet["x"] < -180.0 * SCALE_X
+            or comet["x"] > SCREEN_WIDTH + 180.0 * SCALE_X
+            or comet["y"] > SCREEN_HEIGHT * 0.72
+        )
+        if comet["age"] >= comet["duration"] or outside:
+            self._comet = None
+            if self.phase in (MissionPhase.IGNITION, MissionPhase.ASCENT, MissionPhase.DEPARTURE):
+                self._comet_wait = self._sky_rng.uniform(2.5, 5.0)
+            else:
+                self._comet_wait = self._sky_rng.uniform(8.0, 14.0)
+
+    def _spawn_comet(self, launch_boost=False):
+        direction = self._sky_rng.choice((-1.0, 1.0))
+        speed_scale = 1.28 if launch_boost else 1.0
+        speed = self._sky_rng.uniform(390.0, 520.0) * SCALE_X * speed_scale
+        self._comet = {
+            "x": -90.0 * SCALE_X if direction > 0.0 else SCREEN_WIDTH + 90.0 * SCALE_X,
+            "y": self._sky_rng.uniform(70.0, 310.0) * SCALE_Y,
+            "vx": speed * direction,
+            "vy": self._sky_rng.uniform(65.0, 125.0) * SCALE_Y,
+            "age": 0.0,
+            "duration": self._sky_rng.uniform(3.8, 5.2),
+            "boost": 1.55 if launch_boost else 1.0,
+        }
+
+    def _trigger_liftoff_cosmos(self):
+        if self._comet is None:
+            self._spawn_comet(launch_boost=True)
+        else:
+            self._comet["boost"] = max(1.55, self._comet.get("boost", 1.0))
+
+        meteor_streaks = []
+        direction = self._sky_rng.choice((-1.0, 1.0))
+        for index in range(5):
+            meteor_streaks.append(
+                (
+                    self._sky_rng.uniform(120.0, SCREEN_WIDTH - 120.0),
+                    self._sky_rng.uniform(60.0, 330.0) * SCALE_Y,
+                    direction * self._sky_rng.uniform(300.0, 470.0) * SCALE_X,
+                    self._sky_rng.uniform(90.0, 170.0) * SCALE_Y,
+                    index * self._sky_rng.uniform(0.12, 0.24),
+                )
+            )
+        self._cosmic_events = [
+            {
+                "kind": "meteor_shower",
+                "age": 0.0,
+                "duration": 2.8,
+                "streaks": tuple(meteor_streaks),
+            },
+            {
+                "kind": "constellation_pulse",
+                "age": 0.0,
+                "duration": 3.4,
+                "x": self._sky_rng.uniform(480.0, SCREEN_WIDTH - 480.0),
+                "y": self._sky_rng.uniform(170.0, 390.0) * SCALE_Y,
+                "phases": tuple(self._sky_rng.uniform(0.0, math.tau) for _ in range(30)),
+            },
+        ]
+
+    def _update_cosmic_events(self, dt):
+        for event in self._cosmic_events:
+            event["age"] += dt
+        self._cosmic_events = [
+            event for event in self._cosmic_events if event["age"] < event["duration"]
+        ]
 
     @staticmethod
     def _build_city_layer(min_width, max_width, min_height, max_height, seed):
@@ -320,6 +415,7 @@ class RocketScene:
         self._cell_message = None
         self._cell_message_time = 0.0
         self._shockwave_age = None
+        self._cosmic_events.clear()
         self.firework_manager.clear_scene_effects()
         self.audio.stop_rocket_thrust()
 
@@ -338,12 +434,15 @@ class RocketScene:
         self.camera_y = 0.0
         self._return_camera_start = 0.0
         self._shockwave_age = None
+        self._cosmic_events.clear()
         self.audio.start_rocket_thrust(count)
 
     def update(self, snapshot, dt, fps=60.0):
         actions = SceneActions()
         dt = min(0.1, max(0.0, dt))
         self._update_adaptive_density(fps, dt)
+        self._update_comet(dt)
+        self._update_cosmic_events(dt)
         if self._cell_message_time > 0.0:
             self._cell_message_time = max(0.0, self._cell_message_time - dt)
 
@@ -393,6 +492,7 @@ class RocketScene:
                 self.phase = MissionPhase.ASCENT
                 self.phase_elapsed = 0.0
                 self._shockwave_age = 0.0
+                self._trigger_liftoff_cosmos()
         elif self.phase is MissionPhase.ASCENT:
             self.phase_elapsed += dt
             progress = min(1.0, self.phase_elapsed / self.launch_tier.ascent_seconds)
@@ -410,9 +510,9 @@ class RocketScene:
             progress = min(1.0, self.phase_elapsed / self.DEPARTURE_SECONDS)
             self.rocket_offset_y = -(SCREEN_HEIGHT * (3.0 + (progress ** 1.35) * 1.6))
             desired_follow = max(0.0, -self.rocket_offset_y - 280 * SCALE_Y)
-            release = self._ease(max(0.0, (progress - 0.55) / 0.45))
-            self.camera_y = desired_follow * (1.0 - 0.32 * release)
-            if progress < 0.82:
+            release = self._ease(max(0.0, (progress - 0.78) / 0.22))
+            self.camera_y = desired_follow * (1.0 - 0.16 * release)
+            if progress < 0.90:
                 self._emit_exhaust(dt, grounded=False)
             if progress >= 1.0:
                 self.phase = MissionPhase.RETURN
@@ -595,14 +695,146 @@ class RocketScene:
                 intensity=0.55,
             )
 
+    def launch_cosmos_strength(self):
+        if self.phase is MissionPhase.IGNITION and self.launch_tier:
+            progress = min(1.0, self.phase_elapsed / self.launch_tier.ignition_seconds)
+            return self._ease(progress) * 0.62
+        if self.phase is MissionPhase.ASCENT:
+            return 1.0
+        if self.phase is MissionPhase.DEPARTURE:
+            progress = min(1.0, self.phase_elapsed / self.DEPARTURE_SECONDS)
+            return max(0.25, 1.0 - progress * 0.62)
+        return 0.0
+
     def draw_stars(self, renderer, frame_count):
         rows = []
         camera_shift = self._ease(self.scene_progress) * 280.0 * SCALE_Y
-        for x, y, size, alpha, depth, phase in self._stars:
+        launch_activity = self.launch_cosmos_strength()
+        for x, y, size, alpha, depth, phase, blink_speed, blink_strength in self._stars:
             draw_y = (y - camera_shift * depth + self.camera_y * depth * 0.055) % SCREEN_HEIGHT
-            twinkle = alpha * (0.82 + 0.18 * math.sin(frame_count * 0.035 + phase))
-            rows.append((x, draw_y, size, 0.68, 0.78, 1.0, twinkle))
+            activity_speed = blink_speed * (1.0 + launch_activity * 2.4)
+            wave = 0.5 + 0.5 * math.sin(frame_count * activity_speed + phase)
+            blink = wave ** (6.0 - launch_activity * 2.5)
+            reactive_flash = launch_activity * (0.22 + depth * 0.34) * blink
+            twinkle = alpha * (
+                0.58 + 0.20 * wave + blink_strength * blink + reactive_flash
+            )
+            blink_size = size * (
+                1.0 + blink_strength * blink * 0.68 + reactive_flash * 0.72
+            )
+            rows.append((x, draw_y, blink_size, 0.68, 0.78, 1.0, min(1.0, twinkle)))
+
+        for event in self._cosmic_events:
+            if event["kind"] == "meteor_shower":
+                for start_x, start_y, vx, vy, delay in event["streaks"]:
+                    local_age = event["age"] - delay
+                    if local_age < 0.0 or local_age > 1.65:
+                        continue
+                    progress = local_age / 1.65
+                    envelope = math.sin(math.pi * progress)
+                    head_x = start_x + vx * local_age
+                    head_y = start_y + vy * local_age
+                    speed = max(1.0, math.hypot(vx, vy))
+                    trail_x = vx / speed
+                    trail_y = vy / speed
+                    for index in range(10, 0, -1):
+                        strength = (1.0 - index / 11.0) ** 1.25
+                        distance = index * 12.0 * SCALE_X
+                        rows.append(
+                            (
+                                head_x - trail_x * distance,
+                                head_y - trail_y * distance,
+                                (2.0 + strength * 5.5) * SCALE_X,
+                                0.58,
+                                0.76,
+                                1.0,
+                                envelope * strength * 0.72,
+                            )
+                        )
+                    rows.append(
+                        (head_x, head_y, 9.0 * SCALE_X, 0.94, 0.98, 1.0, envelope)
+                    )
+            elif event["kind"] == "constellation_pulse":
+                progress = min(1.0, event["age"] / event["duration"])
+                envelope = math.sin(math.pi * progress)
+                radius = (34.0 + self._ease(progress) * 330.0) * SCALE_X
+                for index, phase in enumerate(event["phases"]):
+                    local_radius = radius * (0.68 + 0.32 * math.sin(phase * 1.7) ** 2)
+                    angle = phase + event["age"] * (0.10 + index % 3 * 0.018)
+                    x = event["x"] + math.cos(angle) * local_radius
+                    y = event["y"] + math.sin(angle) * local_radius * 0.48
+                    pulse = 0.64 + 0.36 * math.sin(frame_count * 0.18 + phase)
+                    color = (0.72, 0.62, 1.0) if index % 3 else (0.48, 0.86, 1.0)
+                    rows.append(
+                        (x, y, (3.0 + pulse * 5.0) * SCALE_X, *color, envelope * pulse * 0.76)
+                    )
+        if self._comet is not None:
+            comet = self._comet
+            boost = comet.get("boost", 1.0)
+            speed = math.hypot(comet["vx"], comet["vy"])
+            trail_x = comet["vx"] / speed
+            trail_y = comet["vy"] / speed
+            fade_in = min(1.0, comet["age"] / 0.35)
+            fade_out = min(1.0, (comet["duration"] - comet["age"]) / 0.55)
+            comet_alpha = max(0.0, min(fade_in, fade_out))
+            trail_count = int(16 * boost)
+            for index in range(trail_count, 0, -1):
+                distance = index * 13.0 * SCALE_X
+                strength = (1.0 - index / (trail_count + 1.0)) ** 1.35
+                rows.append(
+                    (
+                        comet["x"] - trail_x * distance,
+                        comet["y"] - trail_y * distance,
+                        (2.5 + strength * 7.0 * boost) * SCALE_X,
+                        0.52,
+                        0.76,
+                        1.0,
+                        comet_alpha * strength * min(1.0, 0.68 * boost),
+                    )
+                )
+            rows.append(
+                (
+                    comet["x"], comet["y"], 12.0 * SCALE_X * boost,
+                    0.92, 0.98, 1.0, comet_alpha,
+                )
+            )
+        renderer.set_blend_mode("additive")
         renderer.draw_particles(np.asarray(rows, dtype=np.float32))
+
+    def grass_propulsion_strength(self):
+        """Rocket wash applied to nearby grass, normalized to liftoff peak."""
+        if self.phase is MissionPhase.CHARGING:
+            return {1: 0.07, 2: 0.16, 3: 0.30}.get(
+                min(3, len(self.reserved_generators)), 0.0
+            )
+        if self.phase is MissionPhase.IGNITION and self.launch_tier:
+            progress = min(1.0, self.phase_elapsed / self.launch_tier.ignition_seconds)
+            return 0.30 + self._ease(progress) * 0.58
+        if self.phase is MissionPhase.ASCENT and self.launch_tier:
+            progress = min(1.0, self.phase_elapsed / self.launch_tier.ascent_seconds)
+            return max(0.0, 1.0 - progress / 0.65)
+        return 0.0
+
+    def grass_propulsion_profile(self):
+        """Strength, reach, edge force, flutter rate, and peak bend."""
+        strength = self.grass_propulsion_strength()
+        if self.phase is MissionPhase.CHARGING:
+            return strength, 2400 * SCALE_X, 0.0, 1.04, 168 * SCALE_X
+        if self.phase is MissionPhase.IGNITION and self.launch_tier:
+            progress = min(1.0, self.phase_elapsed / self.launch_tier.ignition_seconds)
+            build = self._ease(progress)
+            return (
+                strength,
+                (2400 + 2800 * build) * SCALE_X,
+                0.14 * build,
+                1.16 + 0.28 * build,
+                (192 + 32 * build) * SCALE_X,
+            )
+        if self.phase is MissionPhase.ASCENT and self.launch_tier:
+            # At liftoff every visible cluster receives a meaningful impulse;
+            # strength then fades while the coverage remains screen-wide.
+            return strength, SCREEN_WIDTH * 3.20, 0.34, 1.64, 248 * SCALE_X
+        return 0.0, 2400 * SCALE_X, 0.0, 1.04, 168 * SCALE_X
 
     @staticmethod
     def _sample_lights(points, sources):
@@ -640,14 +872,37 @@ class RocketScene:
         alpha = self.scene_alpha
         eased_scene = self._ease(self.scene_progress)
         firework_lights = firework_lights if firework_lights is not None else np.empty((0, 8))
+        base_y = (
+            820 * SCALE_Y
+            + (1.0 - eased_scene) * (SCREEN_HEIGHT - 820 * SCALE_Y)
+            + self.camera_y * 0.20
+        )
+        ground_y = (
+            820 * SCALE_Y
+            + (1.0 - eased_scene) * 700.0 * SCALE_Y
+            + self.camera_y
+        )
+
+        # Vertical parallax makes the foreground ground descend faster than the
+        # skyline. Extend the far city's foundation through that interval so
+        # the residential layer can pass without exposing a strip of sky.
+        if renderer is not None:
+            foundation_top = max(0.0, base_y - SCALE_Y)
+            foundation_bottom = min(float(SCREEN_HEIGHT), ground_y + SCALE_Y)
+            if foundation_bottom > foundation_top:
+                renderer.set_blend_mode("alpha")
+                renderer.draw_rect(
+                    0,
+                    foundation_top,
+                    SCREEN_WIDTH,
+                    foundation_bottom - foundation_top,
+                    (0.018, 0.034, 0.061, 0.78 + alpha * 0.22),
+                    fill=True,
+                )
         self._draw_city_layer(
             renderer,
             self._skyscrapers,
-            base_y=(
-                820 * SCALE_Y
-                + (1.0 - eased_scene) * (SCREEN_HEIGHT - 820 * SCALE_Y)
-                + self.camera_y * 0.20
-            ),
+            base_y=base_y,
             parallax_x=self.camera_y * 0.006,
             alpha=0.78 + alpha * 0.22,
             lights=firework_lights,
@@ -803,15 +1058,44 @@ class RocketScene:
         if ground_y < -60 * SCALE_Y:
             return
         blade_geometry = []
+        (
+            propulsion,
+            propulsion_radius,
+            minimum_falloff,
+            flutter_rate,
+            peak_bend,
+        ) = self.grass_propulsion_profile()
+        rocket_x = SCREEN_WIDTH / 2
         for center, phase, speed, gust_response, blades in self._grass:
             cluster_gust = 0.58 + 0.42 * math.sin(frame_count * 0.013 * speed + phase * 0.43)
             slow_push = math.sin(frame_count * 0.021 + phase) * 1.8 * SCALE_X
+            distance_from_rocket = abs(center - rocket_x)
+            propulsion_falloff = max(
+                minimum_falloff,
+                max(0.0, 1.0 - distance_from_rocket / propulsion_radius) ** 1.45,
+            )
+            outward = -1.0 if center < rocket_x else 1.0
+            propulsion_flutter = 0.76 + 0.24 * math.sin(
+                frame_count * flutter_rate * speed + phase
+            )
+            rocket_push = (
+                outward
+                * propulsion
+                * propulsion_falloff
+                * propulsion_flutter
+                * peak_bend
+            )
             for offset, height, blade_phase, amplitude in blades:
                 x = center + offset
                 if ground_y - height > SCREEN_HEIGHT:
                     continue
                 ripple = math.sin(frame_count * 0.052 * speed + phase + blade_phase)
-                sway = ripple * amplitude * (0.56 + cluster_gust * gust_response) + slow_push
+                height_response = min(1.0, height / (28 * SCALE_Y))
+                sway = (
+                    ripple * amplitude * (0.56 + cluster_gust * gust_response)
+                    + slow_push
+                    + rocket_push * height_response
+                )
                 tip_x = x + sway
                 mid_x = x + sway * 0.42
                 blade_geometry.append(
@@ -848,7 +1132,6 @@ class RocketScene:
         light = tuple(min(1.0, launch[channel] + fire[channel] * 0.24) for channel in range(3))
         steel = self._lit((0.105, 0.13, 0.15), light, 0.35)
         edge = self._lit((0.28, 0.32, 0.34), light, 0.45)
-        hazard = self._lit((0.48, 0.29, 0.055), light, 0.32)
 
         renderer.set_blend_mode("alpha")
         renderer.draw_rect(cx - 220 * SCALE_X, ground_y - 10 * SCALE_Y, 440 * SCALE_X, 24 * SCALE_Y, (*steel, alpha), fill=True)
@@ -867,12 +1150,6 @@ class RocketScene:
                 ground_y - 47 * SCALE_Y,
                 (*edge, alpha),
             )
-
-        stripe_width = 34 * SCALE_X
-        for index in range(8):
-            if index % 2 == 0:
-                x = cx - 176 * SCALE_X + index * stripe_width
-                renderer.draw_rect(x, ground_y - 22 * SCALE_Y, stripe_width, 7 * SCALE_Y, (*hazard, alpha), fill=True)
 
     def _draw_rocket(
         self,
@@ -1044,15 +1321,15 @@ class RocketScene:
             seconds = max(1, math.ceil(snapshot.launch_wait_remaining))
             return (
                 f"{cell_count} CELLS READY! LAUNCH IN {seconds}",
-                f"MOVE THE MAGNET TO ADD CELL {cell_count + 1}.",
+                f"HELP SOT-KUN FIND ENERGY SOURCE {cell_count + 1}.",
             )
         selected = snapshot.selected_generators
         if len(selected) == 1:
             level = snapshot.energy_levels.get(selected[0], 0.0)
             if level >= MAX_ENERGY_GAUGE:
-                return "CELL ENERGY RESERVED!", "MOVE THE MAGNET TO ANOTHER ENERGY SOURCE."
+                return "CELL ENERGY RESERVED!", "HELP SOT-KUN MOVE TO ANOTHER ENERGY SOURCE."
             return "POWER UP THE ENERGY CELL!", "SOT-KUN'S TRIP HOME STARTS WITH YOU."
-        return "POWER UP THE ACTIVE CELL!", "EACH FULL CELL KEEPS ITS ENERGY WHEN THE MAGNET MOVES."
+        return "POWER UP THE ACTIVE CELL!", "EACH FULL CELL KEEPS ITS ENERGY WHEN SOT-KUN MOVES."
 
     def draw_message(self, renderer, pixel_font, snapshot):
         message = self.message(snapshot)

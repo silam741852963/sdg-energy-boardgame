@@ -11,9 +11,12 @@ class PlayerSession:
     last_energy_time: Dict[GeneratorType, float] = field(default_factory=dict)
     start_time: float = 0.0
     end_time: float = 0.0
+    charge_end_time: float = 0.0
     completed: bool = False
     launch_committed: bool = False
     launch_generators: tuple[GeneratorType, ...] = ()
+    cell_started_at: Dict[GeneratorType, float] = field(default_factory=dict)
+    cell_times: Dict[GeneratorType, float] = field(default_factory=dict)
 
     def __post_init__(self):
         for gen_type in GeneratorType:
@@ -29,8 +32,21 @@ class PlayerSession:
 class RankingEntry:
     player_name: str
     time_taken: float
-    generator_type: GeneratorType
+    generator_type: GeneratorType | None = None
     timestamp: float = 0.0
+    generators: tuple[GeneratorType, ...] = ()
+    cell_times: Dict[GeneratorType, float] = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Keep construction/loading of the old one-generator records working.
+        if not self.generators and self.generator_type is not None:
+            self.generators = (self.generator_type,)
+        elif self.generators and self.generator_type is None:
+            self.generator_type = self.generators[0]
+
+    @property
+    def cell_count(self) -> int:
+        return len(self.generators)
 
 
 @dataclass(frozen=True)

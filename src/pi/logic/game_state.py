@@ -6,7 +6,7 @@ import threading
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import List, Dict
+from typing import Iterable, List, Dict
 
 from ..config import (
     LAUNCH_CONTINUE_SECONDS,
@@ -49,10 +49,11 @@ class GameState:
         rankings_enabled: bool = RANKINGS_ENABLED,
         launch_wait_seconds: float = LAUNCH_CONTINUE_SECONDS,
         mission_clock=None,
+        record_clock=None,
     ):
         self._lock = threading.RLock()
         self.current_session: PlayerSession | None = None
-        self.rankings: Dict[GeneratorType, List[RankingEntry]] = {gen: [] for gen in GeneratorType}
+        self.rankings: Dict[tuple[GeneratorType, ...], List[RankingEntry]] = {}
         self.rankings_enabled = rankings_enabled
         # Compatibility for the dormant ranking implementation. Gameplay must
         # use selected_generators and never collapse the battery to this value.
@@ -64,6 +65,7 @@ class GameState:
         self._mission_events: deque[MissionEvent] = deque()
         self.launch_wait_seconds = max(0.0, float(launch_wait_seconds))
         self._mission_clock = mission_clock or time.monotonic
+        self._record_clock = record_clock or time.time
         self._launch_deadline: float | None = None
         self.last_activity_time = time.time()
         self.mock_paused = False
@@ -145,7 +147,7 @@ class GameState:
             if not session or session.launch_committed:
                 return
 
-            # One magnet moves between generators. A completed cell becomes a
+            # Sot-kun moves between generators. A completed cell becomes a
             # reserved battery cell and survives removal; an unfinished cell is
             # still cancelled so partially charged energy cannot be banked.
             removed = [
@@ -156,6 +158,8 @@ class GameState:
             ]
             for generator in removed:
                 session.energy_levels[generator] = 0.0
+                session.cell_started_at.pop(generator, None)
+                session.cell_times.pop(generator, None)
                 self.filled_generators.discard(generator)
                 self.smooth_filler.cancel_fills_for_generator(generator)
 
@@ -168,10 +172,17 @@ class GameState:
             self.selected_generators = kept + added
             self.active_generator = eligible[0] if eligible else None
 
+            now = self._record_now()
             if self.selected_generators and session.start_time == 0.0:
-                session.start_time = time.time()
-            elif not self.selected_generators:
+                session.start_time = now
+            for generator in added:
+                if generator not in self.filled_generators:
+                    session.cell_started_at.setdefault(generator, now)
+            if not self.selected_generators:
                 session.start_time = 0.0
+                session.charge_end_time = 0.0
+                session.cell_started_at.clear()
+                session.cell_times.clear()
                 for generator in GeneratorType:
                     session.energy_levels[generator] = 0.0
                 self.filled_generators.clear()
@@ -248,6 +259,11 @@ class GameState:
         session.energy_levels[gen_type] = new_value
         if old_value < MAX_ENERGY_GAUGE <= new_value:
             self.filled_generators.add(gen_type)
+            completed_at = self._record_now()
+            started_at = session.cell_started_at.get(gen_type, session.start_time)
+            cell_time = completed_at - started_at
+            if self._valid_elapsed_time(cell_time):
+                session.cell_times[gen_type] = cell_time
             self._mission_events.append(
                 MissionEvent(MissionEventKind.CELL_FILLED, generator=gen_type)
             )
@@ -285,6 +301,7 @@ class GameState:
         self._launch_deadline = None
         session.launch_committed = True
         session.launch_generators = selected
+        session.charge_end_time = self._record_now()
         # Remember only sensors that are physically held at launch. Calls to
         # set_active_sensors() keep intersecting this set, so a release during
         # the animation permanently rearms that input for the next mission.
@@ -334,7 +351,7 @@ class GameState:
             if not self.current_session or self.current_session.completed:
                 return
             self.current_session.completed = True
-            self.current_session.end_time = time.time()
+            self.current_session.end_time = self._record_now()
             if self.rankings_enabled:
                 self._save_ranking()
 
@@ -479,34 +496,30 @@ class GameState:
         if self.current_ranking_entry is not None:
             self.discard_current_ranking()
 
-        # Determine completed generator type by checking which gauge >= MAX_ENERGY_GAUGE
-        completed_gen = next(
-            (
-                gen
-                for gen, level in self.current_session.energy_levels.items()
-                if level >= MAX_ENERGY_GAUGE
-            ),
-            None,
-        )
-        if not completed_gen:
-            completed_gen = self.active_generator or GeneratorType.WIND
-
-        time_taken = self.current_session.end_time - self.current_session.start_time
+        session = self.current_session
+        generators = tuple(session.launch_generators)
+        if len(generators) < 2:
+            return
+        time_taken = session.charge_end_time - session.start_time
         if not self._valid_elapsed_time(time_taken):
             self.current_ranking_entry = None
             self.last_ranking_result = None
             return
 
         self.current_ranking_entry = RankingEntry(
-            self.normalize_player_name(self.current_session.player_name) or "Player",
+            self.normalize_player_name(session.player_name) or "Player",
             time_taken,
-            completed_gen,
-            time.time(),
+            generator_type=generators[0],
+            timestamp=self._record_now(),
+            generators=generators,
+            cell_times={
+                generator: max(0.0, float(session.cell_times.get(generator, 0.0)))
+                for generator in generators
+            },
         )
-        if completed_gen not in self.rankings:
-            self.rankings[completed_gen] = []
-        self.rankings[completed_gen].append(self.current_ranking_entry)
-        self.rankings[completed_gen].sort(key=lambda x: x.time_taken)
+        loadout = self.canonical_loadout(generators)
+        self.rankings.setdefault(loadout, []).append(self.current_ranking_entry)
+        self.rankings[loadout].sort(key=lambda entry: entry.time_taken)
         self.last_ranking_result = None
         # Do not persist generated placeholder names. The provisional entry is
         # visible to the result flow, but is saved only after name confirmation.
@@ -516,9 +529,23 @@ class GameState:
             return 0.0
         if self.current_session.start_time == 0.0:
             return 0.0
-        if self.current_session.completed:
-            return self.current_session.end_time - self.current_session.start_time
-        return time.time() - self.current_session.start_time
+        if self.current_session.charge_end_time > 0.0:
+            return self.current_session.charge_end_time - self.current_session.start_time
+        return self._record_now() - self.current_session.start_time
+
+    @staticmethod
+    def canonical_loadout(
+        generators: GeneratorType | Iterable[GeneratorType],
+    ) -> tuple[GeneratorType, ...]:
+        if isinstance(generators, GeneratorType):
+            generators = (generators,)
+        unique = set(generators)
+        return tuple(generator for generator in GeneratorType if generator in unique)
+
+    @classmethod
+    def loadout_storage_key(cls, generators: Iterable[GeneratorType]) -> str:
+        loadout = cls.canonical_loadout(generators)
+        return f"{len(loadout)}:" + "+".join(generator.name for generator in loadout)
 
     @staticmethod
     def normalize_player_name(name: object) -> str:
@@ -535,6 +562,9 @@ class GameState:
             and value > 0.0
         )
 
+    def _record_now(self) -> float:
+        return getattr(self, "_record_clock", time.time)()
+
     @staticmethod
     def _clean_timestamp(value: object) -> float:
         if (
@@ -549,15 +579,16 @@ class GameState:
     def get_personal_best(
         self,
         name: str,
-        generator: GeneratorType,
+        generators: GeneratorType | Iterable[GeneratorType],
         exclude_current: bool = False,
     ) -> float | None:
         key = self.normalize_player_name(name).casefold()
         if not key:
             return None
+        loadout = self.canonical_loadout(generators)
         matches = [
             entry.time_taken
-            for entry in self.rankings.get(generator, [])
+            for entry in self.rankings.get(loadout, [])
             if (not exclude_current or entry is not self.current_ranking_entry)
             and self.normalize_player_name(entry.player_name).casefold() == key
         ]
@@ -580,9 +611,9 @@ class GameState:
             clean_name = "Player"
         self.current_session.player_name = clean_name
 
-        gen = current.generator_type
+        loadout = self.canonical_loadout(current.generators)
         key = clean_name.casefold()
-        entries = self.rankings.setdefault(gen, [])
+        entries = self.rankings.setdefault(loadout, [])
 
         # Partition by object identity first. Never use list.remove/equality here:
         # only records belonging to confirmed player may be replaced.
@@ -610,7 +641,7 @@ class GameState:
             )
             # Keep exactly one personal best for this name. Every differently
             # named player remains untouched, regardless of relative time.
-            self.rankings[gen] = [*different_players, best_entry]
+            self.rankings[loadout] = [*different_players, best_entry]
             personal_best_entry = best_entry
             kept_run = best_entry is current
             best_entry.timestamp = max(
@@ -618,12 +649,12 @@ class GameState:
             )
         else:
             # New name: rename provisional entry only. No existing player removed.
-            self.rankings[gen] = [*previous_entries, current]
+            self.rankings[loadout] = [*previous_entries, current]
 
-        self.rankings[gen].sort(key=lambda entry: entry.time_taken)
+        self.rankings[loadout].sort(key=lambda entry: entry.time_taken)
         final_rank = next(
             index
-            for index, entry in enumerate(self.rankings[gen], start=1)
+            for index, entry in enumerate(self.rankings[loadout], start=1)
             if entry is personal_best_entry
         )
         self.last_ranking_result = RankingResult(
@@ -643,12 +674,12 @@ class GameState:
     def discard_current_ranking(self):
         if self.current_ranking_entry is not None:
             current = self.current_ranking_entry
-            gen = current.generator_type
-            if gen in self.rankings:
+            loadout = self.canonical_loadout(current.generators)
+            if loadout in self.rankings:
                 # Dataclass equality can consider two distinct records equal.
                 # Filter by identity so cancellation removes only the pending run.
-                self.rankings[gen] = [
-                    entry for entry in self.rankings[gen] if entry is not current
+                self.rankings[loadout] = [
+                    entry for entry in self.rankings[loadout] if entry is not current
                 ]
             self.current_ranking_entry = None
         self.last_ranking_result = None
@@ -661,7 +692,7 @@ class GameState:
     def load_rankings(self):
         filepath = self._get_leaderboard_filepath()
         if not os.path.exists(filepath):
-            self.rankings = {gen: [] for gen in GeneratorType}
+            self.rankings = {}
             self._rankings_storage_safe = True
             return
 
@@ -681,10 +712,24 @@ class GameState:
         self.last_ranking_result = None
         self._rankings_storage_safe = True
 
-    def _deserialize_rankings(self, data) -> Dict[GeneratorType, List[RankingEntry]]:
-        loaded = {gen: [] for gen in GeneratorType}
+    def _deserialize_rankings(
+        self, data
+    ) -> Dict[tuple[GeneratorType, ...], List[RankingEntry]]:
+        loaded: Dict[tuple[GeneratorType, ...], List[RankingEntry]] = {}
 
-        if isinstance(data, dict):
+        if isinstance(data, dict) and data.get("schema_version") == 2:
+            records = data.get("records")
+            if not isinstance(records, dict):
+                raise ValueError("version 2 leaderboard records must be an object")
+            groups = []
+            for storage_key, entries in records.items():
+                if not isinstance(entries, list):
+                    raise ValueError(f"ranking group {storage_key!r} is not a list")
+                groups.append((None, entries))
+        elif isinstance(data, dict):
+            # Version 1 grouped records are retained as one-cell legacy
+            # loadouts. They remain visible and are rewritten only after a new
+            # result has been confirmed.
             groups = []
             for gen_name, entries in data.items():
                 if not isinstance(entries, list):
@@ -709,30 +754,58 @@ class GameState:
         else:
             raise ValueError("leaderboard root must be an object or list")
 
-        for gen, entries in groups:
+        for legacy_gen, entries in groups:
             for raw_entry in entries:
                 if not isinstance(raw_entry, dict):
                     continue
-                time_taken = raw_entry.get("time_taken", 0.0)
+                time_taken = raw_entry.get("total_time", raw_entry.get("time_taken", 0.0))
                 if not self._valid_elapsed_time(time_taken):
                     continue
-                loaded[gen].append(
-                    RankingEntry(
-                        player_name=self.normalize_player_name(
-                            raw_entry.get("player_name", "Player")
+                if legacy_gen is not None:
+                    generators = (legacy_gen,)
+                else:
+                    raw_generators = raw_entry.get("generators", [])
+                    if not isinstance(raw_generators, list):
+                        continue
+                    generators = tuple(
+                        generator
+                        for generator in (
+                            self._generator_from_name(value) for value in raw_generators
                         )
-                        or "Player",
-                        time_taken=float(time_taken),
-                        generator_type=gen,
-                        timestamp=self._clean_timestamp(
-                            raw_entry.get("timestamp", 0.0)
-                        ),
+                        if generator is not None
                     )
+                loadout = self.canonical_loadout(generators)
+                if not loadout:
+                    continue
+                raw_cell_times = raw_entry.get("cell_times", {})
+                cell_times = {}
+                if isinstance(raw_cell_times, dict):
+                    for name, value in raw_cell_times.items():
+                        generator = self._generator_from_name(name)
+                        if (
+                            generator in generators
+                            and isinstance(value, (int, float))
+                            and not isinstance(value, bool)
+                            and math.isfinite(value)
+                            and value >= 0.0
+                        ):
+                            cell_times[generator] = float(value)
+                entry = RankingEntry(
+                    player_name=self.normalize_player_name(
+                        raw_entry.get("player_name", "Player")
+                    )
+                    or "Player",
+                    time_taken=float(time_taken),
+                    generator_type=generators[0],
+                    timestamp=self._clean_timestamp(raw_entry.get("timestamp", 0.0)),
+                    generators=generators,
+                    cell_times={generator: cell_times.get(generator, 0.0) for generator in generators},
                 )
+                loaded.setdefault(loadout, []).append(entry)
 
-        for gen in GeneratorType:
+        for loadout in tuple(loaded):
             best_by_player = {}
-            for entry in loaded[gen]:
+            for entry in loaded[loadout]:
                 key = self.normalize_player_name(entry.player_name).casefold()
                 previous = best_by_player.get(key)
                 if previous is None:
@@ -742,7 +815,7 @@ class GameState:
                     best_by_player[key] = entry
                 else:
                     previous.timestamp = max(previous.timestamp, entry.timestamp)
-            loaded[gen] = sorted(
+            loaded[loadout] = sorted(
                 best_by_player.values(), key=lambda entry: entry.time_taken
             )
 
@@ -770,16 +843,22 @@ class GameState:
             return False
         filepath = self._get_leaderboard_filepath()
         try:
-            data = {}
-            for gen, entries in self.rankings.items():
-                data[gen.name] = [
+            records = {}
+            for loadout, entries in self.rankings.items():
+                records[self.loadout_storage_key(loadout)] = [
                     {
                         "player_name": r.player_name,
-                        "time_taken": r.time_taken,
-                        "timestamp": getattr(r, "timestamp", 0.0)
+                        "total_time": r.time_taken,
+                        "generators": [generator.name for generator in r.generators],
+                        "cell_times": {
+                            generator.name: r.cell_times.get(generator, 0.0)
+                            for generator in r.generators
+                        },
+                        "timestamp": getattr(r, "timestamp", 0.0),
                     }
                     for r in entries
                 ]
+            data = {"schema_version": 2, "records": records}
             self._write_json_atomic(filepath, data)
             return True
         except Exception as e:

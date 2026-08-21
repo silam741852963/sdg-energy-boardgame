@@ -103,7 +103,9 @@ class GaugeManager:
         renderer.set_blend_mode("alpha")
         cell_width = self.CELL_WIDTH * SCALE_X
         cell_height = self.CELL_HEIGHT * SCALE_Y
-        y = SCREEN_HEIGHT - 142 * SCALE_Y
+        # Center the complete housing vertically within the black ground block.
+        ground_surface_y = 820 * SCALE_Y
+        y = ground_surface_y + (SCREEN_HEIGHT - ground_surface_y - cell_height) / 2
         max_visibility = max(self._cells[g]["visibility"] for g in self._display_order)
         housing_alpha = scene_alpha * max_visibility
         housing_width = max(cell_width * 0.18, self._housing_width)

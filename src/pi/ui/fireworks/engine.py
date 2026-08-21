@@ -198,6 +198,7 @@ class FireworkEngine:
         self.player_base = []
         self.leaderboard_search_input = ""
         self.name_entry_completed = False
+        self.ranking_display_entry = None
 
         self.show_metrics = False
         self.fps_tracker = FPSTracker()
@@ -248,6 +249,70 @@ class FireworkEngine:
         self.name_suggestion = ""
         self.leaderboard_search_input = ""
         self.name_entry_completed = False
+        self.ranking_display_entry = None
+
+    def _begin_ranking_flow(self):
+        entry = self.game_state.current_ranking_entry
+        if entry is None:
+            self._finish_ranking_flow()
+            return
+        self.ranking_display_entry = entry
+        self.player_base = self.game_state.load_player_base()
+        known_names = {name.casefold() for name in self.player_base}
+        for rankings in self.game_state.rankings.values():
+            for ranking in rankings:
+                key = ranking.player_name.casefold()
+                if key not in known_names:
+                    self.player_base.append(ranking.player_name)
+                    known_names.add(key)
+        self.name_input = ""
+        self.name_suggestion = ""
+        self.leaderboard_search_input = ""
+        self.show_name_entry = True
+        self.show_leaderboard = False
+
+    def _finish_ranking_flow(self, discard_pending=False):
+        if discard_pending and self.game_state:
+            self.game_state.discard_current_ranking()
+        self.show_name_entry = False
+        self.show_leaderboard = False
+        self.name_input = ""
+        self.name_suggestion = ""
+        self.leaderboard_search_input = ""
+        self.ranking_display_entry = None
+
+    def _handle_ranking_key(self, event):
+        if self.show_name_entry:
+            if event.key == pygame.K_ESCAPE:
+                self._finish_ranking_flow(discard_pending=True)
+            elif event.key == pygame.K_RETURN:
+                result = self.game_state.update_player_name(self.name_input)
+                if result:
+                    self.game_state.add_player_to_base(result.player_name)
+                self.player_base = self.game_state.load_player_base()
+                self.show_name_entry = False
+                self.show_leaderboard = True
+            elif event.key == pygame.K_BACKSPACE:
+                self.name_input = self.name_input[:-1]
+                self._update_name_suggestion()
+            elif event.key in (pygame.K_TAB, pygame.K_RIGHT):
+                if self.name_suggestion:
+                    self.name_input = self.name_suggestion
+                    self._update_name_suggestion()
+            elif event.unicode and event.unicode.isprintable() and len(self.name_input) < 18:
+                self.name_input += event.unicode
+                self._update_name_suggestion()
+            return True
+
+        if self.show_leaderboard:
+            if event.key in (pygame.K_ESCAPE, pygame.K_RETURN):
+                self._finish_ranking_flow()
+            elif event.key == pygame.K_BACKSPACE:
+                self.leaderboard_search_input = self.leaderboard_search_input[:-1]
+            elif event.unicode and event.unicode.isprintable() and len(self.leaderboard_search_input) < 18:
+                self.leaderboard_search_input += event.unicode
+            return True
+        return False
 
     def _reset_mission_input(self):
         """Reset mission state without leaving stale or swallowed selectors."""
@@ -261,7 +326,7 @@ class FireworkEngine:
             self.game_state.set_active_sensors(accepted)
 
     def _toggle_mock_hall_sensor(self, generator):
-        """Move the single debug magnet to a generator, or lift it off."""
+        """Move the debug Sot-kun selector to a generator, or lift it off."""
         if self.mock_selected == [generator]:
             self.mock_selected.clear()
         else:
@@ -308,6 +373,8 @@ class FireworkEngine:
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_clicked = True
             elif event.type == pygame.KEYDOWN:
+                if self._handle_ranking_key(event):
+                    continue
                 if event.key == pygame.K_ESCAPE:
                     self.running = False
                 elif event.key == pygame.K_m:
@@ -343,6 +410,13 @@ class FireworkEngine:
             self.drone_manager.update(self.frame_count, 1.0)
             return
 
+        if self.show_name_entry or self.show_leaderboard:
+            self.lighting.update()
+            self.script_manager.update()
+            self.firework_manager.update()
+            self.drone_manager.update(self.frame_count, 1.0)
+            return
+
         self.game_state.check_inactivity()
         self.snapshot = self.game_state.snapshot()
         self._play_selection_feedback(self.snapshot)
@@ -361,6 +435,11 @@ class FireworkEngine:
             self.game_state.mark_launch_complete()
             self.audio.play_end_chime()
             self.snapshot = self.game_state.snapshot()
+            if (
+                getattr(self.game_state, "rankings_enabled", False)
+                and self.game_state.current_ranking_entry is not None
+            ):
+                self._begin_ranking_flow()
         if actions.reset_requested:
             self._reset_mission_input()
             self.rocket_scene.reset()
@@ -440,6 +519,161 @@ class FireworkEngine:
             life_scale=life_scale,
         )
 
+    @staticmethod
+    def _ranking_generator_label(generator):
+        return {
+            GeneratorType.WIND: "WIND",
+            GeneratorType.SOLAR: "SOLAR",
+            GeneratorType.HAND_CRANK: "CRANK",
+            GeneratorType.COIL: "COIL",
+        }[generator]
+
+    def _draw_centered_text(self, text, y, font, color, center_x=SCREEN_WIDTH / 2):
+        width, _ = font.size(text)
+        self.renderer.draw_text(int(center_x - width / 2), int(y), text, font, color)
+
+    def _draw_rocket_ranking_overlay(self):
+        entry = self.ranking_display_entry
+        if entry is None:
+            return
+        loadout = self.game_state.canonical_loadout(entry.generators)
+        entries = self.game_state.rankings.get(loadout, [])
+        labels = [self._ranking_generator_label(generator) for generator in entry.generators]
+        loadout_text = " + ".join(labels)
+        accent = (0.98, 0.72, 0.20, 1.0)
+        white = (0.90, 0.95, 1.0, 1.0)
+        muted = (0.55, 0.66, 0.78, 1.0)
+
+        # Four-cell split rows need substantially more horizontal room than
+        # the old single-generator board. Keep a small 80 px safe margin.
+        panel_w = min(int(1760 * SCALE_X), SCREEN_WIDTH - int(80 * SCALE_X))
+        panel_h = int(780 * SCALE_Y)
+        ox = (SCREEN_WIDTH - panel_w) // 2
+        oy = (SCREEN_HEIGHT - panel_h) // 2
+        self.renderer.set_blend_mode("alpha")
+        self.renderer.draw_rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (0.0, 0.01, 0.035, 0.68), fill=True)
+        self.renderer.draw_rect(ox, oy, panel_w, panel_h, (0.01, 0.025, 0.06, 0.98), fill=True)
+        self.renderer.draw_rect(ox, oy, panel_w, panel_h, (0.70, 0.85, 1.0, 0.95), fill=False)
+        self.renderer.draw_rect(
+            ox + int(8 * SCALE_X), oy + int(8 * SCALE_Y),
+            panel_w - int(16 * SCALE_X), panel_h - int(16 * SCALE_Y),
+            (0.15, 0.34, 0.56, 0.9), fill=False,
+        )
+
+        title = (
+            f"{len(loadout)}-CELL ROCKET RECORD"
+            if self.show_name_entry
+            else f"{len(loadout)}-CELL ROCKET RANKINGS"
+        )
+        self._draw_centered_text(title, oy + 46 * SCALE_Y, self.fonts["bold_xlarge"], accent)
+        self._draw_centered_text(loadout_text, oy + 120 * SCALE_Y, self.fonts["large"], white)
+        self._draw_centered_text(
+            f"TOTAL  {entry.time_taken:.2f}s",
+            oy + 174 * SCALE_Y,
+            self.fonts["bold_large"],
+            accent,
+        )
+
+        cell_summary = "   ".join(
+            f"{self._ranking_generator_label(generator)} {entry.cell_times.get(generator, 0.0):.2f}s"
+            for generator in entry.generators
+        )
+        self._draw_centered_text(cell_summary, oy + 230 * SCALE_Y, self.fonts["medium"], white)
+
+        if self.show_name_entry:
+            comparison_name = self.name_suggestion or self.name_input
+            previous_best = self.game_state.get_personal_best(
+                comparison_name, loadout, exclude_current=True
+            )
+            if previous_best is not None:
+                self._draw_centered_text(
+                    f"{comparison_name}'S BEST FOR THIS BATTERY  {previous_best:.2f}s",
+                    oy + 278 * SCALE_Y,
+                    self.fonts["medium"], muted,
+                )
+
+            box_w = int(850 * SCALE_X)
+            box_h = int(86 * SCALE_Y)
+            bx = ox + (panel_w - box_w) // 2
+            by = oy + int(350 * SCALE_Y)
+            self.renderer.draw_rect(bx, by, box_w, box_h, (0.0, 0.01, 0.025, 1.0), fill=True)
+            self.renderer.draw_rect(bx, by, box_w, box_h, accent, fill=False)
+            display = self.name_input
+            cursor = "_" if (self.frame_count // 30) % 2 == 0 else " "
+            text_x = bx + int(28 * SCALE_X)
+            text_y = by + int(16 * SCALE_Y)
+            self.renderer.draw_text(text_x, text_y, display + cursor, self.fonts["xlarge"], white)
+            if self.name_suggestion and len(self.name_suggestion) > len(self.name_input):
+                typed_width, _ = self.fonts["xlarge"].size(display)
+                suffix = self.name_suggestion[len(self.name_input):]
+                self.renderer.draw_text(
+                    text_x + typed_width, text_y, suffix, self.fonts["xlarge"], muted
+                )
+                self._draw_centered_text(
+                    "TAB OR RIGHT: AUTO-FILL",
+                    by + box_h + 20 * SCALE_Y,
+                    self.fonts["small"], muted,
+                )
+            self._draw_centered_text(
+                "ENTER: SAVE RECORD     ESC: SKIP",
+                oy + panel_h - 82 * SCALE_Y,
+                self.fonts["medium"], white,
+            )
+        else:
+            result = self.game_state.last_ranking_result
+            if result:
+                if result.is_first_result:
+                    result_text = "FIRST RECORD FOR THIS BATTERY"
+                elif result.is_personal_best:
+                    result_text = f"NEW PERSONAL BEST - {result.improvement:.2f}s FASTER"
+                elif result.difference_from_best == 0.0:
+                    result_text = "PERSONAL BEST MATCHED"
+                else:
+                    result_text = f"{result.difference_from_best:.2f}s FROM YOUR BEST"
+                if result.final_rank is not None:
+                    result_text += f"   RANK #{result.final_rank}"
+                self._draw_centered_text(
+                    result_text, oy + 278 * SCALE_Y, self.fonts["medium"], accent
+                )
+
+            query = self.leaderboard_search_input.casefold().strip()
+            visible_entries = [
+                (rank, ranked)
+                for rank, ranked in enumerate(entries, start=1)
+                if not query or query in ranked.player_name.casefold()
+            ][:5]
+            header_y = oy + int(332 * SCALE_Y)
+            self.renderer.draw_text(ox + int(50 * SCALE_X), header_y, "PLAYER", self.fonts["small"], muted)
+            self.renderer.draw_text(ox + int(570 * SCALE_X), header_y, "TOTAL", self.fonts["small"], muted)
+            self.renderer.draw_text(ox + int(740 * SCALE_X), header_y, "CELL TIMES", self.fonts["small"], muted)
+            for row, (rank, ranked) in enumerate(visible_entries, start=1):
+                row_y = header_y + int((row * 58) * SCALE_Y)
+                self.renderer.draw_text(
+                    ox + int(50 * SCALE_X), row_y,
+                    f"{rank}. {ranked.player_name}", self.fonts["medium"], white,
+                )
+                self.renderer.draw_text(
+                    ox + int(570 * SCALE_X), row_y,
+                    f"{ranked.time_taken:.2f}s", self.fonts["medium"], accent,
+                )
+                splits = " / ".join(
+                    f"{self._ranking_generator_label(generator)} {ranked.cell_times.get(generator, 0.0):.2f}"
+                    for generator in ranked.generators
+                )
+                self.renderer.draw_text(
+                    ox + int(740 * SCALE_X), row_y, splits, self.fonts["small"], white,
+                )
+            search_text = f"SEARCH: {self.leaderboard_search_input}"
+            self.renderer.draw_text(
+                ox + int(50 * SCALE_X), oy + panel_h - int(96 * SCALE_Y),
+                search_text, self.fonts["medium"], muted,
+            )
+            self.renderer.draw_text(
+                ox + panel_w - int(490 * SCALE_X), oy + panel_h - int(96 * SCALE_Y),
+                "ENTER OR ESC: NEXT MISSION", self.fonts["medium"], white,
+            )
+        self.renderer.set_blend_mode("additive")
+
     def _draw_rocket_mission(self):
         self.renderer.start_frame()
         self.lighting.draw_background(self.renderer)
@@ -497,7 +731,7 @@ class FireworkEngine:
                 modes.append("HALL")
             if self.mock_ble:
                 modes.append("BLE")
-            label = "DEBUG " + "+".join(modes) + "  1-4 MOVE MAGNET  Q-W-E-R CHARGE  0 LIFT"
+            label = "DEBUG " + "+".join(modes) + "  1-4 MOVE SOT-KUN  Q-W-E-R CHARGE  0 LIFT"
             self.renderer.draw_pixel_text(
                 24 * SCALE_X,
                 SCREEN_HEIGHT - 32 * SCALE_Y,
@@ -522,6 +756,9 @@ class FireworkEngine:
                 (0.86, 0.92, 1.0, 0.95),
             )
 
+        if self.show_name_entry or self.show_leaderboard:
+            self._draw_rocket_ranking_overlay()
+
         try:
             screen_w, screen_h = pygame.display.get_window_size()
         except AttributeError:
@@ -529,9 +766,8 @@ class FireworkEngine:
         self.renderer.end_frame(screen_w, screen_h)
 
     def draw(self):
-        if not self.game_state or not getattr(self.game_state, "rankings_enabled", False):
-            self._draw_rocket_mission()
-            return
+        self._draw_rocket_mission()
+        return
         # 1. Start frame (binds offscreen framebuffer and sets viewport to 1920x1080)
         self.renderer.start_frame()
 

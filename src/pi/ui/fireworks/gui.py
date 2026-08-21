@@ -89,9 +89,6 @@ class ControlPanel:
     def update(self, events, mouse_pos, mouse_click_left) -> bool:
         for event in events:
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_TAB:
-                    self.visible = not self.visible
-                
                 if self.visible:
                     if event.key == pygame.K_UP:
                         self.kb_row = max(0, self.kb_row - 1)
@@ -358,7 +355,7 @@ class ControlPanel:
 
         if not self.visible:
             c = palette.get_color(121)
-            msg = "Press TAB for Laboratory"
+            msg = "Laboratory hidden"
             if self.has_custom_spec:
                 msg += f" | Active: Custom {self.selected_type.capitalize()}"
             renderer.draw_text(
@@ -382,7 +379,7 @@ class ControlPanel:
         renderer.draw_text(
             mx_off + int(20 * SCALE_X),
             my_off + int(20 * SCALE_Y),
-            "[ FIREWORK LABORATORY ] (TAB to hide)",
+            "[ FIREWORK LABORATORY - INTERNAL DEBUG ]",
             fonts["medium"],
             c_white,
         )

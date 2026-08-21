@@ -1,7 +1,7 @@
 # SDG Energy Boardgame
 
 A hardware–software board game for teaching sustainable energy concepts. Players
-move one magnet between micro-energy generators, reserving two to four completed
+move Sot-kun, the magnetic selector, between micro-energy generators, reserving two to four completed
 cells in one on-screen battery to launch Sot-kun's rocket home.
 
 The application targets a 2 GB Raspberry Pi 5 connected to CleanBoost BLE beacons and
@@ -86,7 +86,7 @@ python -m pi.main --debug
 
 If GPIO initialization fails in a real-Hall mode, the application logs a warning
 and continues with mocked Hall input. In mocked Hall mode, keys `1`–`4` move one
-virtual magnet between Wind, Solar, Hand Crank, and Coil; pressing the active key
+virtual Sot-kun selector between Wind, Solar, Hand Crank, and Coil; pressing the active key
 lifts it. In mocked BLE mode, `Q`, `W`, `E`, and `R`
 charge those matching cells. `0` clears all mocked Hall selections, `Backspace`
 resets, `M` toggles metrics, and `Esc` quits. Mock energy is manual and
@@ -112,11 +112,13 @@ polarity are configured in [`receiver_wire.py`](src/pi/hardware/receiver_wire.py
 
 ## Game behavior
 
-1. With no Hall sensors selected, Ablic floats over a procedural star field.
+1. With no Hall sensors selected, Ablic floats over a procedural star field
+   with clearly blinking stars and a recurring comet. The first comet appears
+   within four seconds of startup.
 2. The first selected sensor pans down to the grounded rocket and adds its colored
    cell to the battery. Each generator plays a distinct rising confirmation tone;
    removal plays its descending counterpart.
-3. Fill that cell to 100%, then move the same magnet to another sensor. A full
+3. Fill that cell to 100%, then help Sot-kun move to another sensor. A full
    cell remains in the battery with all its energy; leaving an unfinished cell
    removes it and discards only its partial energy. Up to four full cells can be
    reserved in order.
@@ -128,28 +130,35 @@ polarity are configured in [`receiver_wire.py`](src/pi/hardware/receiver_wire.py
    nozzle leak. The second stage is clearly active, while the third becomes
    dramatically denser, brighter, longer-lived, and more energetic.
 6. At two and three full cells, an eight-second on-screen countdown lets the
-   player move the magnet to an optional next cell. A new Hall selection cancels
+   player move Sot-kun to an optional next cell. A new Hall selection cancels
    the countdown immediately. Four full cells launch without another wait.
 7. When the countdown expires, the battery atomically locks. Two-cell launches
    use the former four-cell spectacle as their baseline; three- and four-cell
    launches add progressively richer exhaust, fireworks, impact, and shake.
-   Their launch animations last approximately 14.2, 17.2, and 20.2 seconds.
-8. The camera follows the rocket high above the initial scene, then automatically
-   returns to Ablic. The next mission unlocks as soon as the logo returns, with
-   the rocket restored to its launch base. A magnet held through reset must be
-   removed and presented again; newly presented magnets respond immediately. A
-   ready chime confirms that the screen is interactive again.
+   Their launch animations last approximately 15.6, 18.6, and 21.6 seconds.
+   Rocket wash bends grass outward as charge builds. Its influence radius and
+   bend/flutter velocity receive a second 2× increase, then span far beyond the
+   entire view at peak liftoff before fading as the rocket climbs away.
+8. The camera follows the rocket high above the initial scene through a longer
+   3.6-second departure, then freezes there under the record overlay. After the
+   player saves or skips the result, the
+   return-to-Ablic animation plays and unlocks the next mission with the rocket
+   restored to its launch base. Sot-kun held through reset must be removed and
+   presented again; a newly presented Sot-kun responds immediately. A ready chime
+   confirms that the screen is interactive.
 
-Rankings are disabled by `RANKINGS_ENABLED = False`: production does not load,
-save, or display ranking data. The legacy ranking implementation remains for a
-later design.
+After the rocket returns, the player can save the run under their name. Records
+are separated by exact battery loadout: both the number of cells and the kinds
+of generators must match. Each record shows the total charging/decision time
+and the time spent filling every cell. Existing names remain available for
+auto-fill.
 
 ## Runtime data
 
 The application creates these files in the repository/deployment root as needed:
 
-- `leaderboard.json` — dormant ranking storage when rankings are explicitly enabled
-- `players_database.json` — dormant player suggestions when rankings are enabled
+- `leaderboard.json` — versioned rocket records; old generator records migrate on load
+- `players_database.json` — player-name suggestions for auto-fill
 - `clean_boost_test.log` — CleanBoost test statistics
 - `hall_ic_debug.log` — timestamped GPIO transitions
 

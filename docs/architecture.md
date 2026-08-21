@@ -26,10 +26,10 @@ the receiver loop does not run a competing inactivity update.
 
 `GameState` owns the authoritative ordered battery and energy rules.
 
-- `active_sensors` records the currently present physical magnets.
+- `active_sensors` records the Hall sensors currently selected by Sot-kun.
 - `selected_generators` preserves completed cells in order and appends the cell
-  under the movable magnet on the right.
-- Removing the magnet cancels and resets an unfinished cell. A cell that reached
+  under the movable Sot-kun selector on the right.
+- Moving Sot-kun away cancels and resets an unfinished cell. A cell that reached
   100% is reserved with its energy intact until launch or mission reset.
 - Energy is accepted only when its matching generator is selected.
 - There is no energy drain or selection timeout.
@@ -59,19 +59,18 @@ transition.
 
 `RocketScene` has seven explicit phases:
 
-1. `ATTRACT` — dark-blue procedural stars and the Ablic drone pattern.
+1. `ATTRACT` — dark-blue procedural stars, clearly varied blinking, a recurring comet, and the Ablic drone pattern.
 2. `REVEAL` — Ablic flies upward while parallax and ground geometry pan down.
 3. `CHARGING` — the textured red-and-white block rocket, mission messages, and expanding battery.
 4. `IGNITION` — the rocket shakes and emits a grounded tail plume.
-5. `ASCENT` — the camera follows the accelerating rocket beyond the initial view.
-6. `DEPARTURE` — a 2.2-second tracked follow-through holds the rocket before a
-   gradual camera release sends it beyond the frame.
-7. `RETURN` — the depth layers reverse and Ablic returns automatically. When the
+5. `ASCENT` — the camera follows the accelerating rocket beyond the initial view while stars intensify and liftoff triggers a boosted comet, meteor shower, and constellation pulse.
+6. `DEPARTURE` — a 3.6-second tracked follow-through holds the rocket longer before a late gradual camera release sends it beyond the frame.
+7. `RETURN` — after the ranking flow closes, the depth layers reverse and Ablic returns. When the
    logo is restored, gameplay unlocks and the rocket and camera return to their
    initial transforms.
 
 Two-, three-, and four-cell launches use 4+8, 5+10, and 6+12 second
-ignition/ascent timings followed by the shared 2.2-second departure. The
+ignition/ascent timings followed by the shared 3.6-second departure. The
 two-cell tier matches the former four-cell impact baseline; larger batteries
 increase plume layers, firework density and lifetime, source-color
 variety, dust, shockwave strength, audio intensity, and screen shake.
@@ -152,24 +151,35 @@ launch thrust, explosions, launch completion, and the mission-ready logo cue
 cover the remaining player-facing state changes. No audio arrays are allocated
 per frame.
 
+Sky stars and the active comet trail share one GPU particle batch. Startup
+guarantees a comet within four seconds; later passes wait a randomized 8–14
+seconds after the previous pass ends. Ignition accelerates that timer; liftoff
+guarantees or boosts a comet and adds a short meteor shower plus expanding
+constellation pulse to the same batch. Star blink speed and intensity also rise
+through ignition, ascent, and departure. Grass remains clustered;
+its ambient gust is combined with a distance-faded outward rocket wash. The wash
+uses a second 2× increase to both influence radius and bend/flutter velocity
+through charged shaking and ignition. At the ascent transition its radius is
+3.2 viewport widths from center and guarantees a strong impulse to every grass
+cluster, then falls away as the rocket climbs.
+
 ## Hardware and debug adapters
 
 Known BLE addresses map directly to `GeneratorType`; unknown advertisements are
 ignored. Four gpiozero `Button` inputs are rescanned together on every edge. The
-gameplay path expects one movable magnet; each completed generator remains in the
-battery when that magnet moves to the next Hall sensor.
+gameplay path expects one movable Sot-kun selector; each completed generator remains in the
+battery when Sot-kun moves to the next Hall sensor.
 
 Mock input is deterministic:
 
 | Key | Action |
 | --- | --- |
-| 1 / 2 / 3 / 4 | Move the magnet to Wind / Solar / Hand Crank / Coil; repeat to lift it |
+| 1 / 2 / 3 / 4 | Move Sot-kun to Wind / Solar / Hand Crank / Coil; repeat to lift it |
 | Q / W / E / R | Charge the matching selected cell |
 | 0 | Clear all mocked Hall selections |
 | Backspace | Reset mission |
 | M | Toggle performance metrics |
-| Tab | Toggle the explicit firework editor |
-| F5 | Export the current editor firework |
+| F5 | Export the current internal firework spec |
 | Escape | Quit |
 
 The old quick combination selectors, random mock BLE generation, pause shortcut,
@@ -178,16 +188,25 @@ have been removed.
 
 ## Rankings and persistence
 
-`RANKINGS_ENABLED` defaults to `False`. Production startup does not load
-ranking files, mission completion does not stage or save an entry, and the name
-and leaderboard flow is unreachable. Ranking models and persistence methods remain
-in `GameState` for a later product design and can be exercised explicitly with
-`GameState(rankings_enabled=True)`.
+`RANKINGS_ENABLED` defaults to `True`. When the rocket finishes its departure,
+the high-altitude scene pauses under a name-entry overlay before Ablic starts to
+return. Confirming a name
+saves one personal best per exact loadout (canonical cell kinds plus cell count),
+then shows the matching top five. Total time stops when launch is committed, so
+the different launch-animation tiers do not affect results. Per-cell times cover
+each cell's active filling interval.
+
+`leaderboard.json` uses schema version 2 and stores total time, ordered generator
+cells, and an individual duration for every cell. Version 1 grouped and flat
+leaderboards still load as preserved one-cell legacy records. The existing
+player database, case-insensitive name normalization, auto-fill suggestions,
+provisional confirmation, personal-best replacement, atomic writes, and
+load-error write protection remain in place.
 
 Runtime diagnostics may still write `clean_boost_test.log` and
-`hall_ic_debug.log`. Legacy ranking paths are `leaderboard.json` and
-`players_database.json`; JSON writes remain atomic and parse failures still
-block destructive overwrites.
+`hall_ic_debug.log`. Ranking paths remain `leaderboard.json` and
+`players_database.json`; JSON writes are atomic and parse failures block
+destructive overwrites.
 
 ## Validation and deployment
 
