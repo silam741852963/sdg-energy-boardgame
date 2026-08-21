@@ -143,6 +143,31 @@ class Renderer:
         )
         self.line_program["u_resolution"].value = self.resolution
 
+        colored_line_vert = """#version 330
+        precision highp float;
+        in vec2 in_vert;
+        in vec4 in_color;
+        out vec4 v_color;
+        uniform vec2 u_resolution;
+        void main() {
+            vec2 ndc = (in_vert / u_resolution) * 2.0 - 1.0;
+            ndc.y = -ndc.y;
+            gl_Position = vec4(ndc, 0.0, 1.0);
+            v_color = in_color;
+        }"""
+        colored_line_frag = """#version 330
+        precision highp float;
+        in vec4 v_color;
+        out vec4 fragColor;
+        void main() {
+            fragColor = v_color;
+        }"""
+        self.colored_line_program = self.ctx.program(
+            vertex_shader=colored_line_vert,
+            fragment_shader=colored_line_frag,
+        )
+        self.colored_line_program["u_resolution"].value = self.resolution
+
         # 4. Ellipse Shader
         ellipse_vert = """#version 330
         precision highp float;
@@ -318,6 +343,11 @@ class Renderer:
         self.line_vao = self.ctx.vertex_array(
             self.line_program, [(self.line_vbo, "2f", "in_vert")]
         )
+        self.colored_line_vbo = self.ctx.buffer(reserve=4096 * 6 * 4)
+        self.colored_line_vao = self.ctx.vertex_array(
+            self.colored_line_program,
+            [(self.colored_line_vbo, "2f 4f", "in_vert", "in_color")],
+        )
 
         # Fullscreen quad for final blit
         screen_quad = np.array(
@@ -480,6 +510,20 @@ class Renderer:
         # Render instanced particles
         self.particle_vao.render(moderngl.TRIANGLE_STRIP, instances=num_particles)
 
+    def create_static_texture(self, width, height, rgba_bytes):
+        """Upload a reusable RGBA scene layer once."""
+        texture = self.ctx.texture((int(width), int(height)), 4, rgba_bytes)
+        texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+        return texture
+
+    def draw_static_texture(self, texture, x, y, width, height, color=(1.0, 1.0, 1.0, 1.0)):
+        texture.use(0)
+        self.texture_program["u_pos"].value = (float(x), float(y))
+        self.texture_program["u_size"].value = (float(width), float(height))
+        self.texture_program["u_color"].value = tuple(float(value) for value in color)
+        self.texture_program["u_texture"].value = 0
+        self.texture_vao.render(moderngl.TRIANGLE_STRIP)
+
     def draw_rect(self, x, y, w, h, color, fill=True):
         r, g, b, *a = color
         alpha = a[0] if a else 1.0
@@ -539,6 +583,30 @@ class Renderer:
         self.line_program["u_color"].value = (r, g, b, alpha)
         self.line_vao.render(moderngl.LINES)
 
+    def draw_colored_lines(self, lines):
+        """Draw many independently colored line segments in one GPU call."""
+        if not lines:
+            return
+        rows = np.asarray(lines, dtype="f4")
+        vertices = np.empty((len(rows) * 2, 6), dtype="f4")
+        vertices[0::2, :2] = rows[:, 0:2]
+        vertices[1::2, :2] = rows[:, 2:4]
+        vertices[0::2, 2:] = rows[:, 4:8]
+        vertices[1::2, 2:] = rows[:, 4:8]
+        needed_size = vertices.nbytes
+        if needed_size > self.colored_line_vbo.size:
+            old_vbo = self.colored_line_vbo
+            old_vao = self.colored_line_vao
+            self.colored_line_vbo = self.ctx.buffer(reserve=needed_size)
+            self.colored_line_vao = self.ctx.vertex_array(
+                self.colored_line_program,
+                [(self.colored_line_vbo, "2f 4f", "in_vert", "in_color")],
+            )
+            old_vao.release()
+            old_vbo.release()
+        self.colored_line_vbo.write(vertices.tobytes())
+        self.colored_line_vao.render(moderngl.LINES, vertices=len(vertices))
+
     def draw_text(self, x, y, text, font, color):
         if not text:
             return
@@ -574,6 +642,33 @@ class Renderer:
             float(entry.width * 1.0),
             float(entry.height * 1.0),
         )
+        self.texture_program["u_color"].value = (1.0, 1.0, 1.0, alpha)
+        self.texture_program["u_texture"].value = 0
+        self.texture_vao.render(moderngl.TRIANGLE_STRIP)
+
+    def draw_pixel_text(self, x, y, text, pixel_font, scale, color, centered=False):
+        if not text:
+            return
+        r, g, b, *a = color
+        alpha = a[0] if a else 1.0
+        py_color = (int(r * 255), int(g * 255), int(b * 255))
+        cache_key = ("pixel", text.upper(), int(scale), py_color)
+        entry = self.text_cache.get(cache_key)
+        if entry is None:
+            surface = pixel_font.render(text, int(scale), py_color)
+            width, height = surface.get_size()
+            texture = self.ctx.texture(
+                (width, height), 4, pygame.image.tobytes(surface, "RGBA", False)
+            )
+            texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+            entry = TextCacheEntry(texture, width, height)
+            self.text_cache[cache_key] = entry
+        self.text_used_this_frame.add(cache_key)
+        if centered:
+            x -= entry.width / 2
+        entry.texture.use(0)
+        self.texture_program["u_pos"].value = (float(x), float(y))
+        self.texture_program["u_size"].value = (float(entry.width), float(entry.height))
         self.texture_program["u_color"].value = (1.0, 1.0, 1.0, alpha)
         self.texture_program["u_texture"].value = 0
         self.texture_vao.render(moderngl.TRIANGLE_STRIP)

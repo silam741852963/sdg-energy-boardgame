@@ -85,8 +85,6 @@ class WireReceiver:
         # Keep the async task alive so the program doesn't exit
         try:
             while True:
-                # Poll inactivity timer
-                self.game_state.check_inactivity()
                 await asyncio.sleep(1.0)
         finally:
             # Safely release the GPIO pins when the program stops

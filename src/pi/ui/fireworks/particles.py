@@ -15,6 +15,10 @@ from . import palette
 HALF_SCREEN_WIDTH = SCREEN_WIDTH / 2.0
 HALF_SCREEN_HEIGHT = SCREEN_HEIGHT / 2.0
 PALETTE_ARR = np.array(palette.RGB_PALETTE, dtype=np.float32)
+FIREWORK_PALETTE_ARR = np.array(
+    palette.LUMINOUS_FIREWORK_PALETTE,
+    dtype=np.float32,
+)
 FIREWORK_NAME_TO_TYPE = {name: idx for idx, name in enumerate(FIREWORK_TYPES)}
 
 
@@ -25,6 +29,8 @@ class Particle:
 
 
 class ParticleSystem:
+    MAX_TRAIL_INSTANCES = 4000
+
     def __init__(self, max_particles=100000):
         self.max_particles = max_particles
         self.split_sound_position = None
@@ -75,6 +81,7 @@ class ParticleSystem:
         self.has_trail = np.zeros(max_particles, dtype=bool)
         self.trail_len = np.zeros(max_particles, dtype=np.int32)
         self.glitter = np.zeros(max_particles, dtype=bool)
+        self.is_scene_effect = np.zeros(max_particles, dtype=bool)
 
         # Behavior type (0=None, 1=Swim, 2=Spin, 3=Waterfall)
         self.behavior_type = np.zeros(max_particles, dtype=np.int8)
@@ -219,6 +226,7 @@ class ParticleSystem:
         self.spin_angle[idxs_arr] = np.random.uniform(0, math.pi * 2, count)
 
         self.spec_name_type[idxs_arr] = FIREWORK_NAME_TO_TYPE.get(spec.name, 0)
+        self.is_scene_effect[idxs_arr] = False
         self.radius[idxs_arr] = spec.radius
         self.intensity_mod[idxs_arr] = spec.intensity
 
@@ -313,6 +321,7 @@ class ParticleSystem:
         self.is_palm_tail_shell[idxs_arr] = False
         self.behavior_type[idxs_arr] = 0
         self.spec_name_type[idxs_arr] = p_spec_types
+        self.is_scene_effect[idxs_arr] = False
         self.radius[idxs_arr] = p_radius
         self.intensity_mod[idxs_arr] = p_intensity_mod
 
@@ -328,7 +337,126 @@ class ParticleSystem:
         self.px[idxs_arr] = pxs * factor + HALF_SCREEN_WIDTH
         self.py[idxs_arr] = pys * factor + HALF_SCREEN_HEIGHT
 
+    def spawn_scene_effect(
+        self,
+        screen_x,
+        screen_y,
+        vx,
+        vy,
+        colors,
+        count,
+        life=60,
+        size=7.0,
+        gravity=0.08,
+        drag=0.02,
+        trail_len=0,
+        intensity=1.0,
+    ):
+        """Spawn lightweight 2D rocket effects inside the shared particle pool."""
+        count = min(int(count), len(self.free_indices))
+        if count <= 0:
+            return
+        indices = np.array([self.free_indices.pop() for _ in range(count)], dtype=np.int32)
+        x_values = np.broadcast_to(screen_x, (count,)).astype(np.float32)
+        y_values = np.broadcast_to(screen_y, (count,)).astype(np.float32)
+        vx_values = np.broadcast_to(vx, (count,)).astype(np.float32)
+        vy_values = np.broadcast_to(vy, (count,)).astype(np.float32)
+        if not isinstance(colors, (list, tuple, np.ndarray)):
+            colors = [colors]
+        color_indices = np.array(
+            [COLOR_MAP.get(colors[index % len(colors)], 121) for index in range(count)],
+            dtype=np.int32,
+        )
 
+        self.active[indices] = True
+        self.x[indices] = x_values - HALF_SCREEN_WIDTH
+        self.y[indices] = y_values - HALF_SCREEN_HEIGHT
+        self.z[indices] = 0.0
+        self.vx[indices] = vx_values
+        self.vy[indices] = vy_values
+        self.vz[indices] = 0.0
+        self.launch_vx[indices] = vx_values
+        self.launch_vy[indices] = vy_values
+        self.launch_vz[indices] = 0.0
+        self.age[indices] = 0
+        life_values = np.maximum(1, np.asarray(life, dtype=np.int32))
+        self.life[indices] = life_values
+        self.cull_age[indices] = life_values
+        self.crackle_start[indices] = life_values
+        self.crackle_end[indices] = life_values
+        self.intensity[indices] = intensity
+        self.intensity_mod[indices] = intensity
+        self.gravity[indices] = gravity
+        self.drag[indices] = drag
+        self.drag_factor[indices] = 1.0 - drag
+        self.base_color_idx[indices] = color_indices
+        self.flicker_offset[indices] = 0
+        self.radius[indices] = size / 24.0
+        self.is_shell[indices] = False
+        self.is_inner[indices] = False
+        self.is_split_child[indices] = False
+        self.split[indices] = False
+        self.burst[indices] = False
+        self.is_palm_tail_shell[indices] = False
+        self.has_flicker[indices] = False
+        self.has_crackle[indices] = False
+        self.has_trail[indices] = trail_len > 0
+        self.trail_len[indices] = min(20, max(0, int(trail_len)))
+        self.glitter[indices] = False
+        self.behavior_type[indices] = 0
+        self.spin_angle[indices] = 0.0
+        self.spec_name_type[indices] = FIREWORK_NAME_TO_TYPE["Peony"]
+        self.is_scene_effect[indices] = True
+        self.factor[indices] = 1.0
+        self.px[indices] = x_values
+        self.py[indices] = y_values
+        self.history_x[indices] = 0.0
+        self.history_y[indices] = 0.0
+        self.history_factor[indices] = 0.0
+
+    def clear_scene_effects(self):
+        indices = np.where(self.active & self.is_scene_effect)[0]
+        if len(indices):
+            self.active[indices] = False
+            self.free_indices.extend(indices.tolist())
+
+    def gather_light_sources(self, scene_effect=None, max_sources=24, world_offset_y=0.0):
+        """Return a bounded set of bright particles for world illumination.
+
+        Sampling the whole particle pool for every textured object would be
+        expensive.  The brightest heads are enough to create a convincing,
+        responsive light field and keep the cost fixed during large bursts.
+        """
+        mask = self.active & (self.intensity > 0.18)
+        if scene_effect is not None:
+            mask &= self.is_scene_effect == bool(scene_effect)
+        indices = np.where(mask)[0]
+        if not len(indices) or max_sources <= 0:
+            return np.empty((0, 8), dtype=np.float32)
+
+        scores = self.intensity[indices] * np.maximum(0.35, self.radius[indices])
+        if len(indices) > max_sources:
+            keep = np.argpartition(scores, -max_sources)[-max_sources:]
+            indices = indices[keep]
+            scores = scores[keep]
+
+        color_indices = self.base_color_idx[indices].copy()
+        invalid_color = (color_indices <= 0) | (color_indices >= len(PALETTE_ARR))
+        color_indices[invalid_color] = 121
+        rgb = PALETTE_ARR[color_indices]
+        firework_mask = ~self.is_scene_effect[indices]
+        rgb[firework_mask] = FIREWORK_PALETTE_ARR[color_indices[firework_mask]]
+        strength = np.clip(self.intensity[indices], 0.0, 1.6)
+        if scene_effect:
+            light_radius = 105.0 + np.minimum(155.0, self.radius[indices] * 92.0)
+        else:
+            light_radius = 230.0 + np.minimum(330.0, self.radius[indices] * 135.0)
+        y = self.py[indices].copy()
+        if world_offset_y:
+            y += np.where(self.is_scene_effect[indices], 0.0, world_offset_y)
+        return np.column_stack(
+            (self.px[indices], y, rgb, strength, light_radius, scores)
+        ).astype(np.float32, copy=False)
 
     def update_intensity(self, active_mask):
         if not np.any(active_mask):
@@ -472,8 +600,11 @@ class ParticleSystem:
                 self.free_indices.extend(split_indices)
                 self.spawn_split_children(split_indices)
 
-    def gather_instances(self, frame_count):
-        active_indices = np.where(self.active)[0]
+    def gather_instances(self, frame_count, scene_effect=None, world_offset_y=0.0):
+        eligible = self.active.copy()
+        if scene_effect is not None:
+            eligible &= self.is_scene_effect == bool(scene_effect)
+        active_indices = np.where(eligible)[0]
         if len(active_indices) == 0:
             return np.empty((0, 7), dtype=np.float32)
 
@@ -490,7 +621,7 @@ class ParticleSystem:
             & (self.age <= self.crackle_end)
         )
 
-        draw_main = self.active & ~flicker_skip & ~crackle_phase1 & ~crackle_phase2
+        draw_main = eligible & ~flicker_skip & ~crackle_phase1 & ~crackle_phase2
         # Willow is type 14 (willow_mask)
         willow_mask = self.spec_name_type == 14
         draw_main = draw_main & (~willow_mask | self.is_shell)
@@ -499,9 +630,11 @@ class ParticleSystem:
         num_main = len(main_indices)
         if num_main > 0:
             px_main = self.px[main_indices]
-            py_main = self.py[main_indices]
+            py_main = self.py[main_indices] + world_offset_y
             factor_main = self.factor[main_indices]
-            base_col_main = self.base_color_idx[main_indices]
+            base_col_main = self.base_color_idx[main_indices].copy()
+            invalid_color = (base_col_main <= 0) | (base_col_main >= len(PALETTE_ARR))
+            base_col_main[invalid_color] = 121
             is_palm_main = self.is_palm_tail_shell[main_indices]
             radius_main = self.radius[main_indices]
             intensity_main = self.get_intensity_subset(main_indices)
@@ -512,7 +645,13 @@ class ParticleSystem:
             color_idx[base_col_main == 121] = 121
 
             rgb = PALETTE_ARR[color_idx]
+            firework_main = ~self.is_scene_effect[main_indices]
+            rgb[firework_main] = FIREWORK_PALETTE_ARR[color_idx[firework_main]]
             size = np.maximum(2.0, factor_main * radius_main * 24.0)
+            # Preserve count while reducing overlapping glow area during the
+            # launch-only peak. This is a fill-rate guard, not a density cut.
+            dense_size_scale = min(1.0, math.sqrt(3200.0 / num_main))
+            size *= dense_size_scale
 
             main_chunk = np.column_stack((px_main, py_main, size, rgb, intensity_main))
             chunks.append(main_chunk)
@@ -535,10 +674,12 @@ class ParticleSystem:
                     s1_factor = self.factor[s1_sel]
                     s1_radius = (self.radius[s1_sel] + 3.0) * s1_factor
                     sx1 = s1_px + np.random.uniform(-1.0, 1.0, num_s1) * s1_radius
-                    sy1 = s1_py + np.random.uniform(-1.0, 1.0, num_s1) * s1_radius
+                    sy1 = s1_py + world_offset_y + np.random.uniform(-1.0, 1.0, num_s1) * s1_radius
                     
                     s1_col = color_idx[has_trail_main][s1_mask]
                     rgb_s1 = PALETTE_ARR[s1_col]
+                    firework_s1 = ~self.is_scene_effect[s1_sel]
+                    rgb_s1[firework_s1] = FIREWORK_PALETTE_ARR[s1_col[firework_s1]]
                     size_s1 = 3.0 * s1_factor
                     alpha_s1 = t_intensity[s1_mask] * 0.7 * 1.6
                     
@@ -554,7 +695,7 @@ class ParticleSystem:
                     s2_factor = self.factor[s2_sel]
                     s2_radius_offset = (self.radius[s2_sel] + 3.0) * s2_factor + 2.0
                     sx2 = s2_px + np.random.uniform(-1.0, 1.0, num_s2) * s2_radius_offset
-                    sy2 = s2_py + np.random.uniform(-1.0, 1.0, num_s2) * s2_radius_offset
+                    sy2 = s2_py + world_offset_y + np.random.uniform(-1.0, 1.0, num_s2) * s2_radius_offset
                     
                     rgb_s2 = PALETTE_ARR[np.repeat(121, num_s2)]
                     size_s2 = 3.0 * s2_factor
@@ -574,23 +715,23 @@ class ParticleSystem:
                 num_g = len(g_sel)
                 if num_g > 0:
                     g_px = self.px[g_sel]
-                    g_py = self.py[g_sel]
+                    g_py = self.py[g_sel] + world_offset_y
                     g_factor_sel = g_factor[g_mask]
                     g_intensity_sel = g_intensity[g_mask] * 1.5
                     
                     rgb_g = PALETTE_ARR[np.repeat(121, num_g)]
-                    size_g = np.maximum(4.0, 8.0 * g_factor_sel)
+                    size_g = np.maximum(4.0, 8.0 * g_factor_sel * dense_size_scale)
                     
                     chunks.append(np.column_stack((g_px, g_py, size_g, rgb_g, g_intensity_sel)))
 
         # 2. Crackle instances
-        draw_crackle = self.active & crackle_phase2
+        draw_crackle = eligible & crackle_phase2
         crackle_indices = np.where(draw_crackle)[0]
         num_crackle = len(crackle_indices)
         if num_crackle > 0:
             factor_crackle = self.factor[crackle_indices]
             px_crackle = self.px[crackle_indices] + np.random.uniform(-3.0, 3.0, num_crackle)
-            py_crackle = self.py[crackle_indices] + np.random.uniform(-3.0, 3.0, num_crackle)
+            py_crackle = self.py[crackle_indices] + world_offset_y + np.random.uniform(-3.0, 3.0, num_crackle)
             size_crackle = np.maximum(4.0, 8.0 * factor_crackle)
             rgb_crackle = PALETTE_ARR[np.repeat(121, num_crackle)]
             intensity_crackle = self.get_intensity_subset(crackle_indices) * 1.5
@@ -601,7 +742,7 @@ class ParticleSystem:
             chunks.append(crackle_chunk)
 
         # 3. Trail instances
-        has_trail_mask = self.active & self.has_trail
+        has_trail_mask = eligible & self.has_trail
         if np.any(has_trail_mask):
             trail_indices_all = np.where(has_trail_mask)[0]
             num_trails = len(trail_indices_all)
@@ -615,12 +756,26 @@ class ParticleSystem:
             row_idx, col_idx = np.where(valid_mask)
             num_instances = len(row_idx)
 
+            # Preserve every live head, but bound the decorative history quads.
+            # Dense launch celebrations can otherwise multiply thousands of
+            # particles into tens of thousands of CPU-built GPU instances.
+            if num_instances > self.MAX_TRAIL_INSTANCES:
+                sample = np.linspace(
+                    0,
+                    num_instances - 1,
+                    self.MAX_TRAIL_INSTANCES,
+                    dtype=np.int32,
+                )
+                row_idx = row_idx[sample]
+                col_idx = col_idx[sample]
+                num_instances = self.MAX_TRAIL_INSTANCES
+
             if num_instances > 0:
                 sub_indices = trail_indices_all[row_idx]
                 j = col_idx
 
                 hx = self.history_x[sub_indices, j]
-                hy = self.history_y[sub_indices, j]
+                hy = self.history_y[sub_indices, j] + world_offset_y
                 hfactor = self.history_factor[sub_indices, j]
 
                 age_sub = self.age[sub_indices]
@@ -636,13 +791,19 @@ class ParticleSystem:
                 hfactor_adjusted = hfactor - 0.3
                 shade_offset = np.clip(np.floor((1.2 - hfactor_adjusted) * 5.0).astype(np.int32) + 1, 0, 4)
 
-                base_col_sub = self.base_color_idx[sub_indices]
+                base_col_sub = self.base_color_idx[sub_indices].copy()
+                invalid_trail_color = (base_col_sub <= 0) | (base_col_sub >= len(PALETTE_ARR))
+                base_col_sub[invalid_trail_color] = 121
                 is_palm_sub = self.is_palm_tail_shell[sub_indices]
 
                 trail_col_idx = base_col_sub + shade_offset
                 trail_col_idx[base_col_sub == 121] = 121
 
                 rgb_trail = PALETTE_ARR[trail_col_idx]
+                firework_trail = ~self.is_scene_effect[sub_indices]
+                rgb_trail[firework_trail] = FIREWORK_PALETTE_ARR[
+                    trail_col_idx[firework_trail]
+                ]
 
                 thickness = self.radius[sub_indices]
                 size_trail = np.maximum(3.0, hfactor * thickness * 10.0 * size_mult)

@@ -1,11 +1,10 @@
 # SDG Energy Boardgame
 
 A hardware–software board game for teaching sustainable energy concepts. Players
-operate one of four micro-energy generators, select it with a physical dial, and
-charge its on-screen gauge. Reaching the target starts a GPU-rendered fireworks
-and drone show and records the player's completion time.
+combine two to four micro-energy generators into one on-screen battery and charge
+every selected cell to launch Sot-kun's rocket home.
 
-The application targets a Raspberry Pi 4 connected to CleanBoost BLE beacons and
+The application targets a 2 GB Raspberry Pi 5 connected to CleanBoost BLE beacons and
 Hall-effect sensors, but every input can be mocked for development on another
 Linux computer.
 
@@ -15,8 +14,8 @@ Linux computer.
 - BLE energy input from four configured CleanBoost devices
 - GPIO Hall-effect selection with automatic GPIO fallback
 - Full-HD Pygame and ModernGL interface with GPU particle effects
-- Scripted fireworks, drone patterns, positional audio, and easter eggs
-- Per-generator leaderboards and player personal-best handling
+- A parallax night city, bright red-and-white textured rocket, compact cell fireworks, and particle-lit launch effects
+- Retained personal-best code behind a disabled runtime feature flag
 - Fully mocked or mixed real/mock development modes
 
 ## Requirements
@@ -86,9 +85,11 @@ python -m pi.main --debug
 | `./run.sh --debug` or `--debug all` | Mock | Mock/disabled |
 
 If GPIO initialization fails in a real-Hall mode, the application logs a warning
-and continues with Hall input disabled. In fully mocked mode, the active generator
-can be selected through the graphical controls and BLE signals are generated at
-random intervals.
+and continues with mocked Hall input. In mocked Hall mode, keys `1`–`4` toggle
+Wind, Solar, Hand Crank, and Coil. In mocked BLE mode, `Q`, `W`, `E`, and `R`
+charge those matching cells. `0` clears all mocked Hall selections, `Backspace`
+resets, `M` toggles metrics, and `Esc` quits. Mock energy is manual and
+deterministic; it is never generated randomly.
 
 ## Hardware configuration
 
@@ -110,32 +111,37 @@ polarity are configured in [`receiver_wire.py`](src/pi/hardware/receiver_wire.py
 
 ## Game behavior
 
-1. A Hall sensor selects the generator and starts its timer.
-2. A matching CleanBoost advertisement adds generator-specific energy.
-3. Energy is animated into the gauge over 0.3 seconds.
-4. A gauge reaching 100 completes the session and stages a ranking.
-5. The UI runs the associated fireworks and drone celebration.
-6. Name confirmation finalizes and atomically stores the personal best.
+1. With no Hall sensors selected, Ablic floats over a procedural star field.
+2. The first selected sensor pans down to the grounded rocket and adds its colored
+   cell to the battery. Each generator plays a distinct rising confirmation tone;
+   removal plays its descending counterpart.
+3. Further sensors append cells on the right, up to four. Removing a sensor
+   removes and resets only that cell; remaining cells retain charge.
+4. Matching CleanBoost advertisements animate into their selected cell over 0.3
+   seconds. Energy does not drain.
+5. Each cell reaching 100% plays an extended generator-colored firework sequence.
+   One full cell asks for another energy source.
+6. With at least two cells selected, filling every selected cell atomically locks
+   the battery. The final firework, grounded rocket shake, and tail plume begin
+   together.
+7. Two-, three-, and four-cell launches last approximately 8.2, 11.2, and 14.2 seconds,
+   with progressively richer exhaust, color, impact, and screen shake.
+8. The camera follows the rocket high above the initial scene, then automatically
+   returns to Ablic. The next mission unlocks as soon as the logo returns, with
+   the rocket restored to its launch base. A magnet held through reset must be
+   removed and presented again; newly presented magnets respond immediately. A
+   ready chime confirms that the screen is interactive again.
 
-Name confirmation compares players case-insensitively with normalized whitespace.
-The result screen identifies first results, new personal bests, matched times, or
-distance from the saved best while preserving completed run time and rank.
-Abandoned provisional runs are never written to disk, and a confirmed result
-cannot be removed by the selector movement that closes the leaderboard.
-
-Changing generators clears the previously selected unfinished gauge. A non-zero
-gauge begins draining after 55 seconds without an increase, and selection returns
-to neutral after 60 seconds without activity.
-
-Generator scripts receive one constrained variation per run: original, horizontal
-mirror, faster cadence, or an authored palette rotation.
+Rankings are disabled by `RANKINGS_ENABLED = False`: production does not load,
+save, or display ranking data. The legacy ranking implementation remains for a
+later design.
 
 ## Runtime data
 
 The application creates these files in the repository/deployment root as needed:
 
-- `leaderboard.json` — rankings grouped by generator
-- `players_database.json` — saved player-name suggestions
+- `leaderboard.json` — dormant ranking storage when rankings are explicitly enabled
+- `players_database.json` — dormant player suggestions when rankings are enabled
 - `clean_boost_test.log` — CleanBoost test statistics
 - `hall_ic_debug.log` — timestamped GPIO transitions
 
@@ -163,9 +169,16 @@ python -m compileall -q src
 PYTHONPATH=src python -c 'import pi.main; import pi.logic.game_state'
 ```
 
-Run the complete interactive application with `./run.sh --debug`. There is
-currently no automated test suite; hardware behavior and the OpenGL presentation
-require integration testing on the target installation.
+Run the local regression suite and complete interactive application with:
+
+```bash
+PYTHONPATH=src python -m unittest discover -s tests -v
+./run.sh --debug
+```
+
+The local `tests/` directory is intentionally ignored by Git. Final GPU, GPIO,
+BLE, audio, and sustained 1080p/60 FPS behavior still require validation on the
+target Raspberry Pi 5.
 
 For module responsibilities, threading, state transitions, resource formats, and
 deployment notes, see [`docs/architecture.md`](docs/architecture.md).

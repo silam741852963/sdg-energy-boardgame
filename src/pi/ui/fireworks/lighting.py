@@ -28,17 +28,19 @@ class LightingSystem:
             exp for exp in self.active_explosions if exp[2] < exp[3]
         ]
 
-    def draw_background(self, renderer):
+    def draw_background(self, renderer, base_color=(0.008, 0.025, 0.09)):
         if self.sky_flash_timer > 0:
-            c = palette.get_color(self.sky_flash_color)
+            c = palette.get_firework_color(self.sky_flash_color)
+            mix = min(0.42, self.sky_flash_timer / 8.0)
+            c = tuple(base_color[index] * (1.0 - mix) + c[index] * mix for index in range(3))
         else:
-            c = (0.0, 0.0, 0.0)
+            c = base_color
         
         # Clear with background color (sky flash)
         renderer.clear((c[0], c[1], c[2], 1.0))
 
     def draw_reflections(self, renderer):
-        horizon_y = (SCREEN_HEIGHT / 2) + int(200 * SCALE_Y)
+        horizon_y = int(820 * SCALE_Y)
 
         for exp_x, exp_z, age, max_age, color, radius_mod in self.active_explosions:
             if age < max_age * 0.6:
@@ -49,7 +51,7 @@ class LightingSystem:
                     height = int(30 * SCALE_Y * factor * intensity * radius_mod)
 
                     if width > 0 and height > 0:
-                        c = palette.get_color(color)
+                        c = palette.get_firework_color(color)
                         # Render ground reflections as blended ellipses on the ground
                         renderer.draw_ellipse(
                             rx - width / 2,

@@ -45,7 +45,46 @@ def generate_rgb_palette():
 
 RGB_PALETTE = generate_rgb_palette()
 
+
+def generate_luminous_firework_palette():
+    """Return firework colors with no black or muddy low-luminance shades.
+
+    Particle intensity and alpha already provide the visual fade. Keeping RGB
+    luminous throughout that fade makes every hue read as emitted light against
+    the night sky instead of turning into a dark colored dot.
+    """
+    luminous = []
+    for index, color in enumerate(RGB_PALETTE):
+        if index == 0:
+            luminous.append((1.0, 1.0, 1.0))
+            continue
+        if index in (122, 123):
+            luminous.append(color)
+            continue
+        red, green, blue = color
+        luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
+        white_mix = (
+            max(0.0, 0.38 - luminance) / max(0.001, 1.0 - luminance)
+        )
+        luminous.append(
+            (
+                red + (1.0 - red) * white_mix,
+                green + (1.0 - green) * white_mix,
+                blue + (1.0 - blue) * white_mix,
+            )
+        )
+    return luminous
+
+
+LUMINOUS_FIREWORK_PALETTE = generate_luminous_firework_palette()
+
 def get_color(index) -> tuple[float, float, float]:
     if 0 <= index < len(RGB_PALETTE):
         return RGB_PALETTE[index]
     return (1.0, 1.0, 1.0) # Default to white
+
+
+def get_firework_color(index) -> tuple[float, float, float]:
+    if 0 <= index < len(LUMINOUS_FIREWORK_PALETTE):
+        return LUMINOUS_FIREWORK_PALETTE[index]
+    return (1.0, 1.0, 1.0)

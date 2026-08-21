@@ -2,25 +2,56 @@ import time
 import os
 import json
 import math
+import threading
+from collections import deque
+from dataclasses import dataclass
+from enum import Enum, auto
 from typing import List, Dict
-from ..config import MAX_ENERGY_GAUGE, GeneratorType
+
+from ..config import MAX_ENERGY_GAUGE, RANKINGS_ENABLED, GeneratorType
 from .models import PlayerSession, RankingEntry, RankingResult
 from .smooth_fill import SmoothFiller
 
 
+class MissionEventKind(Enum):
+    CELL_FILLED = auto()
+    LAUNCH_COMMITTED = auto()
+
+
+@dataclass(frozen=True)
+class MissionEvent:
+    kind: MissionEventKind
+    generator: GeneratorType | None = None
+    generators: tuple[GeneratorType, ...] = ()
+
+
+@dataclass(frozen=True)
+class GameSnapshot:
+    selected_generators: tuple[GeneratorType, ...]
+    present_sensors: tuple[GeneratorType, ...]
+    energy_levels: Dict[GeneratorType, float]
+    filled_generators: frozenset[GeneratorType]
+    launch_generators: tuple[GeneratorType, ...]
+    launch_committed: bool
+    completed: bool
+
+
 class GameState:
-    def __init__(self):
+    def __init__(self, rankings_enabled: bool = RANKINGS_ENABLED):
+        self._lock = threading.RLock()
         self.current_session: PlayerSession | None = None
         self.rankings: Dict[GeneratorType, List[RankingEntry]] = {gen: [] for gen in GeneratorType}
+        self.rankings_enabled = rankings_enabled
+        # Compatibility for the dormant ranking implementation. Gameplay must
+        # use selected_generators and never collapse the battery to this value.
         self.active_generator: GeneratorType | None = None
+        self.selected_generators: list[GeneratorType] = []
+        self.active_sensors: list[GeneratorType] = []
+        self.filled_generators: set[GeneratorType] = set()
+        self._sensor_rearm_blocked: set[GeneratorType] = set()
+        self._mission_events: deque[MissionEvent] = deque()
         self.last_activity_time = time.time()
-        self.last_drain_time = time.time()
         self.mock_paused = False
-        self.drain_paused = False
-
-        # Explicit tracker for when each gauge last INCREASED its value
-        self._last_gauge_values = {}
-        self._last_increase_time = {}
         self.session_count = 0
         self.clean_boost_signals = []
         self.current_ranking_entry: RankingEntry | None = None
@@ -28,24 +59,9 @@ class GameState:
         self._rankings_storage_safe = True
         self._players_storage_safe = True
 
-        # Multi-sensor active states (Hall-IC)
-        self.active_sensors = []
-
-        # Konami sequence history (track transitions)
-        self.dial_sequence = []
-        self.trigger_konami_combo = False
-        self.trigger_reset_combo = False
-        self.trigger_love_combo = False
-
-        # Simon Says Mode state
-        self.simon_says_active = False
-        self.simon_says_target = None
-        self.simon_says_step = 0
-        self.simon_says_sequence = []
-        self.simon_says_last_target_time = 0.0
-
         self.smooth_filler = SmoothFiller(self)
-        self.load_rankings()
+        if self.rankings_enabled:
+            self.load_rankings()
 
     def start_new_session(self, player_name: str | None = None):
         # A completed run is provisional until its player name is confirmed.
@@ -68,161 +84,105 @@ class GameState:
         self.current_session.start_time = 0.0
         self.current_ranking_entry = None
         self.last_ranking_result = None
-        for gen in GeneratorType:
-            self._last_gauge_values[gen] = 0.0
-            self._last_increase_time[gen] = time.time()
+        if not hasattr(self, "selected_generators"):
+            self.selected_generators = []
+        if not hasattr(self, "active_sensors"):
+            self.active_sensors = []
+        if not hasattr(self, "filled_generators"):
+            self.filled_generators = set()
+        if not hasattr(self, "_mission_events"):
+            self._mission_events = deque()
+        if not hasattr(self, "_sensor_rearm_blocked"):
+            self._sensor_rearm_blocked = set()
+        self.selected_generators.clear()
+        self.active_sensors.clear()
+        self.filled_generators.clear()
+        self._sensor_rearm_blocked.clear()
+        self._mission_events.clear()
+        self.active_generator = None
         self.smooth_filler.active_fills.clear()
 
     def set_active_generator(self, gen_type: GeneratorType | None):
-        if self.active_generator != gen_type:
-            old_gen = self.active_generator
-            self.active_generator = gen_type
-            self.last_activity_time = time.time()
-            if not self.active_sensors:
-                self.active_sensors = [gen_type] if gen_type else []
-
-            if (
-                old_gen is not None
-                and self.current_session
-                and not self.current_session.completed
-            ):
-                self.current_session.energy_levels[old_gen] = 0.0
-                self._last_gauge_values[old_gen] = 0.0
-                self._last_increase_time[old_gen] = time.time()
-                self.smooth_filler.cancel_fills_for_generator(old_gen)
-
-            # Reset time counting if player deselects or selects any generator
-            if self.current_session and not self.current_session.completed:
-                if gen_type is not None:
-                    self.current_session.start_time = time.time()
-                else:
-                    self.current_session.start_time = 0.0
+        """Legacy single-selector adapter used by old ranking/debug callers."""
+        self.set_active_sensors([gen_type] if gen_type else [])
 
     def set_active_sensors(self, sensors: List[GeneratorType]):
-        current_time = time.time()
-        self.active_sensors = sensors
+        with self._lock:
+            unique = []
+            for generator in sensors:
+                if isinstance(generator, GeneratorType) and generator not in unique:
+                    unique.append(generator)
+            self.active_sensors = unique
+            self.last_activity_time = time.time()
 
-        new_active = sensors[0] if sensors else None
+            # Sensors held through an automatic reset must first go low. This
+            # prevents an old battery from selecting itself again while allowing
+            # every new Hall edge to respond immediately at the attract screen.
+            self._sensor_rearm_blocked.intersection_update(unique)
+            eligible = [
+                generator
+                for generator in unique
+                if generator not in self._sensor_rearm_blocked
+            ]
 
-        # Track dialing sequence for Konami and Overdrive Mode
-        if new_active is not None:
-            if (
-                not self.dial_sequence
-                or self.dial_sequence[-1][0] != new_active
-                or (current_time - self.dial_sequence[-1][1] > 0.05)
-            ):
-                self.dial_sequence.append((new_active, current_time))
-                self.dial_sequence = self.dial_sequence[-15:]
+            session = self.current_session
+            if not session or session.launch_committed:
+                return
 
-                # Check for Konami code: WIND -> SOLAR -> HAND_CRANK -> COIL
-                deduped = []
-                for item, t in self.dial_sequence:
-                    if not deduped or deduped[-1] != item:
-                        deduped.append(item)
+            removed = [
+                generator
+                for generator in self.selected_generators
+                if generator not in eligible
+            ]
+            for generator in removed:
+                session.energy_levels[generator] = 0.0
+                self.filled_generators.discard(generator)
+                self.smooth_filler.cancel_fills_for_generator(generator)
 
-                if len(deduped) >= 4 and deduped[-4:] == [
-                    GeneratorType.WIND,
-                    GeneratorType.SOLAR,
-                    GeneratorType.HAND_CRANK,
-                    GeneratorType.COIL,
-                ]:
-                    if len(self.dial_sequence) >= 4 and (
-                        self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0
-                    ):
-                        self.trigger_konami_combo = True
+            kept = [
+                generator
+                for generator in self.selected_generators
+                if generator in eligible
+            ]
+            added = [generator for generator in eligible if generator not in kept]
+            self.selected_generators = kept + added
+            self.active_generator = (
+                self.selected_generators[0] if self.selected_generators else None
+            )
 
-                # Check for Reset combo sequence: COIL -> HAND_CRANK -> SOLAR -> WIND in rapid succession
-                if len(deduped) >= 4 and deduped[-4:] == [
-                    GeneratorType.COIL,
-                    GeneratorType.HAND_CRANK,
-                    GeneratorType.SOLAR,
-                    GeneratorType.WIND,
-                ]:
-                    if len(self.dial_sequence) >= 4 and (
-                        self.dial_sequence[-1][1] - self.dial_sequence[-4][1] <= 5.0
-                    ):
-                        self.trigger_reset_combo = True
+            if self.selected_generators and session.start_time == 0.0:
+                session.start_time = time.time()
+            elif not self.selected_generators:
+                session.start_time = 0.0
+                for generator in GeneratorType:
+                    session.energy_levels[generator] = 0.0
+                self.filled_generators.clear()
+                self.smooth_filler.active_fills.clear()
 
-                # Check for Love combo sequence: SOLAR -> WIND -> SOLAR -> WIND -> HAND_CRANK -> HAND_CRANK in rapid succession (within 7.0 seconds)
-                types_seq = [item[0] for item in self.dial_sequence]
-                if len(types_seq) >= 6 and types_seq[-6:] == [
-                    GeneratorType.SOLAR,
-                    GeneratorType.WIND,
-                    GeneratorType.SOLAR,
-                    GeneratorType.WIND,
-                    GeneratorType.HAND_CRANK,
-                    GeneratorType.HAND_CRANK,
-                ]:
-                    if len(self.dial_sequence) >= 6 and (
-                        self.dial_sequence[-1][1] - self.dial_sequence[-6][1] <= 7.0
-                    ):
-                        self.trigger_love_combo = True
-
-        self.set_active_generator(new_active)
+            self._evaluate_launch_locked()
 
     def check_inactivity(self):
-        current_time = time.time()
-        dt = current_time - self.last_drain_time
-        self.last_drain_time = current_time
-
-        # Update smooth gauge filling
-        self.smooth_filler.update()
-
-        if self.drain_paused:
-            # While draining is paused, keep the timers fresh relative to current_time
-            # so that no time elapsed is accumulated towards the 55s inactivity limit.
-            for gen in GeneratorType:
-                self._last_increase_time[gen] = current_time
-                if self.current_session:
-                    self._last_gauge_values[gen] = (
-                        self.current_session.energy_levels.get(gen, 0.0)
-                    )
-            return
-
-        # 60s inactivity returns to default None (Ablic)
-        if (
-            self.active_generator is not None
-            and (current_time - self.last_activity_time) > 60.0
-        ):
-            self.set_active_generator(None)
-
-        # Auto drain each gauge after 55s of no increase
-        if not self.current_session:
-            return
-
-        for gen in GeneratorType:
-            current_val = self.current_session.energy_levels.get(gen, 0.0)
-            last_known = self._last_gauge_values.get(gen, 0.0)
-
-            if current_val > last_known:
-                # Value went up — reset the 55s inactivity clock for this gauge
-                self._last_increase_time[gen] = current_time
-                self._last_gauge_values[gen] = current_val
-            elif current_val < last_known:
-                # Value went down (already draining or was drained externally) — just track it
-                self._last_gauge_values[gen] = current_val
-            # else: value unchanged — do nothing with _last_gauge_values
-
-            # Only drain if gauge is above 0 AND the inactivity timer has started AND 55s have passed
-            if gen in self._last_increase_time and current_val > 0.0:
-                idle_secs = current_time - self._last_increase_time[gen]
-                if idle_secs > 55.0:
-                    new_val = max(0.0, current_val - (5.0 * dt))
-                    self.current_session.energy_levels[gen] = new_val
-                    self._last_gauge_values[gen] = new_val
+        # Kept as the engine's public tick hook. The rocket design deliberately
+        # has no inactivity drain or selector timeout.
+        with self._lock:
+            self.smooth_filler.update()
 
     def force_immediate_drain(self, gen_type):
-        self._last_increase_time[gen_type] = time.time() - 100.0
+        # Dormant ranking UI compatibility. Draining is disabled by design.
+        return
 
     def add_energy(
         self, gen_type, amount: float, is_clean_boost: bool = False, smooth: bool = True
     ):
-        if not self.current_session:
-            return
-
-        # Prevent filling any gauge if the generator is not the currently active selection
-        if self.active_generator is None or self.active_generator != gen_type:
-            return
+        with self._lock:
+            if not self.current_session:
+                return
+            if (
+                gen_type not in self.selected_generators
+                or self.current_session.launch_committed
+                or self.current_session.completed
+            ):
+                return
 
         from ..config import CLEANBOOST_TEST_MODE, ENERGY_PER_BEACON_BY_TYPE
 
@@ -241,41 +201,97 @@ class GameState:
         else:
             fill_amount = amount
 
-        if self.current_session.completed:
+        with self._lock:
+            if (
+                not self.current_session
+                or gen_type not in self.selected_generators
+                or self.current_session.launch_committed
+                or self.current_session.completed
+            ):
+                return
+            if CLEANBOOST_TEST_MODE and is_clean_boost:
+                self._log_clean_boost_signal(gen_type, fill_amount)
+
+            self.last_activity_time = time.time()
+            self.current_session.last_energy_time[gen_type] = time.time()
+
+            if smooth and is_clean_boost:
+                self.smooth_filler.add_fill_request(gen_type, fill_amount, duration=0.3)
+            else:
+                self._apply_energy_delta_locked(gen_type, fill_amount)
+
+    def _apply_energy_delta_locked(self, gen_type: GeneratorType, amount: float):
+        session = self.current_session
+        if not session or session.launch_committed or gen_type not in self.selected_generators:
             return
+        old_value = session.energy_levels.get(gen_type, 0.0)
+        new_value = min(MAX_ENERGY_GAUGE, max(0.0, old_value + amount))
+        session.energy_levels[gen_type] = new_value
+        if old_value < MAX_ENERGY_GAUGE <= new_value:
+            self.filled_generators.add(gen_type)
+            self._mission_events.append(
+                MissionEvent(MissionEventKind.CELL_FILLED, generator=gen_type)
+            )
+        self._evaluate_launch_locked()
 
-        # Log clean boost signals in test mode
-        if CLEANBOOST_TEST_MODE and is_clean_boost:
-            self._log_clean_boost_signal(gen_type, fill_amount)
-
-        self.last_activity_time = time.time()
-
-        # In test mode, fill the received gen_type's gauge.
-        # In normal mode, fill the currently selected active generator's gauge.
-        target_gen = gen_type if CLEANBOOST_TEST_MODE else self.active_generator
-        if target_gen is None:
+    def _evaluate_launch_locked(self):
+        session = self.current_session
+        if not session or session.launch_committed:
             return
+        selected = tuple(self.selected_generators)
+        if len(selected) < 2:
+            return
+        if not all(
+            session.energy_levels.get(generator, 0.0) >= MAX_ENERGY_GAUGE
+            for generator in selected
+        ):
+            return
+        session.launch_committed = True
+        session.launch_generators = selected
+        self._mission_events.append(
+            MissionEvent(MissionEventKind.LAUNCH_COMMITTED, generators=selected)
+        )
 
-        self.current_session.last_energy_time[target_gen] = time.time()
+    def consume_mission_events(self) -> list[MissionEvent]:
+        with self._lock:
+            events = list(self._mission_events)
+            self._mission_events.clear()
+            return events
 
-        if smooth and is_clean_boost:
-            # Queue gradual energy accumulation over 0.3s
-            self.smooth_filler.add_fill_request(target_gen, fill_amount, duration=0.3)
-        else:
-            # Instant energy filling
-            self.current_session.energy_levels[target_gen] += fill_amount
+    def snapshot(self) -> GameSnapshot:
+        with self._lock:
+            session = self.current_session
+            levels = (
+                dict(session.energy_levels)
+                if session
+                else {generator: 0.0 for generator in GeneratorType}
+            )
+            return GameSnapshot(
+                selected_generators=tuple(self.selected_generators),
+                present_sensors=tuple(self.active_sensors),
+                energy_levels=levels,
+                filled_generators=frozenset(self.filled_generators),
+                launch_generators=session.launch_generators if session else (),
+                launch_committed=bool(session and session.launch_committed),
+                completed=bool(session and session.completed),
+            )
 
-            # Check if any single gauge has reached the max
-            if not self.current_session.completed:
-                if any(
-                    level >= MAX_ENERGY_GAUGE
-                    for level in self.current_session.energy_levels.values()
-                ):
-                    self.current_session.completed = True
-                    self.current_session.end_time = time.time()
-                    self._save_ranking()
-                    if CLEANBOOST_TEST_MODE:
-                        self._write_statistics_log()
+    def mark_launch_complete(self):
+        with self._lock:
+            if not self.current_session or self.current_session.completed:
+                return
+            self.current_session.completed = True
+            self.current_session.end_time = time.time()
+            if self.rankings_enabled:
+                self._save_ranking()
+
+    def reset_mission(self):
+        with self._lock:
+            present = list(self.active_sensors)
+            self.start_new_session()
+            self.active_sensors = present
+            self._sensor_rearm_blocked = set(present)
+            self.last_activity_time = time.time()
 
     def _log_clean_boost_signal(self, gen_type, fill_amount):
         self.clean_boost_signals.append(
@@ -394,6 +410,8 @@ class GameState:
             f.write("\n".join(lines) + "\n")
 
     def _save_ranking(self):
+        if not getattr(self, "rankings_enabled", True):
+            return
         if self.current_ranking_entry is not None:
             self.discard_current_ranking()
 

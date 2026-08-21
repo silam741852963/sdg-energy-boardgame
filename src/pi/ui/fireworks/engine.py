@@ -58,9 +58,12 @@ from .gauges import GaugeManager
 from .scripting import ScriptManager
 from .particles import Particle
 from .renderer import Renderer
+from .pixel_font import PixelFont
+from .rocket_scene import MissionPhase, RocketScene
 from . import palette
 
 from ...config import GeneratorType
+from ...logic.game_state import MissionEventKind
 
 
 class FireworkEngine:
@@ -85,6 +88,12 @@ class FireworkEngine:
         # Initialize Pygame and ModernGL
         pygame.init()
         pygame.font.init()
+        pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
+        pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 3)
+        pygame.display.gl_set_attribute(
+            pygame.GL_CONTEXT_PROFILE_MASK,
+            pygame.GL_CONTEXT_PROFILE_CORE,
+        )
 
         flags = pygame.OPENGL | pygame.DOUBLEBUF
         if FULLSCREEN:
@@ -97,14 +106,31 @@ class FireworkEngine:
             init_w, init_h = SCREEN_WIDTH, SCREEN_HEIGHT
 
         self.screen = pygame.display.set_mode((init_w, init_h), flags)
-        pygame.display.set_caption("3D Fireworks")
+        pygame.display.set_caption("Sot-kun Rocket Mission")
 
         # Hide OS cursor to prevent scaling/position mismatches and support custom retro cursor
         pygame.mouse.set_visible(False)
         self.mouse_pos = (960, 540)
 
-        self.ctx = moderngl.create_context()
+        # Rendering has no software/Pygame drawing fallback: startup requires a
+        # shader-capable OpenGL 3.3 context (V3D on the target Raspberry Pi).
+        self.ctx = moderngl.create_context(require=330)
+        self.gpu_info = {
+            "vendor": self.ctx.info.get("GL_VENDOR", "unknown"),
+            "renderer": self.ctx.info.get("GL_RENDERER", "unknown"),
+            "version": self.ctx.info.get("GL_VERSION", "unknown"),
+        }
+        renderer_name = self.gpu_info["renderer"].lower()
+        if any(
+            marker in renderer_name
+            for marker in ("llvmpipe", "softpipe", "swrast", "software rasterizer")
+        ):
+            raise RuntimeError(
+                "Hardware-accelerated OpenGL is required; "
+                f"detected software renderer: {self.gpu_info['renderer']}"
+            )
         self.renderer = Renderer(self.ctx)
+        self.pixel_font = PixelFont()
         self.clock = pygame.time.Clock()
         self.running = True
         self.frame_count = 0
@@ -141,6 +167,13 @@ class FireworkEngine:
         self.firework_manager = FireworkManager(self.audio, self.lighting)
         self.gauge_manager = GaugeManager(self.game_state)
         self.script_manager = ScriptManager(self.firework_manager)
+        self.rocket_scene = RocketScene(self.firework_manager, self.audio)
+        self.last_frame_time = time.monotonic()
+        self.mock_selected = []
+        self.snapshot = self.game_state.snapshot() if self.game_state else None
+        self.prev_selected_generators = (
+            tuple(self.snapshot.selected_generators) if self.snapshot else ()
+        )
         self.completed_gauges = set()
         self.completion_time = None
         self.drones_cleared = False
@@ -167,18 +200,7 @@ class FireworkEngine:
         self.prev_energy_levels = {}
         self.last_fill_sound_time = 0.0
 
-        # Interactive combos & Simon Says local states
-        self.simon_says_prev_target = None
-        self.simon_says_celebration_start = None
-        self.last_combo_spark_time = 0.0
-        self.screen_shake_amount = 0.0
-        self.konami_unlocked = False
-        self.love_mode_active = False
-        self.love_celebration_count = 0
-        self.love_celebration_timer = 0
-
-        # Load or initialize easter egg specs from files
-        self._init_easter_egg_specs()
+        self.drone_manager.transition_to_pattern(0, self.gui)
 
     def get_memory_usage(self):
         try:
@@ -195,23 +217,15 @@ class FireworkEngine:
     def _restart_game(self):
         self.audio.play_restart_sound()
         if self.game_state:
-            self.game_state.start_new_session()
-            self.game_state.set_active_generator(None)
-            self.game_state.drain_paused = False
-            self.completed_gauges.clear()
+            self.game_state.reset_mission()
             self.firework_manager.particles.clear()
             self.firework_manager.shells.clear()
             self.script_manager.active_scripts.clear()
-            self.konami_unlocked = False
-            self.love_mode_active = False
-            self.love_celebration_count = 0
-            self.love_celebration_timer = 0
+            self.rocket_scene.reset()
+            self.gauge_manager.reset()
             self.drone_manager.transition_to_pattern(0, self.gui)
-            if hasattr(self, "last_seen_gen_after_completion"):
-                delattr(self, "last_seen_gen_after_completion")
-            # Reset animated levels of all gauges to 0.0 to prevent visual autoplay re-trigger
-            for gen in self.gauge_manager.state:
-                self.gauge_manager.state[gen]["level"] = 0.0
+            self.snapshot = self.game_state.snapshot()
+            self.prev_selected_generators = tuple(self.snapshot.selected_generators)
         self.completion_time = None
         self.drones_cleared = False
         self.show_leaderboard = False
@@ -240,770 +254,259 @@ class FireworkEngine:
 
     def update(self, events):
         self.frame_count += 1
-        self.fps_tracker.update()
+        fps = self.fps_tracker.update()
         self.cpu_tracker.update()
+        now = time.monotonic()
+        dt = min(0.1, now - self.last_frame_time)
+        self.last_frame_time = now
 
-        # Check if ranking board / name entry should be cancelled due to selecting a different generator or magnet removal
-        if (self.show_name_entry or self.show_leaderboard) and self.game_state:
-            active_gen = self.game_state.active_generator
-            if active_gen == self.completed_gen:
-                self.completed_gen_was_active = True
-            elif active_gen is not None or getattr(self, "completed_gen_was_active", False):
-                self.game_state.discard_current_ranking()
-                self._restart_game()
-                self.game_state.set_active_generator(active_gen)
-
-        if self.show_leaderboard:
-            close_leaderboard = False
-            for event in events:
-                if event.type == pygame.QUIT:
-                    self.running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key in (pygame.K_ESCAPE, pygame.K_RETURN):
-                        close_leaderboard = True
-                    elif event.key == pygame.K_BACKSPACE:
-                        self.leaderboard_search_input = self.leaderboard_search_input[:-1]
-                    else:
-                        if (
-                            event.unicode
-                            and event.unicode.isprintable()
-                            and len(self.leaderboard_search_input) < 18
-                        ):
-                            self.leaderboard_search_input += event.unicode
-
-            new_activity = False
-            if (
-                self.game_state
-                and self.game_state.last_activity_time
-                > self.leaderboard_start_activity_time
-            ):
-                new_activity = True
-            if close_leaderboard or new_activity:
-                self._restart_game()
-
-            self.lighting.update()
-            self.firework_manager.update()
-            self.drone_manager.update(self.frame_count, 0.0)
-            self.gauge_manager.update()
-            return
-
-        # Get actual logical window size from Pygame
-        try:
-            win_w, win_h = pygame.display.get_window_size()
-        except AttributeError:
-            win_w, win_h = self.screen.get_size()
-
-        # 1. Map raw mouse coordinates in logical window space
-        raw_mx, raw_my = pygame.mouse.get_pos()
-
-        # 2. Calculate aspect ratio fitting in logical space (matching renderer.py end_frame)
-        target_aspect = 1920.0 / 1080.0
-        win_aspect = float(win_w) / float(win_h) if win_h > 0 else target_aspect
-
-        if win_aspect > target_aspect:
-            # Pillarbox
-            w_fit = win_h * target_aspect
-            h_fit = win_h
-            offset_x = (win_w - w_fit) / 2.0
-            offset_y = 0.0
-        else:
-            # Letterbox
-            w_fit = win_w
-            h_fit = w_fit / target_aspect
-            offset_x = 0.0
-            offset_y = (win_h - h_fit) / 2.0
-
-        scale_x = 1920.0 / w_fit if w_fit > 0 else 1.0
-        scale_y = 1080.0 / h_fit if h_fit > 0 else 1.0
-
-        # 3. Translate to 1920x1080 virtual space
-        mx = (raw_mx - offset_x) * scale_x
-        my = (raw_my - offset_y) * scale_y
-        mouse_pos = (int(mx), int(my))
-        self.mouse_pos = mouse_pos
-
-        if self.show_name_entry:
-            for event in events:
-                if event.type == pygame.QUIT:
-                    self.running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        if self.game_state:
-                            self.game_state.update_player_name(
-                                self.game_state.current_session.player_name
-                            )
-                        self.show_name_entry = False
-                        self.name_entry_completed = True
-                        self.show_leaderboard = True
-                        self.leaderboard_start_activity_time = (
-                            self.game_state.last_activity_time
-                        )
-                    elif event.key == pygame.K_BACKSPACE:
-                        self.name_input = self.name_input[:-1]
-                        self._update_name_suggestion()
-                    elif event.key in (pygame.K_TAB, pygame.K_RIGHT):
-                        if self.name_suggestion and len(self.name_suggestion) > len(
-                            self.name_input
-                        ):
-                            self.name_input = self.name_suggestion
-                            self.name_suggestion = ""
-                    elif event.key == pygame.K_RETURN:
-                        entered_name = self.name_input.strip()
-                        if not entered_name:
-                            entered_name = (
-                                self.game_state.current_session.player_name
-                                if self.game_state
-                                else "Player"
-                            )
-
-                        ranking_result = None
-                        if self.game_state:
-                            ranking_result = self.game_state.update_player_name(
-                                entered_name
-                            )
-                            if ranking_result is not None:
-                                self.game_state.add_player_to_base(
-                                    ranking_result.player_name
-                                )
-
-                        self.show_name_entry = False
-                        self.name_entry_completed = True
-                        self.show_leaderboard = True
-                        self.leaderboard_start_activity_time = (
-                            self.game_state.last_activity_time
-                        )
-                    else:
-                        if (
-                            event.unicode
-                            and event.unicode.isprintable()
-                            and len(self.name_input) < 18
-                        ):
-                            self.name_input += event.unicode
-                            self._update_name_suggestion()
-
-            self.lighting.update()
-            self.firework_manager.update()
-            self.drone_manager.update(self.frame_count, 0.0)
-            self.gauge_manager.update()
-            return
-
-        mouse_clicked_left = False
-        click_pos = mouse_pos  # Fallback to current mouse position
-
-        key_r_pressed = False
-        key_d_pressed = False
-        key_c_pressed = False
-        key_right_pressed = False
-        key_left_pressed = False
-        key_1_pressed = False
-        key_2_pressed = False
-        key_3_pressed = False
-        key_4_pressed = False
-        key_5_pressed = False
-        key_6_pressed = False
-        key_7_pressed = False
-        key_0_pressed = False
-        key_space_pressed = False
-        key_p_pressed = False
-        key_e_pressed = False
+        mouse_clicked = False
+        mouse_position = pygame.mouse.get_pos()
+        charge_keys = {
+            pygame.K_q: GeneratorType.WIND,
+            pygame.K_w: GeneratorType.SOLAR,
+            pygame.K_e: GeneratorType.HAND_CRANK,
+            pygame.K_r: GeneratorType.COIL,
+        }
+        selector_keys = {
+            pygame.K_1: GeneratorType.WIND,
+            pygame.K_2: GeneratorType.SOLAR,
+            pygame.K_3: GeneratorType.HAND_CRANK,
+            pygame.K_4: GeneratorType.COIL,
+        }
 
         for event in events:
             if event.type == pygame.QUIT:
                 self.running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    mouse_clicked_left = True
-                    click_x = (event.pos[0] - offset_x) * scale_x
-                    click_y = (event.pos[1] - offset_y) * scale_y
-                    click_pos = (int(click_x), int(click_y))
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_clicked = True
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_q:
+                if event.key == pygame.K_ESCAPE:
                     self.running = False
                 elif event.key == pygame.K_m:
                     self.show_metrics = not self.show_metrics
-                elif event.key == pygame.K_r:
-                    key_r_pressed = True
-                elif event.key == pygame.K_d:
-                    key_d_pressed = True
-                elif event.key == pygame.K_c:
-                    key_c_pressed = True
-                elif event.key == pygame.K_RIGHT:
-                    key_right_pressed = True
-                elif event.key == pygame.K_LEFT:
-                    key_left_pressed = True
-                elif event.key == pygame.K_1:
-                    key_1_pressed = True
-                elif event.key == pygame.K_2:
-                    key_2_pressed = True
-                elif event.key == pygame.K_3:
-                    key_3_pressed = True
-                elif event.key == pygame.K_4:
-                    key_4_pressed = True
-                elif event.key == pygame.K_0:
-                    key_0_pressed = True
-                elif event.key == pygame.K_SPACE:
-                    key_space_pressed = True
-                elif event.key == pygame.K_p:
-                    key_p_pressed = True
-                elif event.key == pygame.K_e:
-                    key_e_pressed = True
-                elif event.key == pygame.K_5:
-                    key_5_pressed = True
-                elif event.key == pygame.K_6:
-                    key_6_pressed = True
-                elif event.key == pygame.K_7:
-                    key_7_pressed = True
-        if key_e_pressed:
-            self.gui.export_current_spec()
+                elif event.key == pygame.K_BACKSPACE:
+                    self._restart_game()
+                elif event.key == pygame.K_F5 and self.is_mock:
+                    self.gui.export_current_spec()
+                elif event.key == pygame.K_0 and self.mock_hall:
+                    self.mock_selected.clear()
+                    self.game_state.set_active_sensors([])
+                elif event.key in selector_keys and self.mock_hall:
+                    generator = selector_keys[event.key]
+                    if generator in self.mock_selected:
+                        self.mock_selected.remove(generator)
+                    else:
+                        self.mock_selected.append(generator)
+                    self.game_state.set_active_sensors(list(self.mock_selected))
+                elif event.key in charge_keys and self.mock_ble:
+                    self.game_state.add_energy(
+                        charge_keys[event.key],
+                        10.0,
+                        is_clean_boost=True,
+                    )
 
         if self.is_mock:
-            gui_captured_mouse = self.gui.update(events, click_pos, mouse_clicked_left)
-            if gui_captured_mouse:
-                self.audio.play_tick_sound()
-        else:
-            gui_captured_mouse = False
+            captured = self.gui.update(events, mouse_position, mouse_clicked)
+            if mouse_clicked and not captured and self.gui.has_custom_spec:
+                custom_spec = copy.copy(self.gui.spec)
+                self.firework_manager.launch(
+                    mouse_position[0], mouse_position[1], forced_spec=custom_spec
+                )
 
-        # --- ATTRACT MODE LOGIC ---
-        interaction_detected = False
-        if self.game_state and self.game_state.active_generator is not None:
-            interaction_detected = True
-        elif self.is_mock and (gui_captured_mouse or pygame.mouse.get_pressed()[0]):
-            interaction_detected = True
-        elif (
-            key_1_pressed
-            or key_2_pressed
-            or key_3_pressed
-            or key_4_pressed
-            or key_0_pressed
-        ):
-            interaction_detected = True
+        if not self.game_state:
+            self.lighting.update()
+            self.script_manager.update()
+            self.firework_manager.update()
+            self.drone_manager.update(self.frame_count, 1.0)
+            return
 
-        if interaction_detected:
-            self.last_interaction_time = time.time()
+        self.game_state.check_inactivity()
+        self.snapshot = self.game_state.snapshot()
+        self._play_selection_feedback(self.snapshot)
+        for mission_event in self.game_state.consume_mission_events():
+            if mission_event.kind is MissionEventKind.CELL_FILLED:
+                self.audio.play_success_chime()
+                self.rocket_scene.show_cell_ready(mission_event.generator)
+                self._play_cell_firework(mission_event.generator)
+            elif mission_event.kind is MissionEventKind.LAUNCH_COMMITTED:
+                self.rocket_scene.start_launch(mission_event.generators)
+                self._play_launch_fireworks(len(mission_event.generators))
 
-        # --- HARDWARE STATE SYNC ---
-        if self.game_state:
-            if key_r_pressed:
-                self._restart_game()
-
-            active_gen = self.game_state.active_generator
-
-            is_completed = (
-                self.game_state.current_session
-                and self.game_state.current_session.completed
-            )
-            fireworks_done = (
-                len(self.script_manager.active_scripts) == 0
-                and len(self.firework_manager.shells) == 0
-                and len(self.firework_manager.particles) == 0
-            )
-
-            # After fireworks are done, show END drones first, then the leaderboard
-            if is_completed and self.show_started:
-                if fireworks_done and self.congrat_start_time is None:
-                    # Transition drones to END pattern (index 7) with a gold color override
-                    self.drone_manager.transition_to_pattern(
-                        7, self.gui, override_color="gold"
-                    )
-                    self.congrat_start_time = time.time()
-                    if self.game_state:
-                        self.game_state.drain_paused = False
-                        if self.completed_gen:
-                            self.game_state.force_immediate_drain(self.completed_gen)
-
-                if (
-                    self.congrat_start_time is not None
-                    and not self.show_leaderboard
-                    and not self.show_name_entry
-                    and not self.name_entry_completed
-                ):
-                    if time.time() - self.congrat_start_time >= 4.0:
-                        self.show_name_entry = True
-                        self.name_input = ""
-                        self.name_suggestion = ""
-                        if self.game_state:
-                            self.player_base = self.game_state.load_player_base()
-                        else:
-                            self.player_base = []
-                        self.drone_manager.clear_all()
-
-            # Check for key presses or other signals to close leaderboard
-            # Leaderboard updates are handled in early return at the start of update()
-            pass
-
-            if not is_completed:
-                if getattr(self, "love_mode_active", False):
-                    target_pattern = 8
-                    override_c = "red"
-                else:
-                    active_gen = self.game_state.active_generator
-                    target_pattern = 0  # 0 is Ablic
-                    if active_gen == GeneratorType.WIND:
-                        target_pattern = 1
-                    elif active_gen == GeneratorType.SOLAR:
-                        target_pattern = 2
-                    elif active_gen == GeneratorType.HAND_CRANK:
-                        target_pattern = 3
-                    elif active_gen == GeneratorType.COIL:
-                        target_pattern = 4
-                    override_c = (
-                        "rainbow"
-                        if (
-                            target_pattern == 0
-                            and getattr(self, "konami_unlocked", False)
-                        )
-                        else None
-                    )
-
-                if self.drone_manager.current_index != target_pattern:
-                    if self.drone_manager.current_index != -1:
-                        self.audio.play_switch_sound()
-                    self.drone_manager.transition_to_pattern(
-                        target_pattern, self.gui, override_color=override_c
-                    )
-
-            if self.is_mock or self.mock_hall:
-                pressed_keys = pygame.key.get_pressed()
-                mock_active_sensors = []
-                if pressed_keys[pygame.K_1]:
-                    mock_active_sensors.append(GeneratorType.WIND)
-                if pressed_keys[pygame.K_2]:
-                    mock_active_sensors.append(GeneratorType.SOLAR)
-                if pressed_keys[pygame.K_3]:
-                    mock_active_sensors.append(GeneratorType.HAND_CRANK)
-                if pressed_keys[pygame.K_4]:
-                    mock_active_sensors.append(GeneratorType.COIL)
-
-                # Keep keys 5, 6, 7 as quick helper buttons for keyboard ghosting/easy testing
-                if pressed_keys[pygame.K_5]:
-                    mock_active_sensors = [GeneratorType.WIND, GeneratorType.SOLAR]
-                elif pressed_keys[pygame.K_6]:
-                    mock_active_sensors = [GeneratorType.HAND_CRANK, GeneratorType.COIL]
-                elif pressed_keys[pygame.K_7]:
-                    mock_active_sensors = [
-                        GeneratorType.WIND,
-                        GeneratorType.SOLAR,
-                        GeneratorType.HAND_CRANK,
-                        GeneratorType.COIL,
-                    ]
-
-                if set(mock_active_sensors) != set(self.game_state.active_sensors):
-                    self.game_state.set_active_sensors(mock_active_sensors)
-
-            if self.mock_ble:
-                if key_space_pressed:
-                    if self.game_state.active_generator:
-                        self.game_state.add_energy(
-                            self.game_state.active_generator, 10.0, is_clean_boost=True
-                        )
-                elif key_p_pressed:
-                    self.game_state.mock_paused = not self.game_state.mock_paused
-                    self.audio.play_switch_sound()
-
-            # Check each gauge independently to trigger fireworks
-            if self.game_state.current_session:
-                for gen in self.gauge_manager.generators:
-                    st_level = self.gauge_manager.state[gen]["level"]
-                    if st_level >= 100.0:
-                        if gen not in self.completed_gauges:
-                            self.completed_gauges.add(gen)
-                            self.audio.play_success_chime()
-                            self.completion_time = time.time()
-                            self.drones_cleared = False
-                            self.show_started = False
-                            self.completed_gen = gen
-                            if self.game_state:
-                                self.game_state.drain_paused = True
-
-                            # Transition drones to CLEAR pattern (index 6) with matching color
-                            gen_color = "silver"
-                            if gen == GeneratorType.WIND:
-                                gen_color = "cyan"
-                            elif gen == GeneratorType.SOLAR:
-                                gen_color = "yellow"
-                            elif gen == GeneratorType.HAND_CRANK:
-                                gen_color = "orange"
-                            elif gen == GeneratorType.COIL:
-                                gen_color = "lime"
-
-                            self.drone_manager.transition_to_pattern(
-                                6, self.gui, override_color=gen_color
-                            )
-                    else:
-                        if gen in self.completed_gauges:
-                            self.completed_gauges.remove(gen)
-
-            # Delay fireworks show by 1.5 seconds to let user read CLEAR pattern
-            if self.completion_time is not None and not self.show_started:
-                if time.time() - self.completion_time >= 1.5:
-                    script_name = "wind.json"
-                    if self.completed_gen == GeneratorType.WIND:
-                        script_name = "wind.json"
-                    elif self.completed_gen == GeneratorType.SOLAR:
-                        script_name = "solar.json"
-                    elif self.completed_gen == GeneratorType.HAND_CRANK:
-                        script_name = "hand_crank.json"
-                    elif self.completed_gen == GeneratorType.COIL:
-                        script_name = "coil.json"
-
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
-                    script_path = os.path.join(
-                        current_dir,
-                        "..",
-                        "..",
-                        "..",
-                        "..",
-                        "resource",
-                        "firework-scripts",
-                        script_name,
-                    )
-
-                    # Authored scripts remain the foundation, with constrained
-                    # mirroring/cadence/palette variations to reduce repetition.
-                    self.script_manager.play_sequence(
-                        script_path, variation=random.randrange(4)
-                    )
-                    self.show_started = True
-                    self.completion_time = (
-                        time.time()
-                    )  # Reset timer to be relative to show start
-
-            # Clear drones after 1.5 seconds into the firework show
-            if (
-                self.completion_time is not None
-                and self.show_started
-                and not self.drones_cleared
-            ):
-                if time.time() - self.completion_time >= 1.5:
-                    self.drone_manager.clear_all()
-                    self.drones_cleared = True
-
-        # --- KEYBOARD SHORTCUTS FOR DRONE TRANSITIONS (Manual) ---
-        if not self.game_state and self.is_mock:
-            if key_d_pressed:
-                self.drone_manager.transition_to_pattern(0, self.gui)
-            if key_right_pressed:
-                self.drone_manager.next_pattern(self.gui)
-            if key_left_pressed:
-                self.drone_manager.prev_pattern(self.gui)
-            if key_c_pressed:
-                self.drone_manager.clear_all()
-
-        if (
-            self.is_mock
-            and mouse_clicked_left
-            and not gui_captured_mouse
-        ):
-            # Check if we clicked on any gauge to set it active
-            clicked_gauge = False
-            for gen in self.gauge_manager.generators:
-                st = self.gauge_manager.state[gen]
-                if st["scale"] > 0.1:
-                    w = 1200 * SCALE_X * st["scale"]
-                    h = 60 * SCALE_Y * st["scale"]
-                    x = (SCREEN_WIDTH / 2) - (w / 2)
-                    y = st["y"] - (h / 2)
-                    if x <= click_pos[0] <= x + w and y <= click_pos[1] <= y + h:
-                        self.game_state.set_active_generator(gen)
-                        clicked_gauge = True
-                        break
-
-            if not clicked_gauge:
-                if self.gui.visible or self.gui.has_custom_spec:
-                    custom_spec = copy.copy(self.gui.spec)
-                    self.firework_manager.launch(
-                        click_pos[0], click_pos[1], forced_spec=custom_spec
-                    )
-                else:
-                    self.firework_manager.launch(click_pos[0], click_pos[1])
+        actions = self.rocket_scene.update(self.snapshot, dt, fps or 60.0)
+        self.renderer.screen_shake = self.rocket_scene.screen_shake()
+        if actions.launch_completed:
+            self.game_state.mark_launch_complete()
+            self.audio.play_end_chime()
+            self.snapshot = self.game_state.snapshot()
+        if actions.reset_requested:
+            self.game_state.reset_mission()
+            self.rocket_scene.reset()
+            self.gauge_manager.reset()
+            self.snapshot = self.game_state.snapshot()
+            self.prev_selected_generators = tuple(self.snapshot.selected_generators)
+            self.prev_energy_levels = dict(self.snapshot.energy_levels)
+            self.audio.play_mission_ready()
 
         self.lighting.update()
+        self.script_manager.update()
         self.firework_manager.update()
+        self.drone_manager.update(self.frame_count, 1.0)
+        self.gauge_manager.update(self.snapshot, dt)
 
-        # --- UPDATE DRONES ---
-        fill_pct = 0.0
-        if (
-            self.game_state
-            and self.game_state.active_generator
-            and self.game_state.current_session
-        ):
-            from ...config import MAX_ENERGY_GAUGE
+        for generator in GeneratorType:
+            current = self.snapshot.energy_levels.get(generator, 0.0)
+            previous = self.prev_energy_levels.get(generator, 0.0)
+            if int(current) > int(previous):
+                self.audio.play_fill_sound(current / 100.0)
+        self.prev_energy_levels = dict(self.snapshot.energy_levels)
 
-            active_gen = self.game_state.active_generator
-            st_level = self.gauge_manager.state.get(active_gen, {}).get("level", 0.0)
-            fill_pct = min(1.0, st_level / MAX_ENERGY_GAUGE)
+    def _play_selection_feedback(self, snapshot):
+        """Turn accepted Hall selection changes into immediate audio feedback."""
+        current = tuple(snapshot.selected_generators)
+        previous = self.prev_selected_generators
+        for generator in previous:
+            if generator not in current:
+                self.audio.play_hall_sensor(generator, selected=False)
+        for generator in current:
+            if generator not in previous:
+                self.audio.play_hall_sensor(generator, selected=True)
+        self.prev_selected_generators = current
 
-        self.drone_manager.update(self.frame_count, fill_pct)
+    def _play_cell_firework(self, generator):
+        script_names = {
+            GeneratorType.WIND: "wind.json",
+            GeneratorType.SOLAR: "solar.json",
+            GeneratorType.HAND_CRANK: "hand_crank.json",
+            GeneratorType.COIL: "coil.json",
+        }
+        script_name = script_names[generator]
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(
+            current_dir,
+            "..",
+            "..",
+            "..",
+            "..",
+            "resource",
+            "firework-scripts",
+            script_name,
+        )
+        self.script_manager.play_sequence(script_path, variation=random.choice((0, 1)))
 
-        # --- UPDATE GAUGES / DRAIN LOGIC ---
-        if self.game_state:
-            self.game_state.check_inactivity()
-        self.gauge_manager.update()
-
-        # --- INTERACTIVE COMBOS & EASTER EGGS LOGIC ---
-        if self.game_state:
-            # 1. Konami Combo (Concept A)
-            if self.game_state.trigger_konami_combo:
-                self.game_state.trigger_konami_combo = False
-                self.audio.play_combo_unlock()
-                self.konami_unlocked = True
-                # Rainbow shifting Ablic logo
-                self.drone_manager.transition_to_pattern(
-                    0, self.gui, override_color="rainbow"
-                )
-                # Trigger continuous supernova count
-                self.konami_supernova_count = 35
-                self.konami_supernova_timer = 0
-
-            # Reset Combo (reverse Konami)
-            if getattr(self.game_state, "trigger_reset_combo", False):
-                self.game_state.trigger_reset_combo = False
-                self._restart_game()
-
-            # Love Combo (101022 - Solar/Wind/Solar/Wind/Hand Crank/Hand Crank)
-            if getattr(self.game_state, "trigger_love_combo", False):
-                self.game_state.trigger_love_combo = False
-                self.audio.play_combo_unlock()
-                self.love_mode_active = True
-
-                # Load and play the secret/schneider.json show immediately
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                script_path = os.path.join(
-                    current_dir,
-                    "..",
-                    "..",
-                    "..",
-                    "..",
-                    "resource",
-                    "firework-scripts",
-                    "secret",
-                    "schneider.json",
-                )
-                self.script_manager.play_sequence(script_path)
-
-                self.drone_manager.transition_to_pattern(
-                    8, self.gui, override_color="red"
-                )
-
-            # Spawn supernova fireworks for Konami combo
-            if (
-                hasattr(self, "konami_supernova_count")
-                and self.konami_supernova_count > 0
-            ):
-                self.konami_supernova_timer += 1
-                if self.konami_supernova_timer % 6 == 0:
-                    self.konami_supernova_count -= 1
-                    # Launch random large multi-color firework
-                    colors_list = [
-                        "red",
-                        "yellow",
-                        "green",
-                        "cyan",
-                        "blue",
-                        "magenta",
-                        "pink",
-                        "orange",
-                    ]
-                    fw_color = random.choice(colors_list)
-                    spec = copy.copy(self.spec_konami)
-                    spec.base_color = fw_color
-                    spec.colors = [fw_color]
-                    self.firework_manager.launch(
-                        random.randint(int(300 * SCALE_X), int(1600 * SCALE_X)),
-                        random.randint(int(200 * SCALE_Y), int(600 * SCALE_Y)),
-                        forced_spec=spec,
-                    )
-
-            # 2. Rhythm Spin Challenge / Overdrive (Concept B) - Removed
-            pass
-
-            # 3. Synchronized Dual Generation / Combos (Concept C)
-            sensors = self.game_state.active_sensors
-            is_hybrid_green = (
-                GeneratorType.WIND in sensors and GeneratorType.SOLAR in sensors
-            )
-            is_kinetic_induction = (
-                GeneratorType.HAND_CRANK in sensors and GeneratorType.COIL in sensors
-            )
-            is_super_overload = len(sensors) == 4
-
-            if is_super_overload:
-                # Shake screen and launch supernova finale
-                self.screen_shake_amount = 15.0
-                if self.frame_count % 20 == 0:
-                    spec = copy.copy(self.spec_super_overload)
-                    self.firework_manager.launch(
-                        random.randint(int(600 * SCALE_X), int(1320 * SCALE_X)),
-                        random.randint(int(300 * SCALE_Y), int(500 * SCALE_Y)),
-                        forced_spec=spec,
-                    )
-                    self.audio.play_explosion(spec, 0, -200)  # center/far blast sound
-            elif is_hybrid_green:
-                # Hybrid Helix: green and yellow spiraling fireworks
-                if self.frame_count % 35 == 0:
-                    spec = copy.copy(self.spec_hybrid)
-                    self.firework_manager.launch(
-                        random.randint(int(500 * SCALE_X), int(1400 * SCALE_X)),
-                        random.randint(int(300 * SCALE_Y), int(600 * SCALE_Y)),
-                        forced_spec=spec,
-                    )
-            elif is_kinetic_induction:
-                # Sparkler sparks + sound
-                current_time = time.time()
-                if current_time - self.last_combo_spark_time >= 0.25:
-                    self.last_combo_spark_time = current_time
-                    self.audio.play_electric_spark()
-                    # Spawn sparkling crossette
-                    spec = copy.copy(self.spec_kinetic)
-                    self.firework_manager.launch(
-                        random.randint(int(600 * SCALE_X), int(1300 * SCALE_X)),
-                        random.randint(int(350 * SCALE_Y), int(550 * SCALE_Y)),
-                        forced_spec=spec,
-                    )
-
-            # Apply screen shake displacement to renderer
-            if hasattr(self, "screen_shake_amount") and self.screen_shake_amount > 0.1:
-                dx = random.uniform(-self.screen_shake_amount, self.screen_shake_amount)
-                dy = random.uniform(-self.screen_shake_amount, self.screen_shake_amount)
-                self.renderer.screen_shake = (dx, dy)
-                self.screen_shake_amount *= 0.9  # Decay screen shake
-            else:
-                self.renderer.screen_shake = (0.0, 0.0)
-
-            # 4. Simon Says Idle Mode (Concept D)
-            is_completed = (
-                self.game_state.current_session
-                and self.game_state.current_session.completed
-            )
-            total_energy = (
-                sum(self.game_state.current_session.energy_levels.values())
-                if self.game_state.current_session
-                else 0.0
-            )
-            is_system_idle = (
-                (not is_completed)
-                and (total_energy == 0.0)
-                and (self.game_state.active_generator is None)
-            )
-
-            if is_system_idle and not self.show_leaderboard:
-                current_time = time.time()
-                if current_time - self.game_state.last_activity_time >= 6.0:
-                    if not self.game_state.simon_says_active:
-                        self.game_state.simon_says_active = True
-                        self.game_state.simon_says_sequence = [
-                            random.choice(self.gauge_manager.generators)
-                            for _ in range(5)
-                        ]
-                        self.game_state.simon_says_step = 0
-                        self.game_state.simon_says_target = (
-                            self.game_state.simon_says_sequence[0]
-                        )
-                        self.game_state.simon_says_last_target_time = current_time
-                        self.simon_says_prev_target = None
-                        print("[SIMON-SAYS] Mode Started!")
-            else:
-                if self.game_state.simon_says_active:
-                    self.game_state.simon_says_active = False
-                    self.game_state.simon_says_target = None
-                    self.simon_says_celebration_start = None
-
-            if self.game_state.simon_says_active:
-                current_time = time.time()
-                target = self.game_state.simon_says_target
-
-                if target and target != self.simon_says_prev_target:
-                    self.audio.play_simon_note(target.name)
-                    self.simon_says_prev_target = target
-                    self.game_state.simon_says_last_target_time = current_time
-
-                if target and target in sensors:
-                    self.audio.play_success_chime()
-
-                    st = self.gauge_manager.state[target]
-                    w = 1200 * SCALE_X * st["scale"]
-                    x_pos = int((SCREEN_WIDTH / 2) - (w / 2) + 20 * SCALE_X)
-                    y_pos = int(st["y"])
-
-                    self.firework_manager.launch(x_pos, y_pos - 150)
-
-                    self.game_state.simon_says_step += 1
-                    if self.game_state.simon_says_step >= len(
-                        self.game_state.simon_says_sequence
-                    ):
-                        print("[SIMON-SAYS] Completed! Celebration triggered!")
-                        self.audio.play_combo_unlock()
-                        self.simon_says_celebration_start = current_time
-                        self.game_state.simon_says_active = False
-                        self.game_state.simon_says_target = None
-                    else:
-                        self.game_state.simon_says_target = (
-                            self.game_state.simon_says_sequence[
-                                self.game_state.simon_says_step
-                            ]
-                        )
-                        self.game_state.simon_says_last_target_time = current_time
-                        self.simon_says_prev_target = None
-
-            if self.simon_says_celebration_start is not None:
-                elapsed_cel = time.time() - self.simon_says_celebration_start
-                if elapsed_cel < 5.0:
-                    if self.frame_count % 15 == 0:
-                        colors = ["yellow", "cyan", "magenta", "lime", "pink"]
-                        c = random.choice(colors)
-                        from .models import generate_spec
-
-                        spec = generate_spec("Strobe")
-                        spec.base_color = c
-                        spec.colors = [c]
-                        spec.radius = 1.8
-                        spec.particle_count = 180
-                        self.firework_manager.launch(
-                            random.randint(int(350 * SCALE_X), int(1570 * SCALE_X)),
-                            random.randint(int(200 * SCALE_Y), int(550 * SCALE_Y)),
-                            forced_spec=spec,
-                        )
-                else:
-                    self.simon_says_celebration_start = None
-
-        # --- COMPARE ENERGY LEVELS FOR FILL SOUND ---
-        if self.game_state and self.game_state.current_session:
-            from ...config import MAX_ENERGY_GAUGE
-
-            for gen in self.gauge_manager.generators:
-                prev_val = self.prev_energy_levels.get(gen, 0.0)
-                curr_val = self.gauge_manager.state.get(gen, {}).get("level", 0.0)
-
-                prev_pct = int(min(1.0, max(0.0, prev_val / MAX_ENERGY_GAUGE)) * 100)
-                curr_pct = int(min(1.0, max(0.0, curr_val / MAX_ENERGY_GAUGE)) * 100)
-
-                if curr_pct > prev_pct:
-                    self.audio.play_fill_sound(curr_pct / 100.0)
-                    if getattr(self, "love_mode_active", False):
-                        colors_list = ["pink", "magenta", "red", "gold"]
-                        fw_color = random.choice(colors_list)
-                        spec = copy.copy(self.spec_love)
-                        spec.base_color = fw_color
-                        spec.colors = [fw_color]
-                        self.firework_manager.launch(
-                            random.randint(int(400 * SCALE_X), int(1520 * SCALE_X)),
-                            random.randint(int(250 * SCALE_Y), int(500 * SCALE_Y)),
-                            forced_spec=spec,
-                        )
-
-        # --- UPDATE SCRIPTING ---
-        self.script_manager.update(
-            love_mode_active=getattr(self, "love_mode_active", False)
+    def _play_launch_fireworks(self, cell_count):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(
+            current_dir,
+            "..",
+            "..",
+            "..",
+            "..",
+            "resource",
+            "firework-scripts",
+            "launch.json",
+        )
+        scale = {2: 0.88, 3: 1.0, 4: 1.16}.get(cell_count, 1.0)
+        self.script_manager.play_sequence(
+            script_path,
+            variation=random.choice((0, 1)),
+            count_scale=scale,
+            intensity_scale=0.92 + (cell_count - 2) * 0.10,
+            life_scale=0.94 + (cell_count - 2) * 0.08,
         )
 
-        # Save animated energy levels for the next frame's comparison
-        self.prev_energy_levels = {}
-        for gen in self.gauge_manager.generators:
-            self.prev_energy_levels[gen] = self.gauge_manager.state.get(gen, {}).get(
-                "level", 0.0
+    def _draw_rocket_mission(self):
+        self.renderer.start_frame()
+        self.lighting.draw_background(self.renderer)
+        self.rocket_scene.draw_stars(self.renderer, self.frame_count)
+        firework_offset = self.rocket_scene.firework_y_offset
+        firework_lights, launch_lights = self.firework_manager.gather_light_sources(
+            firework_offset_y=firework_offset
+        )
+        self.rocket_scene.draw_far_city(self.renderer, firework_lights)
+        self.firework_manager.draw(
+            self.renderer,
+            self.frame_count,
+            scene_effect=False,
+            world_offset_y=firework_offset,
+        )
+        self.rocket_scene.draw_world(
+            self.renderer,
+            self.frame_count,
+            firework_lights=firework_lights,
+            launch_lights=launch_lights,
+        )
+        self.firework_manager.draw(
+            self.renderer,
+            self.frame_count,
+            scene_effect=True,
+        )
+
+        show_debug = self.mock_ble or self.mock_hall
+        self.drone_manager.draw(
+            self.renderer,
+            self.fonts["small"],
+            self.frame_count,
+            show_debug_text=False,
+            y_offset=self.rocket_scene.drone_y_offset,
+        )
+
+        if self.snapshot is not None:
+            self.gauge_manager.draw(
+                self.renderer,
+                self.pixel_font,
+                self.frame_count,
+                scene_alpha=self.rocket_scene.scene_alpha,
+            )
+            self.rocket_scene.draw_message(
+                self.renderer, self.pixel_font, self.snapshot
             )
 
+        if self.is_mock and self.gui.visible:
+            self.gui.draw(self.renderer, self.fonts)
+            self.draw_cursor()
+
+        if show_debug and self.rocket_scene.phase is not MissionPhase.ATTRACT:
+            modes = []
+            if self.mock_hall:
+                modes.append("HALL")
+            if self.mock_ble:
+                modes.append("BLE")
+            label = "DEBUG " + "+".join(modes) + "  1-4 SELECT  Q-W-E-R CHARGE  0 CLEAR"
+            self.renderer.draw_pixel_text(
+                24 * SCALE_X,
+                SCREEN_HEIGHT - 32 * SCALE_Y,
+                label,
+                self.pixel_font,
+                3,
+                (0.72, 0.82, 0.95, 0.9),
+            )
+
+        if self.show_metrics:
+            metrics = (
+                f"FPS {self.fps_tracker.fps:.1f}  CPU {self.cpu_tracker.cpu_usage:.0f}%  "
+                f"RAM {self.get_memory_usage():.0f}MB  PARTICLES {len(self.firework_manager.particles)}  "
+                f"DENSITY {int(self.rocket_scene.emission_scale * 100)}%"
+            )
+            self.renderer.draw_pixel_text(
+                24 * SCALE_X,
+                24 * SCALE_Y,
+                metrics,
+                self.pixel_font,
+                3,
+                (0.86, 0.92, 1.0, 0.95),
+            )
+
+        try:
+            screen_w, screen_h = pygame.display.get_window_size()
+        except AttributeError:
+            screen_w, screen_h = self.screen.get_size()
+        self.renderer.end_frame(screen_w, screen_h)
+
     def draw(self):
+        if not self.game_state or not getattr(self.game_state, "rankings_enabled", False):
+            self._draw_rocket_mission()
+            return
         # 1. Start frame (binds offscreen framebuffer and sets viewport to 1920x1080)
         self.renderer.start_frame()
 
@@ -1629,101 +1132,6 @@ class FireworkEngine:
         self.renderer.draw_line(cx + 4, cy + 14, cx + 5, cy + 14, c_white)
 
         self.renderer.set_blend_mode("additive")
-
-    def load_easter_egg_spec(self, egg_name, fallback_creator):
-        import os
-        from .models import load_spec_from_file, save_spec_to_file
-
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "..", ".."))
-        filepath = os.path.join(
-            root_dir, "resource", "firework-settings", f"{egg_name}.json"
-        )
-
-        if os.path.exists(filepath):
-            try:
-                spec = load_spec_from_file(filepath)
-                print(f"[ENGINE] Loaded easter egg '{egg_name}' spec from {filepath}")
-                return spec
-            except Exception as e:
-                print(
-                    f"[ENGINE] Error loading '{egg_name}' spec: {e}. Reverting to default."
-                )
-
-        spec = fallback_creator()
-        try:
-            save_spec_to_file(spec, filepath)
-            print(f"[ENGINE] Created default '{egg_name}' spec at {filepath}")
-        except Exception as e:
-            print(f"[ENGINE] Failed to save default '{egg_name}' spec: {e}")
-        return spec
-
-    def _init_easter_egg_specs(self):
-        def create_konami():
-            from .models import generate_spec
-
-            spec = generate_spec("Peony")
-            spec.radius = 2.0
-            spec.particle_count = 250
-            spec.colors = [
-                "red",
-                "yellow",
-                "green",
-                "cyan",
-                "blue",
-                "magenta",
-                "pink",
-                "orange",
-            ]
-            return spec
-
-        # create_overdrive removed
-
-        def create_hybrid():
-            from .models import generate_spec
-
-            spec = generate_spec("Pistil")
-            spec.particle_count = 200
-            spec.radius = 1.6
-            spec.colors = ["green", "yellow"]
-            return spec
-
-        def create_kinetic():
-            from .models import generate_spec
-
-            spec = generate_spec("Crossette")
-            spec.particle_count = 80
-            spec.radius = 1.2
-            spec.colors = ["cyan", "blue", "silver"]
-            return spec
-
-        def create_super_overload():
-            from .models import generate_spec
-
-            spec = generate_spec("Waterfall")
-            spec.base_color = "gold"
-            spec.colors = ["gold"]
-            spec.particle_count = 350
-            spec.radius = 2.5
-            spec.intensity = 2.5
-            return spec
-
-        def create_love_heart():
-            from .models import generate_spec
-
-            spec = generate_spec("Heart")
-            spec.particle_count = 250
-            spec.radius = 2.0
-            spec.colors = ["pink", "magenta", "red", "gold"]
-            return spec
-
-        self.spec_konami = self.load_easter_egg_spec("konami", create_konami)
-        self.spec_hybrid = self.load_easter_egg_spec("hybrid", create_hybrid)
-        self.spec_kinetic = self.load_easter_egg_spec("kinetic", create_kinetic)
-        self.spec_super_overload = self.load_easter_egg_spec(
-            "super_overload", create_super_overload
-        )
-        self.spec_love = self.load_easter_egg_spec("love_heart", create_love_heart)
 
     def run(self):
         while self.running:

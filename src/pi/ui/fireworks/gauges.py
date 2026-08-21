@@ -1,200 +1,190 @@
-import random
 import math
+
 from .config import SCREEN_WIDTH, SCREEN_HEIGHT, SCALE_X, SCALE_Y
 from ...config import GeneratorType, MAX_ENERGY_GAUGE
 from . import palette
 
-def draw_lightning_arc(renderer, x1, y1, x2, y2, color, segments=10, max_offset=12.0):
-    pts = []
-    pts.append((x1, y1))
-    
-    dx = x2 - x1
-    dy = y2 - y1
-    dist = math.sqrt(dx*dx + dy*dy)
-    if dist < 1.0:
-        return
-        
-    nx = -dy / dist
-    ny = dx / dist
-    
-    for i in range(1, segments):
-        t = i / segments
-        px = x1 + dx * t
-        py = y1 + dy * t
-        offset = random.uniform(-max_offset, max_offset)
-        pts.append((px + nx * offset, py + ny * offset))
-        
-    pts.append((x2, y2))
-    
-    for i in range(len(pts) - 1):
-        renderer.draw_line(pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1], color)
-
 
 class GaugeManager:
+    """Animated generator cells contained by one centered battery housing."""
+
+    CELL_WIDTH = 330
+    CELL_HEIGHT = 86
+    CELL_GAP = 8
+    ANIMATION_SPEED = 10.0
+
     def __init__(self, game_state=None):
         self.game_state = game_state
-        self.generators = [
-            GeneratorType.WIND,
-            GeneratorType.SOLAR,
-            GeneratorType.HAND_CRANK,
-            GeneratorType.COIL
-        ]
-        
-        # Color mapping for gauges matching drones
+        self.generators = list(GeneratorType)
         self.colors = {
-            GeneratorType.WIND: 61,    # Cyan
-            GeneratorType.SOLAR: 31,   # Yellow
-            GeneratorType.HAND_CRANK: 11,   # Orange
-            GeneratorType.COIL: 41     # Lime
+            GeneratorType.WIND: 61,
+            GeneratorType.SOLAR: 31,
+            GeneratorType.HAND_CRANK: 11,
+            GeneratorType.COIL: 41,
         }
-        
-        # Current animated state per generator: {gen: {"y": 0, "scale": 1.0, "alpha": 1.0}}
-        self.state = {}
-        for gen in self.generators:
-            self.state[gen] = {"y": SCREEN_HEIGHT / 2, "scale": 0.5, "dim": True, "level": 0.0}
+        self.labels = {
+            GeneratorType.WIND: "WIND",
+            GeneratorType.SOLAR: "SOLAR",
+            GeneratorType.HAND_CRANK: "CRANK",
+            GeneratorType.COIL: "COIL",
+        }
+        self.levels = {generator: 0.0 for generator in self.generators}
+        self.selected = ()
+        self._cell_bounds = {}
+        self._cells = {}
+        self._display_order = []
+        self._housing_width = 0.0
 
-    def update(self):
-        if not self.game_state:
+    def reset(self):
+        self.levels = {generator: 0.0 for generator in self.generators}
+        self.selected = ()
+        self._cell_bounds.clear()
+        self._cells.clear()
+        self._display_order.clear()
+        self._housing_width = 0.0
+
+    def update(self, snapshot=None, dt=1.0 / 60.0):
+        if snapshot is None and self.game_state:
+            snapshot = self.game_state.snapshot()
+        if snapshot is None:
             return
+        dt = min(0.1, max(0.0, dt))
+        factor = 1.0 - math.exp(-self.ANIMATION_SPEED * dt)
+        self.selected = tuple(snapshot.selected_generators)
 
-        # Smoothly animate energy level transitions
-        levels = self.game_state.current_session.energy_levels if self.game_state.current_session else {}
-        for gen in self.generators:
-            target_level = levels.get(gen, 0.0)
-            diff = target_level - self.state[gen]["level"]
-            if abs(diff) < 0.1:
-                self.state[gen]["level"] = target_level
-            else:
-                self.state[gen]["level"] += diff * 0.1
+        cell_width = self.CELL_WIDTH * SCALE_X
+        gap = self.CELL_GAP * SCALE_X
+        count = len(self.selected)
+        target_width = count * cell_width + max(0, count - 1) * gap
+        target_left = (SCREEN_WIDTH - target_width) / 2
 
-        active_gen = self.game_state.active_generator
-        
-        if active_gen is None:
-            for gen in self.generators:
-                self.state[gen]["scale"] += (0.0 - self.state[gen]["scale"]) * 0.1
+        for generator in self.selected:
+            if generator not in self._cells:
+                index = self.selected.index(generator)
+                target_x = target_left + index * (cell_width + gap)
+                self._cells[generator] = {
+                    "visibility": 0.0,
+                    "x": target_x + 42 * SCALE_X,
+                    "target_x": target_x,
+                }
+                self._display_order.append(generator)
+
+        for index, generator in enumerate(self.selected):
+            self._cells[generator]["target_x"] = target_left + index * (cell_width + gap)
+
+        for generator in tuple(self._display_order):
+            cell = self._cells[generator]
+            visible = generator in self.selected
+            target_visibility = 1.0 if visible else 0.0
+            cell["visibility"] += (target_visibility - cell["visibility"]) * factor
+            if visible:
+                cell["x"] += (cell["target_x"] - cell["x"]) * factor
+            if not visible and cell["visibility"] < 0.015:
+                self._display_order.remove(generator)
+                del self._cells[generator]
+
+        self._housing_width += (target_width - self._housing_width) * factor
+        if not count and not self._display_order:
+            self._housing_width = 0.0
+
+        for generator in self.generators:
+            self.levels[generator] = snapshot.energy_levels.get(generator, 0.0)
+
+    def cell_center(self, generator):
+        bounds = self._cell_bounds.get(generator)
+        if bounds is None:
+            return SCREEN_WIDTH / 2, SCREEN_HEIGHT - 190 * SCALE_Y
+        x, y, width, _ = bounds
+        return x + width / 2, y
+
+    def draw(self, renderer, pixel_font, frame_count, scene_alpha=1.0):
+        if not self._display_order or scene_alpha <= 0.0:
             return
-            
-        active_idx = self.generators.index(active_gen)
-        
-        for i, gen in enumerate(self.generators):
-            dist = i - active_idx
-            if dist > 2: dist -= 4
-            if dist < -2: dist += 4
-            
-            base_y = SCREEN_HEIGHT - (110 * SCALE_Y)
-            target_y = base_y + (dist * 75 * SCALE_Y)
-            
-            target_scale = 1.0 if dist == 0 else 0.0
-            target_dim = dist != 0
-            
-            self.state[gen]["y"] += (target_y - self.state[gen]["y"]) * 0.1
-            self.state[gen]["scale"] += (target_scale - self.state[gen]["scale"]) * 0.1
-            self.state[gen]["dim"] = target_dim
-
-    def draw(self, renderer, fonts, frame_count):
-        if not self.game_state or not self.game_state.current_session:
-            return
-            
-        # Set blend mode to alpha for UI layout
         renderer.set_blend_mode("alpha")
-        
-        simon_says_active = self.game_state.simon_says_active
-        simon_target = self.game_state.simon_says_target
-        
-        # Draw background gauges first, then foreground
-        for pass_num in [0, 1]:
-            for gen in self.generators:
-                st = self.state[gen]
-                if st["scale"] < 0.1:
-                    continue
-                    
-                is_foreground = (st["scale"] > 0.8)
-                if (pass_num == 0 and is_foreground) or (pass_num == 1 and not is_foreground):
-                    continue
-                    
-                w = 1200 * SCALE_X * st["scale"]
-                h = 60 * SCALE_Y * st["scale"]
-                
-                x = (SCREEN_WIDTH / 2) - (w / 2)
-                y = st["y"] - (h / 2)
-                
-                border_col_idx = 123 if st["dim"] else 121
-                fill_col_idx = self.colors[gen]
-                
-                fill_pct = min(1.0, st["level"] / MAX_ENERGY_GAUGE)
+        cell_width = self.CELL_WIDTH * SCALE_X
+        cell_height = self.CELL_HEIGHT * SCALE_Y
+        y = SCREEN_HEIGHT - 142 * SCALE_Y
+        max_visibility = max(self._cells[g]["visibility"] for g in self._display_order)
+        housing_alpha = scene_alpha * max_visibility
+        housing_width = max(cell_width * 0.18, self._housing_width)
+        housing_x = (SCREEN_WIDTH - housing_width) / 2
+        pad_x = 15 * SCALE_X
+        pad_y = 14 * SCALE_Y
 
-                # Add vibration and flashing effect when full or in overdrive
-                is_full = fill_pct >= 1.0
-                
-                # Check if this gauge is the current target in Simon Says
-                is_simon_target = simon_says_active and (gen == simon_target)
-                
-                if is_full:
-                    x += random.randint(-4, 4)
-                    y += random.randint(-4, 4)
-                    if (frame_count % 10) < 5:
-                        fill_col_idx = self.colors[gen] + 5  # Use pastel variant of the main color
-                        border_col_idx = fill_col_idx
-                elif is_simon_target:
-                    # Simon says target flashes/pulses
-                    if (frame_count % 12) < 6:
-                        border_col_idx = self.colors[gen]
-                        fill_col_idx = self.colors[gen] + 5
+        renderer.draw_rect(
+            housing_x - pad_x - 5 * SCALE_X,
+            y - pad_y - 5 * SCALE_Y,
+            housing_width + pad_x * 2 + 10 * SCALE_X,
+            cell_height + pad_y * 2 + 10 * SCALE_Y,
+            (0.0, 0.0, 0.0, 0.50 * housing_alpha), fill=True,
+        )
+        renderer.draw_rect(
+            housing_x - pad_x, y - pad_y,
+            housing_width + pad_x * 2, cell_height + pad_y * 2,
+            (0.018, 0.03, 0.065, 0.96 * housing_alpha), fill=True,
+        )
+        renderer.draw_rect(
+            housing_x - pad_x, y - pad_y,
+            housing_width + pad_x * 2, cell_height + pad_y * 2,
+            (0.78, 0.88, 1.0, 0.95 * housing_alpha), fill=False,
+        )
+        renderer.draw_rect(
+            housing_x - pad_x + 5 * SCALE_X, y - pad_y + 5 * SCALE_Y,
+            housing_width + pad_x * 2 - 10 * SCALE_X,
+            cell_height + pad_y * 2 - 10 * SCALE_Y,
+            (0.18, 0.34, 0.54, 0.82 * housing_alpha), fill=False,
+        )
+        terminal_x = housing_x + housing_width + pad_x
+        renderer.draw_rect(
+            terminal_x, y + 22 * SCALE_Y, 20 * SCALE_X, 42 * SCALE_Y,
+            (0.72, 0.82, 0.94, housing_alpha), fill=True,
+        )
+        renderer.draw_rect(
+            terminal_x + 4 * SCALE_X, y + 27 * SCALE_Y, 16 * SCALE_X, 32 * SCALE_Y,
+            (0.15, 0.22, 0.32, housing_alpha), fill=True,
+        )
 
-                # Draw outer glow / shadow
-                if not st["dim"] or is_full or is_simon_target:
-                    outer_col = palette.get_color(fill_col_idx)
-                    renderer.draw_rect(x-1, y-1, w+2, h+2, outer_col, fill=False)
-                
-                # Draw border
-                border_col = palette.get_color(border_col_idx)
-                renderer.draw_rect(x, y, w, h, border_col, fill=False)
-                
-                # Clear background
-                renderer.draw_rect(x+1, y+1, w-2, h-2, (0.0, 0.0, 0.0, 1.0), fill=True)
-                
-                # Draw fill (in Simon Says, if it's the target, show a pulsing/empty level if 0)
-                draw_pct = fill_pct
-                if is_simon_target and draw_pct == 0:
-                    draw_pct = 0.15 * (0.5 + 0.5 * math.sin(frame_count * 0.2)) # Pulse a mock level to invite dialing
-                
-                if draw_pct > 0:
-                    fill_col = palette.get_color(fill_col_idx)
-                    renderer.draw_rect(x + 2, y + 2, (w - 4) * draw_pct, h - 4, fill_col, fill=True)
-                
-                # Draw label
-                display_name = gen.name.replace("_", " ")
-                text = f"{display_name} - {int(fill_pct*100)}%"
-                if is_simon_target:
-                    text = f"🎯 DIAL THIS: {display_name}!"
-                    
-                text_col_idx = 122 if st["dim"] and not is_full and not is_simon_target else 121
-                if (is_full or is_simon_target) and (frame_count % 10) < 5:
-                    text_col_idx = self.colors[gen] + 5 # Flash pastel variant
+        self._cell_bounds.clear()
+        for generator in self._display_order:
+            cell = self._cells[generator]
+            visibility = min(1.0, max(0.0, cell["visibility"]))
+            cell_alpha = scene_alpha * visibility
+            scale = 0.82 + visibility * 0.18
+            width = cell_width * scale
+            height = cell_height * scale
+            x = cell["x"] + (cell_width - width) / 2
+            cell_y = y + (cell_height - height) / 2 + (1.0 - visibility) * 24 * SCALE_Y
+            self._cell_bounds[generator] = (x, cell_y, width, height)
+            percent = min(1.0, max(0.0, self.levels[generator] / MAX_ENERGY_GAUGE))
+            full = percent >= 0.999
+            color_index = self.colors[generator]
+            color = palette.get_color(color_index + (5 if full and frame_count % 20 < 10 else 0))
 
-                text_col = palette.get_color(text_col_idx)
-                
-                if st["scale"] > 0.8:
-                    font = fonts["large"]
-                    text_y = y - 48 * SCALE_Y
-                else:
-                    font = fonts["small"]
-                    text_y = y - 30 * SCALE_Y
-                
-                renderer.draw_text(x + 10 * SCALE_X, text_y, text, font, text_col)
+            renderer.draw_rect(x, cell_y, width, height, (0.0, 0.0, 0.0, 0.9 * cell_alpha), fill=True)
+            renderer.draw_rect(
+                x + 5 * SCALE_X, cell_y + 5 * SCALE_Y,
+                width - 10 * SCALE_X, height - 10 * SCALE_Y,
+                (0.02, 0.04, 0.065, 0.92 * cell_alpha), fill=True,
+            )
+            if percent > 0.0:
+                renderer.draw_rect(
+                    x + 7 * SCALE_X, cell_y + 7 * SCALE_Y,
+                    (width - 14 * SCALE_X) * percent, height - 14 * SCALE_Y,
+                    (*color[:3], 0.82 * cell_alpha), fill=True,
+                )
+            pulse = 0.24 * math.sin(frame_count * 0.18) if full else 0.0
+            renderer.draw_rect(x, cell_y, width, height, (*color[:3], cell_alpha * (0.78 + pulse)), fill=False)
+            renderer.draw_rect(
+                x + 3 * SCALE_X, cell_y + 3 * SCALE_Y,
+                width - 6 * SCALE_X, height - 6 * SCALE_Y,
+                (0.85, 0.92, 1.0, cell_alpha * 0.54), fill=False,
+            )
 
-                # Draw lightning effects if gauge is 100% filled
-                if is_full:
-                    if (frame_count % 3) != 0:
-                        gen_color = (0.0, 0.75, 1.0, 1.0)
-                        if gen == GeneratorType.SOLAR:
-                            gen_color = (1.0, 0.9, 0.0, 1.0)
-                        elif gen == GeneratorType.HAND_CRANK:
-                            gen_color = (1.0, 0.5, 0.0, 1.0)
-                        elif gen == GeneratorType.COIL:
-                            gen_color = (0.5, 1.0, 0.0, 1.0)
-                        draw_lightning_arc(renderer, x, y, x + w, y, gen_color, segments=15, max_offset=8 * SCALE_Y)
-                        draw_lightning_arc(renderer, x, y + h, x + w, y + h, gen_color, segments=15, max_offset=8 * SCALE_Y)
+            label = f"{self.labels[generator]} {int(percent * 100)}%"
+            text_width, _ = pixel_font.measure(label, 5)
+            text_x = x + (width - text_width) / 2
+            text_y = cell_y + (height - 25 * SCALE_Y) / 2
+            renderer.draw_pixel_text(text_x + 3, text_y + 3, label, pixel_font, 5, (0.0, 0.0, 0.0, 0.82 * cell_alpha))
+            renderer.draw_pixel_text(text_x, text_y, label, pixel_font, 5, (1.0, 1.0, 1.0, cell_alpha))
 
-        # Reset blend mode back to additive for particles
         renderer.set_blend_mode("additive")

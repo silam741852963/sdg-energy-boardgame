@@ -1,5 +1,5 @@
 import time
-from ..config import GeneratorType, MAX_ENERGY_GAUGE
+from ..config import GeneratorType
 
 class SmoothFiller:
     def __init__(self, game_state):
@@ -26,7 +26,7 @@ class SmoothFiller:
             return
 
         session = self.game_state.current_session
-        if session.completed:
+        if session.completed or session.launch_committed:
             self.active_fills.clear()
             return
 
@@ -52,24 +52,10 @@ class SmoothFiller:
                 is_done = (elapsed >= duration)
 
             if to_add > 0.0:
-                current_val = session.energy_levels.get(gen, 0.0)
-                new_val = min(MAX_ENERGY_GAUGE, current_val + to_add)
-                session.energy_levels[gen] = new_val
-                
-                # Check if gauge is complete
-                if new_val >= MAX_ENERGY_GAUGE and not session.completed:
-                    session.completed = True
-                    session.end_time = time.time()
-                    self.game_state._save_ranking()
-                    from ..config import CLEANBOOST_TEST_MODE
-                    if CLEANBOOST_TEST_MODE:
-                        self.game_state._write_statistics_log()
-                    self.active_fills.clear()
-                    return
-
+                self.game_state._apply_energy_delta_locked(gen, to_add)
                 fill["added"] += to_add
 
-            if not is_done and not session.completed:
+            if not is_done and not session.completed and not session.launch_committed:
                 new_active_fills.append(fill)
 
         self.active_fills = new_active_fills

@@ -22,6 +22,10 @@ UI_REFRESH_RATE = 0.5  # UI updates 2 times a second
 
 CLEANBOOST_TEST_MODE = True
 
+# The legacy personal-best implementation is intentionally retained for a
+# future design, but the rocket mission does not read, write, or show rankings.
+RANKINGS_ENABLED = False
+
 # Energy fill amount per beacon per generator type in test mode (scaled for custom generator rates)
 ENERGY_PER_BEACON_BY_TYPE = {
     GeneratorType.WIND: 6.8,

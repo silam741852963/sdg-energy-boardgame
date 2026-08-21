@@ -2,12 +2,14 @@ import os
 import pygame
 import random
 from .config import SCALE_X
+from ...config import GeneratorType
 
 
 class AudioSystem:
     def __init__(self):
         self.enabled = False
         self.sounds = {}
+        self.rocket_channel = None
 
         try:
             pygame.init()
@@ -46,15 +48,28 @@ class AudioSystem:
                 self.sounds["tick"] = pygame.mixer.Sound(array=self._generate_tick_samples())
                 self.sounds["restart_chime"] = pygame.mixer.Sound(array=self._generate_restart_chime_samples())
                 self.sounds["end_chime"] = pygame.mixer.Sound(array=self._generate_end_chime_samples())
+                self.sounds["mission_ready"] = pygame.mixer.Sound(
+                    array=self._generate_mission_ready_samples()
+                )
 
-                # Pre-generate Simon Says notes & interactive combo sounds
-                self.sounds["simon_note_wind"] = pygame.mixer.Sound(array=self._generate_note_samples(523.25))
-                self.sounds["simon_note_solar"] = pygame.mixer.Sound(array=self._generate_note_samples(659.25))
-                self.sounds["simon_note_hand_crank"] = pygame.mixer.Sound(array=self._generate_note_samples(783.99))
-                self.sounds["simon_note_coil"] = pygame.mixer.Sound(array=self._generate_note_samples(1046.50))
-                self.sounds["overdrive_unlock"] = pygame.mixer.Sound(array=self._generate_overdrive_unlock_samples())
-                self.sounds["combo_unlock"] = pygame.mixer.Sound(array=self._generate_combo_unlock_samples())
-                self.sounds["electric_spark"] = pygame.mixer.Sound(array=self._generate_electric_spark_samples())
+                hall_frequencies = {
+                    GeneratorType.WIND: 620.0,
+                    GeneratorType.SOLAR: 780.0,
+                    GeneratorType.HAND_CRANK: 520.0,
+                    GeneratorType.COIL: 690.0,
+                }
+                for generator, frequency in hall_frequencies.items():
+                    stem = generator.name.lower()
+                    self.sounds[f"hall_select_{stem}"] = pygame.mixer.Sound(
+                        array=self._generate_hall_sensor_samples(frequency, selected=True)
+                    )
+                    self.sounds[f"hall_remove_{stem}"] = pygame.mixer.Sound(
+                        array=self._generate_hall_sensor_samples(frequency, selected=False)
+                    )
+
+                for cells, duration in ((2, 6.0), (3, 9.0), (4, 12.0)):
+                    samples = self._generate_rocket_thrust_samples(cells, duration)
+                    self.sounds[f"rocket_thrust_{cells}"] = pygame.mixer.Sound(array=samples)
 
                 # Pre-generate 101 fill tick sounds at different pitch levels
                 self.fill_sounds = []
@@ -177,6 +192,50 @@ class AudioSystem:
         mono = (wave * envelope * volume).astype(np.int16)
         return np.column_stack((mono, mono))
 
+    def _generate_hall_sensor_samples(self, base_frequency, selected):
+        """Create a short pitched confirmation for one Hall sensor edge."""
+        import numpy as np
+
+        sample_rate = 44100
+        duration = 0.16
+        sample_count = int(sample_rate * duration)
+        time_axis = np.arange(sample_count, dtype=np.float32) / sample_rate
+        if selected:
+            start_frequency = base_frequency * 0.82
+            end_frequency = base_frequency * 1.32
+        else:
+            start_frequency = base_frequency * 1.08
+            end_frequency = base_frequency * 0.68
+        sweep = (end_frequency - start_frequency) / duration
+        phase = 2.0 * np.pi * (
+            start_frequency * time_axis + 0.5 * sweep * time_axis * time_axis
+        )
+        wave = np.sin(phase) + 0.22 * np.sin(phase * 2.0)
+        attack = np.minimum(1.0, time_axis / 0.012)
+        envelope = attack * np.exp(-12.0 * time_axis)
+        mono = np.clip(wave * envelope * 0.34, -1.0, 1.0)
+        mono = (mono * 32767).astype(np.int16)
+        return np.column_stack((mono, mono))
+
+    def _generate_mission_ready_samples(self):
+        """Create a compact three-note cue that announces an interactive screen."""
+        import numpy as np
+
+        sample_rate = 44100
+        notes = ((523.25, 0.09), (659.25, 0.09), (1046.5, 0.25))
+        chunks = []
+        for frequency, duration in notes:
+            sample_count = int(sample_rate * duration)
+            time_axis = np.arange(sample_count, dtype=np.float32) / sample_rate
+            wave = np.sin(2.0 * np.pi * frequency * time_axis)
+            wave += 0.18 * np.sin(4.0 * np.pi * frequency * time_axis)
+            envelope = np.minimum(1.0, time_axis / 0.008) * np.exp(
+                -7.0 * time_axis
+            )
+            chunks.append((wave * envelope * 0.31 * 32767).astype(np.int16))
+        mono = np.concatenate(chunks)
+        return np.column_stack((mono, mono))
+
     def _generate_tick_samples(self):
         import numpy as np
         sample_rate = 44100
@@ -231,6 +290,29 @@ class AudioSystem:
             if channel:
                 channel.set_volume(0.6)
                 channel.play(self.sounds["switch_blip"])
+
+    def play_hall_sensor(self, generator, selected):
+        if not self.enabled or not isinstance(generator, GeneratorType):
+            return
+        action = "select" if selected else "remove"
+        sound = self.sounds.get(f"hall_{action}_{generator.name.lower()}")
+        if sound is None:
+            return
+        channel = pygame.mixer.find_channel()
+        if channel:
+            channel.set_volume(0.72 if selected else 0.55)
+            channel.play(sound)
+
+    def play_mission_ready(self):
+        if not self.enabled:
+            return
+        sound = self.sounds.get("mission_ready")
+        if sound is None:
+            return
+        channel = pygame.mixer.find_channel()
+        if channel:
+            channel.set_volume(0.68)
+            channel.play(sound)
 
     def play_tick_sound(self):
         if not self.enabled:
@@ -308,104 +390,41 @@ class AudioSystem:
                 channel.set_volume(0.8)
                 channel.play(self.sounds["end_chime"])
 
-    def play_simon_note(self, gen_type_name):
-        if not self.enabled:
-            return
-        # gen_type_name should match WIND, SOLAR, HAND_CRANK, COIL
-        key = f"simon_note_{gen_type_name.lower()}"
-        if key in self.sounds:
-            channel = pygame.mixer.find_channel()
-            if channel:
-                channel.set_volume(0.6)
-                channel.play(self.sounds[key])
-
-    def play_overdrive_unlock(self):
-        if not self.enabled:
-            return
-        if "overdrive_unlock" in self.sounds:
-            channel = pygame.mixer.find_channel()
-            if channel:
-                channel.set_volume(0.7)
-                channel.play(self.sounds["overdrive_unlock"])
-
-    def play_combo_unlock(self):
-        if not self.enabled:
-            return
-        if "combo_unlock" in self.sounds:
-            channel = pygame.mixer.find_channel()
-            if channel:
-                channel.set_volume(0.7)
-                channel.play(self.sounds["combo_unlock"])
-
-    def play_electric_spark(self):
-        if not self.enabled:
-            return
-        if "electric_spark" in self.sounds:
-            channel = pygame.mixer.find_channel()
-            if channel:
-                channel.set_volume(0.3)
-                channel.play(self.sounds["electric_spark"])
-
-    def _generate_note_samples(self, freq):
+    def _generate_rocket_thrust_samples(self, cells, duration):
         import numpy as np
+
         sample_rate = 44100
-        dur = 0.3
-        volume = 0.4 * 32767
-        num_samples = int(sample_rate * dur)
-        t = np.linspace(0, dur, num_samples, endpoint=False)
-        wave = np.sin(2 * np.pi * freq * t)
-        # Add fundamental retro Glockenspiel-like overtone
-        wave += 0.2 * np.sin(2 * np.pi * (freq * 2.0) * t)
-        envelope = np.exp(-5.0 * t)
-        mono = (wave * envelope * volume).astype(np.int16)
+        count = int(sample_rate * duration)
+        rng = np.random.default_rng(7300 + cells)
+        time_axis = np.arange(count, dtype=np.float32) / sample_rate
+        noise = rng.uniform(-1.0, 1.0, count).astype(np.float32)
+        kernel = np.ones(48, dtype=np.float32) / 48.0
+        rumble = np.convolve(noise, kernel, mode="same")
+        tones = (
+            np.sin(2 * np.pi * (34.0 + cells * 3.0) * time_axis)
+            + 0.45 * np.sin(2 * np.pi * 67.0 * time_axis)
+        )
+        build_seconds = float(cells)
+        build = np.minimum(1.0, time_axis / build_seconds)
+        end_fade = np.minimum(1.0, np.maximum(0.0, (duration - time_axis) / 0.35))
+        envelope = (0.16 + 0.84 * build) * end_fade
+        mono = np.clip((rumble * 2.4 + tones * 0.28) * envelope, -1.0, 1.0)
+        mono = (mono * (0.32 + cells * 0.05) * 32767).astype(np.int16)
         return np.column_stack((mono, mono))
 
-    def _generate_overdrive_unlock_samples(self):
-        import numpy as np
-        sample_rate = 44100
-        freqs = [440.0, 554.37, 659.25, 880.0]
-        durations = [0.08, 0.08, 0.08, 0.3]
-        volume = 0.4 * 32767
-        buffer = []
-        for freq, dur in zip(freqs, durations):
-            num_samples = int(sample_rate * dur)
-            t = np.linspace(0, dur, num_samples, endpoint=False)
-            wave = np.sin(2 * np.pi * freq * t)
-            wave += 0.15 * np.sin(2 * np.pi * (freq * 2.0) * t)
-            envelope = np.exp(-4.0 * t)
-            note_samples = (wave * envelope * volume).astype(np.int16)
-            buffer.append(note_samples)
-        mono = np.concatenate(buffer)
-        return np.column_stack((mono, mono))
+    def start_rocket_thrust(self, cells):
+        if not self.enabled:
+            return
+        self.stop_rocket_thrust()
+        sound = self.sounds.get(f"rocket_thrust_{min(4, max(2, cells))}")
+        if sound is None:
+            return
+        self.rocket_channel = pygame.mixer.find_channel()
+        if self.rocket_channel:
+            self.rocket_channel.set_volume(0.72)
+            self.rocket_channel.play(sound)
 
-    def _generate_combo_unlock_samples(self):
-        import numpy as np
-        sample_rate = 44100
-        freqs = [523.25, 783.99, 1046.50, 1318.51, 1567.98, 2093.00]
-        durations = [0.06, 0.06, 0.06, 0.06, 0.06, 0.4]
-        volume = 0.35 * 32767
-        buffer = []
-        for freq, dur in zip(freqs, durations):
-            num_samples = int(sample_rate * dur)
-            t = np.linspace(0, dur, num_samples, endpoint=False)
-            wave = np.sin(2 * np.pi * freq * t)
-            wave += 0.2 * np.sin(2 * np.pi * (freq * 2.0) * t)
-            envelope = np.exp(-4.0 * t)
-            note_samples = (wave * envelope * volume).astype(np.int16)
-            buffer.append(note_samples)
-        mono = np.concatenate(buffer)
-        return np.column_stack((mono, mono))
-
-    def _generate_electric_spark_samples(self):
-        import numpy as np
-        sample_rate = 44100
-        dur = 0.12
-        num_samples = int(sample_rate * dur)
-        t = np.linspace(0, dur, num_samples, endpoint=False)
-        noise = np.random.uniform(-1.0, 1.0, num_samples)
-        modulator = np.sin(2 * np.pi * 3000.0 * t)
-        wave = noise * modulator
-        envelope = np.exp(-22.0 * t)
-        volume = 0.25 * 32767
-        mono = (wave * envelope * volume).astype(np.int16)
-        return np.column_stack((mono, mono))
+    def stop_rocket_thrust(self):
+        if self.rocket_channel:
+            self.rocket_channel.fadeout(180)
+            self.rocket_channel = None

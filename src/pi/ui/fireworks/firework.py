@@ -124,8 +124,10 @@ class FireworkManager:
         self.audio.play_explosion(spec, shell_x, shell_y)
 
         if spec.base_color != "silver":
-            darkest_shade_idx = COLOR_MAP[spec.base_color] + (spec.variant * 5) + 4
-            self.lighting.trigger_sky_flash(darkest_shade_idx)
+            bright_color_idx = COLOR_MAP.get(spec.base_color, 121) + (spec.variant * 5)
+            self.lighting.trigger_sky_flash(bright_color_idx)
+        else:
+            self.lighting.trigger_sky_flash(121)
 
         self.lighting.add_ground_reflection(
             shell_x,
@@ -133,6 +135,33 @@ class FireworkManager:
             spec.life_span,
             self.lighting.sky_flash_color,
             radius_mod=spec.radius,
+        )
+
+        # Keep a short-lived white ignition core at the exact burst origin.
+        # Without it, fast spherical strategies immediately evacuate the center
+        # and expose a black hole through an otherwise bright firework.
+        flash_spec = copy.copy(spec)
+        flash_spec.life_span = 14
+        flash_spec.intensity = max(2.8, spec.intensity)
+        flash_spec.radius = max(2.6, spec.radius * 1.7)
+        flash_spec.gravity_mod = 0.0
+        flash_spec.drag = 0.16
+        flash_spec.split = False
+        flash_spec.burst = False
+        flash_spec.flicker = False
+        flash_spec.crackle = False
+        flash_spec.draw_behaviors = []
+        flash_spec.update_behaviors = []
+        self.particle_system.spawn(
+            shell_x,
+            shell_y,
+            shell_z,
+            0.0,
+            0.0,
+            0.0,
+            flash_spec,
+            count=1,
+            particle_color="silver",
         )
 
         layers = [False]
@@ -197,6 +226,26 @@ class FireworkManager:
             self.particle_system.active[idx] = False
             self.particle_system.free_indices.append(idx)
 
-    def draw(self, renderer, frame_count):
-        instance_data = self.particle_system.gather_instances(frame_count)
+    def draw(self, renderer, frame_count, scene_effect=None, world_offset_y=0.0):
+        instance_data = self.particle_system.gather_instances(
+            frame_count,
+            scene_effect=scene_effect,
+            world_offset_y=world_offset_y,
+        )
         renderer.draw_particles(instance_data)
+
+    def emit_scene_effect(self, **kwargs):
+        self.particle_system.spawn_scene_effect(**kwargs)
+
+    def clear_scene_effects(self):
+        self.particle_system.clear_scene_effects()
+
+    def gather_light_sources(self, firework_offset_y=0.0):
+        return (
+            self.particle_system.gather_light_sources(
+                False,
+                max_sources=20,
+                world_offset_y=firework_offset_y,
+            ),
+            self.particle_system.gather_light_sources(True, max_sources=16),
+        )

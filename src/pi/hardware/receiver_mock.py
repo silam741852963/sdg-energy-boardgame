@@ -1,6 +1,4 @@
 import asyncio
-import random
-from ..config import GeneratorType, ENERGY_PER_BEACON
 from ..logic.game_state import GameState
 
 
@@ -9,16 +7,6 @@ class MockReceiver:
         self.game_state = game_state
 
     async def start_scanning(self):
-        """Simulates receiving CleanBoost beacons randomly over time."""
-        generator_types = list(GeneratorType)
-
+        """Keep the mock receiver alive; keyboard input emits deterministic signals."""
         while True:
-            # Simulate a random delay between beacon signals (0.1 to 0.8 seconds)
-            await asyncio.sleep(random.uniform(0.1, 0.8))
-
-            if not self.game_state.mock_paused:
-                # Randomly select which generator "fired"
-                gen_type = random.choice(generator_types)
-
-                # Send the event to the logic layer
-                self.game_state.add_energy(gen_type, ENERGY_PER_BEACON, is_clean_boost=True)
+            await asyncio.sleep(1.0)

@@ -12,6 +12,8 @@ class PlayerSession:
     start_time: float = 0.0
     end_time: float = 0.0
     completed: bool = False
+    launch_committed: bool = False
+    launch_generators: tuple[GeneratorType, ...] = ()
 
     def __post_init__(self):
         for gen_type in GeneratorType:

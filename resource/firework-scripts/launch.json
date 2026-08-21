@@ -1,0 +1,93 @@
+{
+    "name": "Rocket Launch Celebration",
+    "events": [
+        {
+            "time": 0.0,
+            "type": "Comet",
+            "colors": ["gold", "cyan", "orange", "lime"],
+            "x": 430,
+            "y": 440,
+            "particle_count": 170,
+            "radius": 1.7,
+            "intensity": 1.9,
+            "life_span": 110
+        },
+        {
+            "time": 0.35,
+            "type": "Comet",
+            "colors": ["silver", "yellow", "blue"],
+            "x": 1490,
+            "y": 440,
+            "particle_count": 170,
+            "radius": 1.7,
+            "intensity": 1.9,
+            "life_span": 110
+        },
+        {
+            "time": 0.8,
+            "type": "Crossette",
+            "colors": ["cyan", "orange", "silver"],
+            "x": 700,
+            "y": 325,
+            "particle_count": 205,
+            "radius": 2.0,
+            "intensity": 2.15,
+            "life_span": 132
+        },
+        {
+            "time": 1.25,
+            "type": "Crossette",
+            "colors": ["lime", "gold", "silver"],
+            "x": 1220,
+            "y": 325,
+            "particle_count": 205,
+            "radius": 2.0,
+            "intensity": 2.15,
+            "life_span": 132
+        },
+        {
+            "time": 1.85,
+            "type": "Brocade",
+            "colors": ["gold", "orange", "yellow", "silver"],
+            "x": 520,
+            "y": 260,
+            "particle_count": 235,
+            "radius": 2.2,
+            "intensity": 2.3,
+            "life_span": 150
+        },
+        {
+            "time": 2.5,
+            "type": "Palm Tree",
+            "colors": ["cyan", "blue", "lime", "silver"],
+            "x": 1400,
+            "y": 260,
+            "particle_count": 235,
+            "radius": 2.2,
+            "intensity": 2.3,
+            "life_span": 150
+        },
+        {
+            "time": 3.2,
+            "type": "Strobe",
+            "colors": ["yellow", "cyan", "orange", "lime", "silver"],
+            "x": 960,
+            "y": 210,
+            "particle_count": 270,
+            "radius": 2.35,
+            "intensity": 2.45,
+            "life_span": 166
+        },
+        {
+            "time": 4.0,
+            "type": "Peony",
+            "colors": ["gold", "cyan", "orange", "lime", "blue", "silver"],
+            "x": 960,
+            "y": 170,
+            "particle_count": 300,
+            "radius": 2.6,
+            "intensity": 2.65,
+            "life_span": 184
+        }
+    ]
+}
