@@ -217,7 +217,7 @@ class FireworkEngine:
     def _restart_game(self):
         self.audio.play_restart_sound()
         if self.game_state:
-            self.game_state.reset_mission()
+            self._reset_mission_input()
             self.firework_manager.particles.clear()
             self.firework_manager.shells.clear()
             self.script_manager.active_scripts.clear()
@@ -240,6 +240,25 @@ class FireworkEngine:
         self.name_suggestion = ""
         self.leaderboard_search_input = ""
         self.name_entry_completed = False
+
+    def _reset_mission_input(self):
+        """Reset mission state without leaving stale or swallowed selectors."""
+        self.game_state.reset_mission()
+        if self.mock_hall:
+            # Keep only inputs that the state accepted as genuinely rearmed.
+            # Old launch keys otherwise remain toggled on, making the first
+            # post-reset keypress remove them instead of selecting them.
+            accepted = list(self.game_state.snapshot().selected_generators)
+            self.mock_selected[:] = accepted
+            self.game_state.set_active_sensors(accepted)
+
+    def _toggle_mock_hall_sensor(self, generator):
+        """Move the single debug magnet to a generator, or lift it off."""
+        if self.mock_selected == [generator]:
+            self.mock_selected.clear()
+        else:
+            self.mock_selected[:] = [generator]
+        self.game_state.set_active_sensors(list(self.mock_selected))
 
     def _update_name_suggestion(self):
         if not self.name_input:
@@ -293,12 +312,7 @@ class FireworkEngine:
                     self.mock_selected.clear()
                     self.game_state.set_active_sensors([])
                 elif event.key in selector_keys and self.mock_hall:
-                    generator = selector_keys[event.key]
-                    if generator in self.mock_selected:
-                        self.mock_selected.remove(generator)
-                    else:
-                        self.mock_selected.append(generator)
-                    self.game_state.set_active_sensors(list(self.mock_selected))
+                    self._toggle_mock_hall_sensor(selector_keys[event.key])
                 elif event.key in charge_keys and self.mock_ble:
                     self.game_state.add_energy(
                         charge_keys[event.key],
@@ -340,7 +354,7 @@ class FireworkEngine:
             self.audio.play_end_chime()
             self.snapshot = self.game_state.snapshot()
         if actions.reset_requested:
-            self.game_state.reset_mission()
+            self._reset_mission_input()
             self.rocket_scene.reset()
             self.gauge_manager.reset()
             self.snapshot = self.game_state.snapshot()
@@ -472,7 +486,7 @@ class FireworkEngine:
                 modes.append("HALL")
             if self.mock_ble:
                 modes.append("BLE")
-            label = "DEBUG " + "+".join(modes) + "  1-4 SELECT  Q-W-E-R CHARGE  0 CLEAR"
+            label = "DEBUG " + "+".join(modes) + "  1-4 MOVE MAGNET  Q-W-E-R CHARGE  0 LIFT"
             self.renderer.draw_pixel_text(
                 24 * SCALE_X,
                 SCREEN_HEIGHT - 32 * SCALE_Y,

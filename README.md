@@ -1,8 +1,8 @@
 # SDG Energy Boardgame
 
 A hardware–software board game for teaching sustainable energy concepts. Players
-combine two to four micro-energy generators into one on-screen battery and charge
-every selected cell to launch Sot-kun's rocket home.
+move one magnet between micro-energy generators, reserving two to four completed
+cells in one on-screen battery to launch Sot-kun's rocket home.
 
 The application targets a 2 GB Raspberry Pi 5 connected to CleanBoost BLE beacons and
 Hall-effect sensors, but every input can be mocked for development on another
@@ -85,8 +85,9 @@ python -m pi.main --debug
 | `./run.sh --debug` or `--debug all` | Mock | Mock/disabled |
 
 If GPIO initialization fails in a real-Hall mode, the application logs a warning
-and continues with mocked Hall input. In mocked Hall mode, keys `1`–`4` toggle
-Wind, Solar, Hand Crank, and Coil. In mocked BLE mode, `Q`, `W`, `E`, and `R`
+and continues with mocked Hall input. In mocked Hall mode, keys `1`–`4` move one
+virtual magnet between Wind, Solar, Hand Crank, and Coil; pressing the active key
+lifts it. In mocked BLE mode, `Q`, `W`, `E`, and `R`
 charge those matching cells. `0` clears all mocked Hall selections, `Backspace`
 resets, `M` toggles metrics, and `Esc` quits. Mock energy is manual and
 deterministic; it is never generated randomly.
@@ -115,13 +116,15 @@ polarity are configured in [`receiver_wire.py`](src/pi/hardware/receiver_wire.py
 2. The first selected sensor pans down to the grounded rocket and adds its colored
    cell to the battery. Each generator plays a distinct rising confirmation tone;
    removal plays its descending counterpart.
-3. Further sensors append cells on the right, up to four. Removing a sensor
-   removes and resets only that cell; remaining cells retain charge.
+3. Fill that cell to 100%, then move the same magnet to another sensor. A full
+   cell remains in the battery with all its energy; leaving an unfinished cell
+   removes it and discards only its partial energy. Up to four full cells can be
+   reserved in order.
 4. Matching CleanBoost advertisements animate into their selected cell over 0.3
    seconds. Energy does not drain.
 5. Each cell reaching 100% plays an extended generator-colored firework sequence.
    One full cell asks for another energy source.
-6. With at least two cells selected, filling every selected cell atomically locks
+6. When at least two reserved cells are full, the battery atomically locks
    the battery. The final firework, grounded rocket shake, and tail plume begin
    together.
 7. Two-, three-, and four-cell launches last approximately 8.2, 11.2, and 14.2 seconds,

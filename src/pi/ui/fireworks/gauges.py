@@ -181,10 +181,20 @@ class GaugeManager:
             )
 
             label = f"{self.labels[generator]} {int(percent * 100)}%"
-            text_width, _ = pixel_font.measure(label, 5)
+            text_width, text_height = pixel_font.measure(label, 5)
             text_x = x + (width - text_width) / 2
-            text_y = cell_y + (height - 25 * SCALE_Y) / 2
-            renderer.draw_pixel_text(text_x + 3, text_y + 3, label, pixel_font, 5, (0.0, 0.0, 0.0, 0.82 * cell_alpha))
-            renderer.draw_pixel_text(text_x, text_y, label, pixel_font, 5, (1.0, 1.0, 1.0, cell_alpha))
+            text_y = cell_y + (height - text_height) / 2
+            # A 3 px shadow does not align to this font's 5 px grid and creates
+            # visible protrusions below glyphs. Render one clean label instead;
+            # completed cells use dark ink against their bright full-cell fill.
+            text_color = (0.025, 0.045, 0.07) if full else (1.0, 1.0, 1.0)
+            renderer.draw_pixel_text(
+                text_x,
+                text_y,
+                label,
+                pixel_font,
+                5,
+                (*text_color, cell_alpha),
+            )
 
         renderer.set_blend_mode("additive")

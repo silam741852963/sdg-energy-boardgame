@@ -129,10 +129,14 @@ class GameState:
             if not session or session.launch_committed:
                 return
 
+            # One magnet moves between generators. A completed cell becomes a
+            # reserved battery cell and survives removal; an unfinished cell is
+            # still cancelled so partially charged energy cannot be banked.
             removed = [
                 generator
                 for generator in self.selected_generators
                 if generator not in eligible
+                and generator not in self.filled_generators
             ]
             for generator in removed:
                 session.energy_levels[generator] = 0.0
@@ -142,13 +146,11 @@ class GameState:
             kept = [
                 generator
                 for generator in self.selected_generators
-                if generator in eligible
+                if generator in eligible or generator in self.filled_generators
             ]
             added = [generator for generator in eligible if generator not in kept]
             self.selected_generators = kept + added
-            self.active_generator = (
-                self.selected_generators[0] if self.selected_generators else None
-            )
+            self.active_generator = eligible[0] if eligible else None
 
             if self.selected_generators and session.start_time == 0.0:
                 session.start_time = time.time()
@@ -248,6 +250,10 @@ class GameState:
             return
         session.launch_committed = True
         session.launch_generators = selected
+        # Remember only sensors that are physically held at launch. Calls to
+        # set_active_sensors() keep intersecting this set, so a release during
+        # the animation permanently rearms that input for the next mission.
+        self._sensor_rearm_blocked = set(selected).intersection(self.active_sensors)
         self._mission_events.append(
             MissionEvent(MissionEventKind.LAUNCH_COMMITTED, generators=selected)
         )
@@ -288,10 +294,21 @@ class GameState:
     def reset_mission(self):
         with self._lock:
             present = list(self.active_sensors)
+            session = self.current_session
+            if session and session.launch_committed:
+                # Launch-time rearm tracking has already observed releases and
+                # fresh activations while the animation was running.
+                blocked = self._sensor_rearm_blocked.intersection(present)
+            else:
+                # A manual reset has no launch edge to use as its baseline, so
+                # currently held sensors must still be released once.
+                blocked = set(present)
             self.start_new_session()
-            self.active_sensors = present
-            self._sensor_rearm_blocked = set(present)
-            self.last_activity_time = time.time()
+            self._sensor_rearm_blocked = blocked
+            # Re-apply the latest physical state. Inputs released and activated
+            # during the return animation are selected immediately instead of
+            # being swallowed by the reset frame.
+            self.set_active_sensors(present)
 
     def _log_clean_boost_signal(self, gen_type, fill_amount):
         self.clean_boost_signals.append(

@@ -843,9 +843,9 @@ class RocketScene:
         if len(selected) == 1:
             level = snapshot.energy_levels.get(selected[0], 0.0)
             if level >= MAX_ENERGY_GAUGE:
-                return "WE NEED MORE ENERGY!", "ADD ONE MORE ENERGY SOURCE TO HELP SOT-KUN LIFT OFF."
+                return "CELL ENERGY RESERVED!", "MOVE THE MAGNET TO ANOTHER ENERGY SOURCE."
             return "POWER UP THE ENERGY CELL!", "SOT-KUN'S TRIP HOME STARTS WITH YOU."
-        return "POWER UP EVERY CELL!", "TEAMWORK WILL HELP SOT-KUN GO HOME."
+        return "POWER UP THE ACTIVE CELL!", "EACH FULL CELL KEEPS ITS ENERGY WHEN THE MAGNET MOVES."
 
     def draw_message(self, renderer, pixel_font, snapshot):
         message = self.message(snapshot)

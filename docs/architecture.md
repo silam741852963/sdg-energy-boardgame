@@ -27,13 +27,14 @@ the receiver loop does not run a competing inactivity update.
 `GameState` owns the authoritative ordered battery and energy rules.
 
 - `active_sensors` records the currently present physical magnets.
-- `selected_generators` preserves existing order and appends new magnets on the
-  right.
-- Removing a magnet cancels pending fill and resets only that generator.
+- `selected_generators` preserves completed cells in order and appends the cell
+  under the movable magnet on the right.
+- Removing the magnet cancels and resets an unfinished cell. A cell that reached
+  100% is reserved with its energy intact until launch or mission reset.
 - Energy is accepted only when its matching generator is selected.
 - There is no energy drain or selection timeout.
 - A cell crossing 100% emits one `CELL_FILLED` event.
-- At least two cells must be selected, and every selected cell must be full.
+- At least two cells must be reserved and full.
 - Satisfying that rule atomically records `launch_generators`, locks the battery,
   and emits `LAUNCH_COMMITTED`. Removal may make the remaining battery ready.
 - After commitment, physical presence is still tracked while battery changes and
@@ -142,14 +143,15 @@ per frame.
 ## Hardware and debug adapters
 
 Known BLE addresses map directly to `GeneratorType`; unknown advertisements are
-ignored. Four gpiozero `Button` inputs are rescanned together on every edge, so
-simultaneous magnets are first-class behavior.
+ignored. Four gpiozero `Button` inputs are rescanned together on every edge. The
+gameplay path expects one movable magnet; each completed generator remains in the
+battery when that magnet moves to the next Hall sensor.
 
 Mock input is deterministic:
 
 | Key | Action |
 | --- | --- |
-| 1 / 2 / 3 / 4 | Toggle Wind / Solar / Hand Crank / Coil Hall selection |
+| 1 / 2 / 3 / 4 | Move the magnet to Wind / Solar / Hand Crank / Coil; repeat to lift it |
 | Q / W / E / R | Charge the matching selected cell |
 | 0 | Clear all mocked Hall selections |
 | Backspace | Reset mission |
