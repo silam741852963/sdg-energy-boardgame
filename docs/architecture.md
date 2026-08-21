@@ -84,10 +84,11 @@ Pyxel, another font package, or a system-font dependency. Sot-kun is referenced
 only by messages and has no visual character.
 
 The rocket body carries four recessed charge ports ordered by reserved cell.
-The first completed cell pulses its source-colored port, starts a gentle
-body-only tremble, and leaks sparse particles across the nozzle. Each additional
-cell increases the movement and vent rate through the optional-cell countdown.
-These particles use the existing scene-effect pool and foreground light path.
+The first completed cell pulses its source-colored port with only a micro-tremble
+and sparse, small nozzle leak. Explicit nonlinear cue profiles make cell two
+clearly active and cell three substantially denser, brighter, longer-lived, and
+more energetic. These particles use the existing scene-effect pool and
+foreground light path.
 
 ## Particle, rendering, and audio budgets
 

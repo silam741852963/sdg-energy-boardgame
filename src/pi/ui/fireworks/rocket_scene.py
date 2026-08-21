@@ -64,6 +64,34 @@ GENERATOR_STATUS_COLOR_INDICES = {
     GeneratorType.COIL: 41,
 }
 
+# Nonlinear pre-launch buildup: the first cell whispers, the third announces.
+CHARGE_CUE_LEVELS = {
+    1: {
+        "shake": 0.22,
+        "rate": 2.4,
+        "life": 28,
+        "size": 4.8,
+        "intensity": 0.40,
+        "speed": 1.35,
+    },
+    2: {
+        "shake": 0.88,
+        "rate": 9.0,
+        "life": 39,
+        "size": 7.4,
+        "intensity": 0.62,
+        "speed": 2.10,
+    },
+    3: {
+        "shake": 2.05,
+        "rate": 21.0,
+        "life": 52,
+        "size": 11.0,
+        "intensity": 0.88,
+        "speed": 2.95,
+    },
+}
+
 
 class RocketScene:
     REVEAL_SECONDS = 2.0
@@ -399,7 +427,7 @@ class RocketScene:
         count = len(self.reserved_generators)
         if self.phase is not MissionPhase.CHARGING or count < 1:
             return 0.0, 0.0
-        amount = 0.58 + (count - 1) * 0.72
+        amount = CHARGE_CUE_LEVELS[min(3, count)]["shake"]
         return (
             math.sin(frame_count * 0.71) * amount * SCALE_X,
             math.sin(frame_count * 0.93 + 0.8) * amount * 0.34 * SCALE_Y,
@@ -408,8 +436,8 @@ class RocketScene:
     def _emit_prelaunch_vent(self, dt):
         """Leak low-energy charge particles from the full nozzle width."""
         charge_count = len(self.reserved_generators)
-        rate = 6.0 + (charge_count - 1) * 7.0
-        self._prelaunch_emission_accumulator += rate * dt
+        cue = CHARGE_CUE_LEVELS[min(3, charge_count)]
+        self._prelaunch_emission_accumulator += cue["rate"] * dt
         count = int(self._prelaunch_emission_accumulator)
         self._prelaunch_emission_accumulator -= count
         if count <= 0:
@@ -433,7 +461,7 @@ class RocketScene:
             dtype=np.float32,
         )
         vy = np.array(
-            [self._rng.uniform(0.8, 2.1 + charge_count * 0.25) for _ in range(count)],
+            [self._rng.uniform(0.65, cue["speed"]) for _ in range(count)],
             dtype=np.float32,
         )
         colors = [
@@ -447,12 +475,12 @@ class RocketScene:
             vy=vy,
             colors=colors,
             count=count,
-            life=34 + charge_count * 5,
-            size=7.0 + charge_count * 1.4,
+            life=cue["life"],
+            size=cue["size"],
             gravity=0.018,
             drag=0.045,
             trail_len=1,
-            intensity=0.62 + charge_count * 0.08,
+            intensity=cue["intensity"],
         )
 
     def _update_adaptive_density(self, fps, dt):

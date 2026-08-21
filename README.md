@@ -124,8 +124,9 @@ polarity are configured in [`receiver_wire.py`](src/pi/hardware/receiver_wire.py
    seconds. Energy does not drain.
 5. Each cell reaching 100% plays an extended generator-colored firework sequence.
    Four recessed ports on the rocket light in the completed generators' colors.
-   The first full cell starts a gentle tremble and sparse source-colored nozzle
-   leak; each additional cell increases both effects.
+   The first full cell starts a barely visible micro-tremble and sparse, small
+   nozzle leak. The second stage is clearly active, while the third becomes
+   dramatically denser, brighter, longer-lived, and more energetic.
 6. At two and three full cells, an eight-second on-screen countdown lets the
    player move the magnet to an optional next cell. A new Hall selection cancels
    the countdown immediately. Four full cells launch without another wait.
