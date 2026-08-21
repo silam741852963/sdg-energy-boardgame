@@ -29,7 +29,7 @@ RANKINGS_ENABLED = False
 
 # Energy fill amount per beacon per generator type in test mode (scaled for custom generator rates)
 ENERGY_PER_BEACON_BY_TYPE = {
-    GeneratorType.WIND: 6.8,
+    GeneratorType.WIND: 20,
     GeneratorType.SOLAR: 10,
     GeneratorType.HAND_CRANK: 5.1,
     GeneratorType.COIL: 5.1,
