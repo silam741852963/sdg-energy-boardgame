@@ -182,11 +182,14 @@ class GaugeManager:
 
             label = f"{self.labels[generator]} {int(percent * 100)}%"
             text_width, text_height = pixel_font.measure(label, 5)
-            text_x = x + (width - text_width) / 2
-            text_y = cell_y + (height - text_height) / 2
-            # A 3 px shadow does not align to this font's 5 px grid and creates
-            # visible protrusions below glyphs. Render one clean label instead;
-            # completed cells use dark ink against their bright full-cell fill.
+            # The even cell size and odd glyph size naturally center at .5 px.
+            # Native 1080p V3D rasterization can duplicate a texture-edge texel
+            # there, which looks like a small foot below the glyph. Pixel art
+            # must stay on whole logical pixels regardless of display scaling.
+            text_x = round(x + (width - text_width) / 2)
+            text_y = round(cell_y + (height - text_height) / 2)
+            # Render one clean label; completed cells use dark ink against their
+            # bright full-cell fill.
             text_color = (0.025, 0.045, 0.07) if full else (1.0, 1.0, 1.0)
             renderer.draw_pixel_text(
                 text_x,

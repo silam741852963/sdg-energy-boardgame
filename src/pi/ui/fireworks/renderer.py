@@ -684,6 +684,11 @@ class Renderer:
                 (width, height), 4, pygame.image.tobytes(surface, "RGBA", False)
             )
             texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+            # Pixel-font atlases end directly on live glyph pixels. Repeating
+            # texture edges can leak the first/last row on V3D when a quad is
+            # sampled near its boundary, so clamp both axes explicitly.
+            texture.repeat_x = False
+            texture.repeat_y = False
             entry = TextCacheEntry(texture, width, height)
             self.text_cache[cache_key] = entry
         self.text_used_this_frame.add(cache_key)
