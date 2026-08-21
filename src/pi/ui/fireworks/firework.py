@@ -137,13 +137,14 @@ class FireworkManager:
             radius_mod=spec.radius,
         )
 
-        # Keep a short-lived white ignition core at the exact burst origin.
-        # Without it, fast spherical strategies immediately evacuate the center
-        # and expose a black hole through an otherwise bright firework.
+        # Put a broad, low-energy color bloom behind the burst. Dense spherical
+        # particles otherwise leave tiny sky-colored cavities which read as
+        # black dots against an over-bright cluster even though their RGB data
+        # is valid. The smaller white core retains a crisp ignition center.
         flash_spec = copy.copy(spec)
-        flash_spec.life_span = 14
+        flash_spec.life_span = 16
         flash_spec.intensity = max(2.8, spec.intensity)
-        flash_spec.radius = max(2.6, spec.radius * 1.7)
+        flash_spec.radius = max(3.0, spec.radius * 1.9)
         flash_spec.gravity_mod = 0.0
         flash_spec.drag = 0.16
         flash_spec.split = False
@@ -152,6 +153,23 @@ class FireworkManager:
         flash_spec.crackle = False
         flash_spec.draw_behaviors = []
         flash_spec.update_behaviors = []
+        bloom_spec = copy.copy(flash_spec)
+        bloom_spec.life_span = 24
+        bloom_spec.intensity = max(0.62, min(0.85, spec.intensity * 0.32))
+        # Particle radius maps to half this apparent span in the quad shader;
+        # this size covers the dense inner burst while leaving outer branches crisp.
+        bloom_spec.radius = max(13.0, spec.radius * 7.0)
+        self.particle_system.spawn(
+            shell_x,
+            shell_y,
+            shell_z,
+            0.0,
+            0.0,
+            0.0,
+            bloom_spec,
+            count=1,
+            particle_color="silver",
+        )
         self.particle_system.spawn(
             shell_x,
             shell_y,
@@ -227,6 +245,10 @@ class FireworkManager:
             self.particle_system.free_indices.append(idx)
 
     def draw(self, renderer, frame_count, scene_effect=None, world_offset_y=0.0):
+        # Fireworks are emitted light. Owning the blend state here prevents a
+        # preceding alpha-blended scene layer from turning overlapping glows
+        # into dark dots.
+        renderer.set_blend_mode("additive")
         instance_data = self.particle_system.gather_instances(
             frame_count,
             scene_effect=scene_effect,
@@ -244,8 +266,8 @@ class FireworkManager:
         return (
             self.particle_system.gather_light_sources(
                 False,
-                max_sources=20,
+                max_sources=12,
                 world_offset_y=firework_offset_y,
             ),
-            self.particle_system.gather_light_sources(True, max_sources=16),
+            self.particle_system.gather_light_sources(True, max_sources=8),
         )

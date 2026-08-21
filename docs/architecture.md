@@ -84,7 +84,7 @@ and rocket flame/smoke/sparks share that pool and the same ModernGL instanced dr
 path. Scene effects carry a group flag so mission resets can clear them without
 changing the firework API.
 
-The renderer samples a fixed number of the brightest particle heads as colored
+The renderer samples at most 12 firework heads and eight exhaust heads as colored
 light probes. Firework probes illuminate the material-colored city, rocket,
 clustered grass, and ground; launch-effect probes are intentionally limited to
 the rocket and foreground. Fireworks occupy a world-anchored depth plane between
@@ -100,6 +100,9 @@ during reveal, so no empty strip opens below the buildings. Per-building light
 overlays stay dynamic. Grass
 tufts use per-cluster gust phase and response, and all colored blade segments are
 submitted in one batched line draw rather than hundreds of individual calls.
+Lighting queries for buildings, ground segments, texture marks, grass, and rocket
+panels are evaluated in vectorized batches. Ground marks and dynamic city washes
+are also submitted as batched colored geometry rather than per-object draw calls.
 
 The four cell JSON scripts contain six dense events over 3.15 seconds, with
 long-lived final bursts. Launch commitment also starts an eight-event, four-second
@@ -109,7 +112,10 @@ may overlap; pool exhaustion safely drops new particles.
 
 Fireworks use a separate luminous render palette. Every authored hue and shade
 has a minimum perceived luminance, invalid or black indices become pure white,
-and sky flashes use the bright shade of the burst color. Particle intensity
+and sky flashes use the bright shade of the burst color. Firework drawing owns
+its additive blend state so earlier alpha-blended layers cannot darken overlapping
+glows. A broad, short-lived white bloom plus a crisp white core fills the apparent
+sky cavities at each burst center. Particle intensity
 continues to control decay without letting fading RGB turn muddy against the sky.
 
 The engine requires an OpenGL 3.3 core context, rejects llvmpipe/softpipe/swrast,

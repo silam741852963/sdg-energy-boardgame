@@ -593,6 +593,29 @@ class Renderer:
         vertices[1::2, :2] = rows[:, 2:4]
         vertices[0::2, 2:] = rows[:, 4:8]
         vertices[1::2, 2:] = rows[:, 4:8]
+        self._draw_colored_vertices(vertices, moderngl.LINES)
+
+    def draw_colored_rects(self, rects):
+        """Draw many independently colored filled rectangles in one GPU call."""
+        if not rects:
+            return
+        rows = np.asarray(rects, dtype="f4")
+        count = len(rows)
+        vertices = np.empty((count, 6, 6), dtype="f4")
+        x0 = rows[:, 0]
+        y0 = rows[:, 1]
+        x1 = x0 + rows[:, 2]
+        y1 = y0 + rows[:, 3]
+        vertices[:, 0, :2] = np.column_stack((x0, y0))
+        vertices[:, 1, :2] = np.column_stack((x1, y0))
+        vertices[:, 2, :2] = np.column_stack((x0, y1))
+        vertices[:, 3, :2] = np.column_stack((x0, y1))
+        vertices[:, 4, :2] = np.column_stack((x1, y0))
+        vertices[:, 5, :2] = np.column_stack((x1, y1))
+        vertices[:, :, 2:] = rows[:, None, 4:8]
+        self._draw_colored_vertices(vertices.reshape(-1, 6), moderngl.TRIANGLES)
+
+    def _draw_colored_vertices(self, vertices, mode):
         needed_size = vertices.nbytes
         if needed_size > self.colored_line_vbo.size:
             old_vbo = self.colored_line_vbo
@@ -605,7 +628,7 @@ class Renderer:
             old_vao.release()
             old_vbo.release()
         self.colored_line_vbo.write(vertices.tobytes())
-        self.colored_line_vao.render(moderngl.LINES, vertices=len(vertices))
+        self.colored_line_vao.render(mode, vertices=len(vertices))
 
     def draw_text(self, x, y, text, font, color):
         if not text:

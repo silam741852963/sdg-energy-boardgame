@@ -483,19 +483,32 @@ class RocketScene:
         renderer.draw_particles(np.asarray(rows, dtype=np.float32))
 
     @staticmethod
-    def _sample_light(x, y, sources):
+    def _sample_lights(points, sources):
+        """Sample many scene points in one NumPy pass.
+
+        The previous scalar helper created several temporary arrays per blade,
+        ground mark, and building. On a Pi that meant hundreds of tiny NumPy
+        calls per frame, which cost far more than one compact point/light matrix.
+        """
+        points = np.asarray(points, dtype=np.float32).reshape(-1, 2)
+        if not len(points):
+            return np.empty((0, 3), dtype=np.float32)
         if sources is None or len(sources) == 0:
-            return (0.0, 0.0, 0.0)
-        dx = sources[:, 0] - x
-        dy = sources[:, 1] - y
-        radius = np.maximum(1.0, sources[:, 6])
+            return np.zeros((len(points), 3), dtype=np.float32)
+        dx = sources[None, :, 0] - points[:, None, 0]
+        dy = sources[None, :, 1] - points[:, None, 1]
+        radius = np.maximum(1.0, sources[None, :, 6])
         falloff = np.maximum(0.0, 1.0 - np.sqrt(dx * dx + dy * dy) / radius)
-        weights = falloff * falloff * sources[:, 5]
-        contributions = sources[:, 2:5] * weights[:, None]
+        weights = falloff * falloff * sources[None, :, 5]
+        contributions = sources[None, :, 2:5] * weights[:, :, None]
         # Nearby particle heads form one luminous plume, not dozens of lamps.
         # A max-weighted blend keeps a dense cluster from bleaching materials.
-        color = np.max(contributions, axis=0) + np.sum(contributions, axis=0) * 0.035
-        return tuple(np.clip(color, 0.0, 1.0))
+        color = np.max(contributions, axis=1) + np.sum(contributions, axis=1) * 0.035
+        return np.clip(color, 0.0, 1.0).astype(np.float32, copy=False)
+
+    @classmethod
+    def _sample_light(cls, x, y, sources):
+        return tuple(cls._sample_lights(((x, y),), sources)[0])
 
     @staticmethod
     def _lit(base, light, gain=0.45):
@@ -576,6 +589,7 @@ class RocketScene:
         # Static geometry is one textured draw call. Only the bounded dynamic
         # light response is drawn per building.
         renderer.set_blend_mode("additive")
+        visible = []
         for source_x, width, height, cols, rows, lit_windows, roof, variation in buildings:
             x = source_x
             y = base_y - height
@@ -583,22 +597,41 @@ class RocketScene:
                 continue
             if near and x < SCREEN_WIDTH / 2 + 310 * SCALE_X and x + width > SCREEN_WIDTH / 2 - 310 * SCALE_X:
                 continue
-            light = self._sample_light(x + width / 2, y + height * 0.45, lights)
+            visible.append((x, y, width, height))
+
+        samples = self._sample_lights(
+            [(x + width / 2, y + height * 0.45) for x, y, width, height in visible],
+            lights,
+        )
+        light_rects = []
+        light_lines = []
+        for (x, y, width, height), light_values in zip(visible, samples):
+            light = tuple(light_values)
             energy = max(light)
             if energy <= 0.015:
                 continue
             if near:
                 # Fireworks are behind this layer: mostly rim and roof light,
                 # with only a faint bounced wash on the facade.
-                renderer.draw_rect(x, y, width, height, (*light, alpha * 0.035), fill=True)
-                renderer.draw_line(x, y, x + width, y, (*light, alpha * 0.52))
-                renderer.draw_line(x, y, x, y + height, (*light, alpha * 0.24))
-                renderer.draw_line(x + width, y, x + width, y + height, (*light, alpha * 0.24))
+                light_rects.append((x, y, width, height, *light, alpha * 0.035))
+                light_lines.append((x, y, x + width, y, *light, alpha * 0.52))
+                light_lines.append((x, y, x, y + height, *light, alpha * 0.24))
+                light_lines.append((x + width, y, x + width, y + height, *light, alpha * 0.24))
             else:
                 # The far skyline faces the firework plane and receives a broad,
                 # subdued color wash.
-                renderer.draw_rect(x, y, width, height, (*light, alpha * 0.13), fill=True)
-                renderer.draw_rect(x, y, width, height, (*light, alpha * 0.18), fill=False)
+                light_rects.append((x, y, width, height, *light, alpha * 0.13))
+                border = (*light, alpha * 0.18)
+                light_lines.extend(
+                    (
+                        (x, y, x + width, y, *border),
+                        (x + width, y, x + width, y + height, *border),
+                        (x + width, y + height, x, y + height, *border),
+                        (x, y + height, x, y, *border),
+                    )
+                )
+        renderer.draw_colored_rects(light_rects)
+        renderer.draw_colored_lines(light_lines)
         renderer.set_blend_mode("alpha")
 
     def _draw_ground(self, renderer, ground_y, frame_count, alpha, firework_lights, launch_lights):
@@ -606,31 +639,47 @@ class RocketScene:
             return
         renderer.draw_rect(0, ground_y, SCREEN_WIDTH, SCREEN_HEIGHT - ground_y, (0.025, 0.022, 0.026, alpha), fill=True)
         segment_width = SCREEN_WIDTH / 20.0
+        segment_points = [
+            (index * segment_width + segment_width / 2, max(ground_y, 0))
+            for index in range(20)
+        ]
+        segment_fire = self._sample_lights(segment_points, firework_lights)
+        segment_launch = self._sample_lights(segment_points, launch_lights)
+        ground_rects = []
         for index in range(20):
             x = index * segment_width
-            fire = self._sample_light(x + segment_width / 2, max(ground_y, 0), firework_lights)
-            launch = self._sample_light(x + segment_width / 2, max(ground_y, 0), launch_lights)
+            fire = segment_fire[index]
+            launch = segment_launch[index]
             light = tuple(min(1.0, launch[channel] + fire[channel] * 0.22) for channel in range(3))
             surface = self._lit((0.022, 0.055, 0.035), light, 0.34)
             soil = self._lit((0.025, 0.022, 0.026), light, 0.19)
-            renderer.draw_rect(x, ground_y, segment_width + 1.0, SCREEN_HEIGHT - ground_y, (*soil, alpha), fill=True)
-            renderer.draw_rect(x, ground_y, segment_width + 1.0, 18 * SCALE_Y, (*surface, alpha), fill=True)
-        renderer.draw_line(0, ground_y + 20 * SCALE_Y, SCREEN_WIDTH, ground_y + 20 * SCALE_Y, (0.08, 0.10, 0.075, alpha * 0.72))
+            ground_rects.append((x, ground_y, segment_width + 1.0, SCREEN_HEIGHT - ground_y, *soil, alpha))
+            ground_rects.append((x, ground_y, segment_width + 1.0, 18 * SCALE_Y, *surface, alpha))
 
+        visible_marks = []
         for x, depth, width, shade in self._ground_marks:
             y = ground_y + depth
             if y >= SCREEN_HEIGHT:
                 continue
-            fire = self._sample_light(x, y, firework_lights)
-            launch = self._sample_light(x, y, launch_lights)
+            visible_marks.append((x, y, width, shade))
+        mark_points = [(x, y) for x, y, width, shade in visible_marks]
+        mark_fire = self._sample_lights(mark_points, firework_lights)
+        mark_launch = self._sample_lights(mark_points, launch_lights)
+        bases = ((0.06, 0.052, 0.05), (0.035, 0.04, 0.037), (0.075, 0.058, 0.045))
+        for (x, y, width, shade), fire, launch in zip(
+            visible_marks,
+            mark_fire,
+            mark_launch,
+        ):
             local = tuple(min(1.0, launch[channel] + fire[channel] * 0.20) for channel in range(3))
-            bases = ((0.06, 0.052, 0.05), (0.035, 0.04, 0.037), (0.075, 0.058, 0.045))
             color = self._lit(bases[shade], local, 0.25)
-            renderer.draw_rect(x, y, width, max(2.0, 3 * SCALE_Y), (*color, alpha * 0.72), fill=True)
+            ground_rects.append((x, y, width, max(2.0, 3 * SCALE_Y), *color, alpha * 0.72))
+        renderer.draw_colored_rects(ground_rects)
+        renderer.draw_line(0, ground_y + 20 * SCALE_Y, SCREEN_WIDTH, ground_y + 20 * SCALE_Y, (0.08, 0.10, 0.075, alpha * 0.72))
 
         if ground_y < -60 * SCALE_Y:
             return
-        grass_lines = []
+        blade_geometry = []
         for center, phase, speed, gust_response, blades in self._grass:
             cluster_gust = 0.58 + 0.42 * math.sin(frame_count * 0.013 * speed + phase * 0.43)
             slow_push = math.sin(frame_count * 0.021 + phase) * 1.8 * SCALE_X
@@ -642,13 +691,29 @@ class RocketScene:
                 sway = ripple * amplitude * (0.56 + cluster_gust * gust_response) + slow_push
                 tip_x = x + sway
                 mid_x = x + sway * 0.42
-                fire = self._sample_light(tip_x, ground_y - height * 0.65, firework_lights)
-                launch = self._sample_light(tip_x, ground_y - height * 0.65, launch_lights)
-                local = tuple(min(1.0, launch[channel] + fire[channel] * 0.30) for channel in range(3))
-                base_green = (0.064, 0.19 + blade_phase * 0.035, 0.088)
-                color = (*self._lit(base_green, local, 0.62), alpha)
-                grass_lines.append((x, ground_y + 3 * SCALE_Y, mid_x, ground_y - height * 0.50, *color))
-                grass_lines.append((mid_x, ground_y - height * 0.50, tip_x, ground_y - height, *color))
+                blade_geometry.append(
+                    (
+                        x,
+                        ground_y + 3 * SCALE_Y,
+                        mid_x,
+                        ground_y - height * 0.50,
+                        tip_x,
+                        ground_y - height,
+                        ground_y - height * 0.65,
+                        blade_phase,
+                    )
+                )
+        blade_points = [(row[4], row[6]) for row in blade_geometry]
+        blade_fire = self._sample_lights(blade_points, firework_lights)
+        blade_launch = self._sample_lights(blade_points, launch_lights)
+        grass_lines = []
+        for row, fire, launch in zip(blade_geometry, blade_fire, blade_launch):
+            x, base_y, mid_x, mid_y, tip_x, tip_y, _, blade_phase = row
+            local = tuple(min(1.0, launch[channel] + fire[channel] * 0.30) for channel in range(3))
+            base_green = (0.064, 0.19 + blade_phase * 0.035, 0.088)
+            color = (*self._lit(base_green, local, 0.62), alpha)
+            grass_lines.append((x, base_y, mid_x, mid_y, *color))
+            grass_lines.append((mid_x, mid_y, tip_x, tip_y, *color))
         renderer.draw_colored_lines(grass_lines)
 
     def _draw_launch_base(self, renderer, ground_y, alpha, firework_lights, launch_lights):
@@ -701,9 +766,17 @@ class RocketScene:
             (cx - 1.5 * block, top + 13 * block, 3 * block, 1.45 * block, (0.12, 0.13, 0.145)),
         )
         renderer.set_blend_mode("alpha")
-        for x, y, width, height, base in panels:
-            fire = self._sample_light(x + width / 2, y + height / 2, firework_lights)
-            launch = self._sample_light(x + width / 2, y + height / 2, launch_lights)
+        panel_points = [
+            (x + width / 2, y + height / 2)
+            for x, y, width, height, base in panels
+        ]
+        panel_fire = self._sample_lights(panel_points, firework_lights)
+        panel_launch = self._sample_lights(panel_points, launch_lights)
+        for (x, y, width, height, base), fire, launch in zip(
+            panels,
+            panel_fire,
+            panel_launch,
+        ):
             diffuse = tuple(min(1.0, launch[channel] + fire[channel] * 0.12) for channel in range(3))
             rim = tuple(min(1.0, launch[channel] + fire[channel] * 0.62) for channel in range(3))
             color = self._lit(base, diffuse, 0.50)

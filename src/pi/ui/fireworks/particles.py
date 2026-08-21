@@ -829,4 +829,12 @@ class ParticleSystem:
         if len(chunks) == 0:
             return np.empty((0, 7), dtype=np.float32)
 
-        return np.vstack(chunks).astype(np.float32)
+        instances = np.vstack(chunks).astype(np.float32)
+        # Last-line defense for every current and future particle path. Invalid
+        # RGB data or an accidental black entry must never become an opaque dark
+        # sprite if a caller changes blend state.
+        rgb = instances[:, 3:6]
+        invalid_rgb = ~np.all(np.isfinite(rgb), axis=1)
+        black_rgb = np.max(np.nan_to_num(rgb, nan=0.0), axis=1) < 0.08
+        rgb[invalid_rgb | black_rgb] = 1.0
+        return instances
