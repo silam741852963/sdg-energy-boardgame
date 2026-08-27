@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 import math
+from pathlib import Path
 import random
 
 import numpy as np
+import pygame
 
 from .config import (
     LAUNCH_TIER_TIMINGS,
@@ -18,6 +20,7 @@ from ...config import GeneratorType, MAX_ENERGY_GAUGE
 
 class MissionPhase(Enum):
     ATTRACT = auto()
+    CRASH = auto()
     REVEAL = auto()
     CHARGING = auto()
     IGNITION = auto()
@@ -94,8 +97,24 @@ CHARGE_CUE_LEVELS = {
 
 
 class RocketScene:
+    CRASH_SECONDS = 10.8
+    # Keep the exterior approach near 1.5 seconds while giving the cockpit
+    # sequence substantially more room to breathe.
+    CRASH_ZOOM_PROGRESS = 0.14
+    CRASH_IMPACT_PROGRESS = 0.90
     REVEAL_SECONDS = 2.0
     DEPARTURE_SECONDS = 3.6
+    EARTH_SPIN_RADIANS_PER_SECOND = 0.13
+    EARTH_IDLE_LATITUDE = math.radians(8.0)
+    # Ōmagari, Daisen, Akita (39°27′11.1″ N, 140°28′31.6″ E).
+    OMAGARI_LONGITUDE = math.radians(140.475444)
+    OMAGARI_LATITUDE = math.radians(39.453083)
+    EARTH_ASSET_PATH = (
+        Path(__file__).resolve().parents[4]
+        / "resource"
+        / "images"
+        / "earth-blue-marble-global.jpg"
+    )
 
     def __init__(self, firework_manager, audio):
         self.firework_manager = firework_manager
@@ -103,6 +122,11 @@ class RocketScene:
         self.phase = MissionPhase.ATTRACT
         self.scene_progress = 0.0
         self.phase_elapsed = 0.0
+        self.intro_elapsed = 0.0
+        self._crash_start_angle = 0.0
+        self._crash_start_longitude = 0.0
+        self._intro_played = False
+        self._logo_hidden_for_reveal = False
         self.launch_tier = None
         self.launch_generators = ()
         self.reserved_generators = ()
@@ -133,15 +157,32 @@ class RocketScene:
             True: self._build_city_asset(self._homes, near=True),
         }
         self._city_textures = {}
+        self._earth_texture = None
 
     @property
     def drone_y_offset(self):
+        if self.phase is MissionPhase.CRASH:
+            exit_progress = self._ease(
+                min(1.0, self.crash_progress / self.CRASH_ZOOM_PROGRESS)
+            )
+            return (270.0 - 1550.0 * exit_progress) * SCALE_Y
+        if self.phase is MissionPhase.REVEAL and self._logo_hidden_for_reveal:
+            return -1280.0 * SCALE_Y
         eased = self._ease(self.scene_progress)
-        return -1250.0 * SCALE_Y * eased
+        intro_offset = (0.0 if self._intro_played else 270.0) * SCALE_Y
+        return intro_offset * (1.0 - eased) - 1250.0 * SCALE_Y * eased
 
     @property
     def scene_alpha(self):
         return self._ease(self.scene_progress)
+
+    @property
+    def intro_alpha(self):
+        if self._intro_played:
+            return 0.0
+        if self.phase in (MissionPhase.ATTRACT, MissionPhase.CRASH):
+            return 1.0
+        return 0.0
 
     @property
     def firework_y_offset(self):
@@ -149,6 +190,16 @@ class RocketScene:
         return self.camera_y * 0.31
 
     def screen_shake(self):
+        if self.phase is MissionPhase.CRASH:
+            progress = self.crash_progress
+            impact = self.CRASH_IMPACT_PROGRESS
+            if progress < impact:
+                return 0.0, 0.0
+            strength = math.sin(
+                min(1.0, (progress - impact) / (1.0 - impact)) * math.pi
+            )
+            amount = 13.0 * strength
+            return self._rng.uniform(-amount, amount), self._rng.uniform(-amount, amount)
         if not self.launch_tier:
             return 0.0, 0.0
         if self.phase is MissionPhase.IGNITION:
@@ -400,10 +451,30 @@ class RocketScene:
             self._city_textures[near] = (texture, width, height)
         return self._city_textures[near]
 
+    def _ensure_earth_texture(self, renderer):
+        if self._earth_texture is None:
+            surface = pygame.image.load(str(self.EARTH_ASSET_PATH))
+            width, height = surface.get_size()
+            rgba = pygame.image.tobytes(surface, "RGBA", False)
+            texture = renderer.create_static_texture(
+                width,
+                height,
+                rgba,
+                smooth=True,
+                wrap_x=True,
+            )
+            self._earth_texture = (texture, width, height)
+        return self._earth_texture
+
     def reset(self):
         self.phase = MissionPhase.ATTRACT
         self.scene_progress = 0.0
         self.phase_elapsed = 0.0
+        self.intro_elapsed = 0.0
+        self._crash_start_angle = 0.0
+        self._crash_start_longitude = 0.0
+        self._intro_played = False
+        self._logo_hidden_for_reveal = False
         self.launch_tier = None
         self.launch_generators = ()
         self.reserved_generators = ()
@@ -453,12 +524,33 @@ class RocketScene:
         )
 
         has_selection = bool(snapshot.selected_generators)
+        if self.phase in (
+            MissionPhase.ATTRACT,
+            MissionPhase.CRASH,
+            MissionPhase.RETURN,
+        ):
+            self.intro_elapsed += dt
+
         if self.phase is MissionPhase.ATTRACT:
             if snapshot.launch_committed:
                 actions.reset_requested = True
             elif has_selection:
+                if self._intro_played:
+                    self._logo_hidden_for_reveal = False
+                    self.phase = MissionPhase.REVEAL
+                else:
+                    self._crash_start_angle = self._intro_orbit_angle()
+                    self._crash_start_longitude = self._earth_idle_longitude()
+                    self.phase = MissionPhase.CRASH
+                    self.phase_elapsed = 0.0
+        elif self.phase is MissionPhase.CRASH:
+            self.phase_elapsed += dt
+            if self.phase_elapsed >= self.CRASH_SECONDS:
+                self._intro_played = True
+                self._logo_hidden_for_reveal = True
                 self.phase = MissionPhase.REVEAL
-        if self.phase is MissionPhase.REVEAL:
+                self.phase_elapsed = 0.0
+        elif self.phase is MissionPhase.REVEAL:
             if not has_selection:
                 self.phase = MissionPhase.RETURN
             else:
@@ -476,7 +568,9 @@ class RocketScene:
                 if self.scene_progress <= 0.0:
                     self.phase = MissionPhase.ATTRACT
                     self.camera_y = 0.0
-                    actions.reset_requested = True
+                    self._logo_hidden_for_reveal = False
+                    if snapshot.launch_committed:
+                        actions.reset_requested = True
 
         if (
             self.phase is MissionPhase.CHARGING
@@ -521,6 +615,382 @@ class RocketScene:
                 actions.launch_completed = True
 
         return actions
+
+    @property
+    def crash_progress(self):
+        if self.phase is not MissionPhase.CRASH:
+            return 0.0
+        return min(1.0, self.phase_elapsed / self.CRASH_SECONDS)
+
+    def _intro_orbit_angle(self):
+        return -0.28 + self.intro_elapsed * 0.46
+
+    def _earth_idle_longitude(self):
+        return math.radians(-105.0) + self.intro_elapsed * self.EARTH_SPIN_RADIANS_PER_SECOND
+
+    @staticmethod
+    def _lerp_angle(start, end, amount):
+        delta = (end - start + math.pi) % math.tau - math.pi
+        return start + delta * amount
+
+    @staticmethod
+    def _intro_earth_geometry():
+        width = 660.0 * SCALE_X
+        height = 660.0 * SCALE_Y
+        center_x = SCREEN_WIDTH / 2
+        center_y = 365.0 * SCALE_Y
+        return center_x, center_y, width, height
+
+    def _intro_orbit_position(self, angle):
+        center_x, center_y, _, _ = self._intro_earth_geometry()
+        return (
+            center_x + math.cos(angle) * 445.0 * SCALE_X,
+            center_y + math.sin(angle) * 270.0 * SCALE_Y,
+        )
+
+    def _intro_rocket_pose(self):
+        angle = (
+            self._crash_start_angle
+            if self.phase is MissionPhase.CRASH
+            else self._intro_orbit_angle()
+        )
+        x, y = self._intro_orbit_position(angle)
+        return x, y, -math.sin(angle) * SCALE_X, math.cos(angle) * SCALE_Y
+
+    def _draw_intro_rocket(self, renderer, pose, alpha, visual_scale=1.0):
+        x, y, dx, dy = pose
+        length = max(0.001, math.hypot(dx, dy))
+        forward_x, forward_y = dx / length, dy / length
+        side_x, side_y = -forward_y, forward_x
+        scale = min(SCALE_X, SCALE_Y) * visual_scale
+
+        rects = []
+        body = (
+            (18.0, 7.0, (1.0, 0.92, 0.82, alpha)),
+            (10.0, 10.0, (0.96, 0.12, 0.12, alpha)),
+            (1.0, 12.0, (0.98, 0.98, 0.94, alpha)),
+            (-9.0, 12.0, (0.96, 0.12, 0.12, alpha)),
+            (-19.0, 10.0, (0.98, 0.98, 0.94, alpha)),
+        )
+        for along, size, color in body:
+            px = x + forward_x * along * scale
+            py = y + forward_y * along * scale
+            rects.append(
+                (
+                    px - size * scale / 2,
+                    py - size * scale / 2,
+                    size * scale,
+                    size * scale,
+                    *color,
+                )
+            )
+        for side in (-1.0, 1.0):
+            px = x - forward_x * 14.0 * scale + side_x * side * 10.0 * scale
+            py = y - forward_y * 14.0 * scale + side_y * side * 10.0 * scale
+            rects.append(
+                (
+                    px - 4.5 * scale,
+                    py - 4.5 * scale,
+                    9.0 * scale,
+                    9.0 * scale,
+                    0.96,
+                    0.12,
+                    0.12,
+                    alpha,
+                )
+            )
+        renderer.set_blend_mode("alpha")
+        renderer.draw_colored_rects(rects)
+
+        plume = []
+        renderer.set_blend_mode("additive")
+        for index in range(7):
+            distance = (27.0 + index * 7.0) * scale
+            jitter = math.sin(self.intro_elapsed * 13.0 + index * 1.7) * 2.5 * scale
+            px = x - forward_x * distance + side_x * jitter
+            py = y - forward_y * distance + side_y * jitter
+            fade = (1.0 - index / 8.0) * alpha
+            plume.append(
+                (
+                    px,
+                    py,
+                    (16.0 - index * 1.25) * scale,
+                    1.0,
+                    0.31 + index * 0.035,
+                    0.03,
+                    fade,
+                )
+            )
+        renderer.draw_particles(plume)
+
+    def _draw_earth(self, renderer, center_x, center_y, width, height, longitude, latitude, alpha):
+        texture, _, _ = self._ensure_earth_texture(renderer)
+        renderer.set_blend_mode("alpha")
+        renderer.draw_earth_globe(
+            texture,
+            center_x - width / 2,
+            center_y - height / 2,
+            width,
+            height,
+            longitude,
+            latitude,
+            alpha,
+        )
+
+    def _draw_orbit_intro(self, renderer, alpha):
+        pose = self._intro_rocket_pose()
+        center_x, center_y, earth_width, earth_height = self._intro_earth_geometry()
+        longitude = self._earth_idle_longitude()
+        rocket_scale = 1.0
+
+        if self.phase is MissionPhase.CRASH:
+            zoom_progress = self._ease(
+                min(1.0, self.crash_progress / self.CRASH_ZOOM_PROGRESS)
+            )
+            zoom = 1.0 + zoom_progress * 3.8
+            target_x = SCREEN_WIDTH / 2
+            target_y = 360.0 * SCALE_Y
+            center_x = target_x + (center_x - pose[0]) * zoom
+            center_y = target_y + (center_y - pose[1]) * zoom
+            earth_width *= zoom
+            earth_height *= zoom
+            pose = (target_x, target_y, pose[2], pose[3])
+            rocket_scale += zoom_progress * 3.4
+            longitude = (
+                self._crash_start_longitude
+                + self.phase_elapsed * self.EARTH_SPIN_RADIANS_PER_SECOND
+            )
+
+        rocket_behind = pose[1] < center_y and self.phase is not MissionPhase.CRASH
+        if rocket_behind:
+            self._draw_intro_rocket(renderer, pose, alpha * 0.78, rocket_scale)
+        self._draw_earth(
+            renderer,
+            center_x,
+            center_y,
+            earth_width,
+            earth_height,
+            longitude,
+            self.EARTH_IDLE_LATITUDE,
+            alpha,
+        )
+        if not rocket_behind:
+            self._draw_intro_rocket(renderer, pose, alpha, rocket_scale)
+
+    def _cockpit_progress(self):
+        start = self.CRASH_ZOOM_PROGRESS * 0.78
+        return self._ease(
+            min(1.0, max(0.0, (self.crash_progress - start) / (1.0 - start)))
+        )
+
+    def _cockpit_earth_orientation(self, cockpit_progress):
+        spinning_longitude = (
+            self._crash_start_longitude
+            + self.phase_elapsed * self.EARTH_SPIN_RADIANS_PER_SECOND
+        )
+        omagari_lock = self._ease(
+            min(1.0, max(0.0, (cockpit_progress - 0.24) / 0.66))
+        )
+        longitude = self._lerp_angle(
+            spinning_longitude,
+            self.OMAGARI_LONGITUDE,
+            omagari_lock,
+        )
+        latitude = (
+            self.EARTH_IDLE_LATITUDE
+            + (self.OMAGARI_LATITUDE - self.EARTH_IDLE_LATITUDE) * omagari_lock
+        )
+        return longitude, latitude, omagari_lock
+
+    def _draw_cockpit_ui(self, renderer, pixel_font, progress, omagari_lock, alpha):
+        sx = SCALE_X
+        sy = SCALE_Y
+        window_left = 225.0 * sx
+        window_right = 1695.0 * sx
+        window_top = 52.0 * sy
+        window_bottom = 760.0 * sy
+        frame = (0.035, 0.055, 0.080, 0.98 * alpha)
+        frame_edge = (0.16, 0.24, 0.31, 0.95 * alpha)
+        console = (0.025, 0.036, 0.052, 0.99 * alpha)
+        renderer.set_blend_mode("alpha")
+        renderer.draw_colored_rects(
+            [
+                (0, 0, SCREEN_WIDTH, window_top, *frame),
+                (0, window_top, window_left, window_bottom - window_top, *frame),
+                (window_right, window_top, SCREEN_WIDTH - window_right, window_bottom - window_top, *frame),
+                (0, window_bottom, SCREEN_WIDTH, SCREEN_HEIGHT - window_bottom, *console),
+                (window_left - 18 * sx, window_top, 18 * sx, window_bottom - window_top, *frame_edge),
+                (window_right, window_top, 18 * sx, window_bottom - window_top, *frame_edge),
+                (window_left, window_top, window_right - window_left, 14 * sy, *frame_edge),
+                (window_left, window_bottom - 18 * sy, window_right - window_left, 18 * sy, *frame_edge),
+            ]
+        )
+
+        # Window braces frame the view without covering the Ōmagari approach.
+        renderer.draw_colored_lines(
+            [
+                (window_left, window_top, window_left + 155 * sx, window_top + 120 * sy, 0.20, 0.31, 0.39, alpha),
+                (window_right, window_top, window_right - 155 * sx, window_top + 120 * sy, 0.20, 0.31, 0.39, alpha),
+                (window_left, window_bottom, window_left + 155 * sx, window_bottom - 115 * sy, 0.20, 0.31, 0.39, alpha),
+                (window_right, window_bottom, window_right - 155 * sx, window_bottom - 115 * sy, 0.20, 0.31, 0.39, alpha),
+            ]
+        )
+
+        target_x = SCREEN_WIDTH / 2
+        target_y = 365.0 * sy
+        reticle = (1.0, 0.31, 0.12, (0.45 + omagari_lock * 0.50) * alpha)
+        gap = 24.0 * sx
+        arm = 68.0 * sx
+        renderer.draw_colored_lines(
+            [
+                (target_x - arm, target_y, target_x - gap, target_y, *reticle),
+                (target_x + gap, target_y, target_x + arm, target_y, *reticle),
+                (target_x, target_y - arm * sy / sx, target_x, target_y - gap * sy / sx, *reticle),
+                (target_x, target_y + gap * sy / sx, target_x, target_y + arm * sy / sx, *reticle),
+            ]
+        )
+
+        pulse = 0.68 + 0.32 * math.sin(self.phase_elapsed * 12.0)
+        red = (1.0, 0.12, 0.08, pulse * alpha)
+        bar_x = 575.0 * sx
+        bar_y = 875.0 * sy
+        bar_width = 92.0 * sx
+        for index in range(6):
+            renderer.draw_rect(
+                bar_x + index * 112.0 * sx,
+                bar_y,
+                bar_width,
+                34.0 * sy,
+                (0.20, 0.035, 0.035, 0.92 * alpha),
+                fill=True,
+            )
+            renderer.draw_rect(
+                bar_x + index * 112.0 * sx,
+                bar_y,
+                bar_width,
+                34.0 * sy,
+                red,
+                fill=False,
+            )
+
+        if pixel_font is not None:
+            renderer.draw_pixel_text(
+                SCREEN_WIDTH / 2,
+                808.0 * sy,
+                "SOT-KUN EMERGENCY TERMINAL",
+                pixel_font,
+                5,
+                (0.66, 0.80, 0.90, 0.94 * alpha),
+                centered=True,
+            )
+            renderer.draw_pixel_text(
+                SCREEN_WIDTH / 2,
+                935.0 * sy,
+                "ENERGY 0%  -  POWER FAILURE",
+                pixel_font,
+                6,
+                red,
+                centered=True,
+            )
+            if omagari_lock > 0.56:
+                renderer.draw_pixel_text(
+                    target_x,
+                    target_y + 92.0 * sy,
+                    "OMAGARI, AKITA  39.4531 N  140.4754 E",
+                    pixel_font,
+                    4,
+                    (1.0, 0.62, 0.22, omagari_lock * alpha),
+                    centered=True,
+                )
+
+    def _draw_intro_impact(self, renderer, alpha):
+        progress = self.crash_progress
+        if progress < self.CRASH_IMPACT_PROGRESS:
+            return
+        age = min(
+            1.0,
+            (progress - self.CRASH_IMPACT_PROGRESS)
+            / (1.0 - self.CRASH_IMPACT_PROGRESS),
+        )
+        x = SCREEN_WIDTH / 2
+        y = 365.0 * SCALE_Y
+        renderer.set_blend_mode("additive")
+        renderer.draw_circle(
+            x,
+            y,
+            (30.0 + age * 190.0) * SCALE_X,
+            (1.0, 0.46, 0.08, (1.0 - age) * alpha * 0.74),
+        )
+        renderer.draw_circle(
+            x,
+            y,
+            (13.0 + age * 82.0) * SCALE_X,
+            (1.0, 0.96, 0.82, (1.0 - age) * alpha),
+        )
+        particles = []
+        for index in range(42):
+            angle = index * math.tau / 42.0 + 0.35
+            distance = age * (55.0 + (index % 8) * 22.0) * SCALE_X
+            particles.append(
+                (
+                    x + math.cos(angle) * distance,
+                    y + math.sin(angle) * distance * 0.72,
+                    (18.0 - age * 7.0) * SCALE_X,
+                    1.0,
+                    0.42 + (index % 3) * 0.18,
+                    0.08,
+                    (1.0 - age) * alpha,
+                )
+            )
+        renderer.draw_particles(particles)
+
+    def _draw_cockpit_intro(self, renderer, pixel_font, alpha):
+        progress = self._cockpit_progress()
+        if progress <= 0.001:
+            return
+        longitude, latitude, omagari_lock = self._cockpit_earth_orientation(progress)
+        earth_size = (590.0 + (progress ** 2.05) * 1730.0) * min(SCALE_X, SCALE_Y)
+        self._draw_earth(
+            renderer,
+            SCREEN_WIDTH / 2,
+            365.0 * SCALE_Y,
+            earth_size,
+            earth_size,
+            longitude,
+            latitude,
+            progress * alpha,
+        )
+        self._draw_cockpit_ui(
+            renderer,
+            pixel_font,
+            progress,
+            omagari_lock,
+            progress * alpha,
+        )
+        self._draw_intro_impact(renderer, alpha)
+
+    def draw_intro(self, renderer, pixel_font=None):
+        alpha = self.intro_alpha
+        if alpha <= 0.001:
+            return
+
+        if self.phase is MissionPhase.CRASH:
+            orbit_fade = 1.0 - self._ease(
+                min(
+                    1.0,
+                    max(
+                        0.0,
+                        (self.crash_progress - self.CRASH_ZOOM_PROGRESS * 0.78)
+                        / (self.CRASH_ZOOM_PROGRESS * 0.22),
+                    ),
+                )
+            )
+            if orbit_fade > 0.001:
+                self._draw_orbit_intro(renderer, alpha * orbit_fade)
+            self._draw_cockpit_intro(renderer, pixel_font, alpha)
+        else:
+            self._draw_orbit_intro(renderer, alpha)
+        renderer.set_blend_mode("additive")
 
     def charge_shake(self, frame_count):
         """Return a body-only tremble that grows with reserved charge."""
@@ -869,7 +1339,15 @@ class RocketScene:
         return tuple(min(1.0, base[index] + light[index] * gain) for index in range(3))
 
     def draw_far_city(self, renderer, firework_lights=None):
-        alpha = self.scene_alpha
+        attract_alpha = (
+            0.78
+            if self._intro_played
+            and self.phase in (MissionPhase.ATTRACT, MissionPhase.RETURN)
+            else 0.0
+        )
+        alpha = max(self.scene_alpha, attract_alpha)
+        if alpha <= 0.001:
+            return
         eased_scene = self._ease(self.scene_progress)
         firework_lights = firework_lights if firework_lights is not None else np.empty((0, 8))
         base_y = (
@@ -896,7 +1374,7 @@ class RocketScene:
                     foundation_top,
                     SCREEN_WIDTH,
                     foundation_bottom - foundation_top,
-                    (0.018, 0.034, 0.061, 0.78 + alpha * 0.22),
+                    (0.018, 0.034, 0.061, alpha),
                     fill=True,
                 )
         self._draw_city_layer(
@@ -904,7 +1382,7 @@ class RocketScene:
             self._skyscrapers,
             base_y=base_y,
             parallax_x=self.camera_y * 0.006,
-            alpha=0.78 + alpha * 0.22,
+            alpha=alpha,
             lights=firework_lights,
             near=False,
         )
@@ -1307,7 +1785,12 @@ class RocketScene:
             )
 
     def message(self, snapshot):
-        if self.phase in (MissionPhase.ATTRACT, MissionPhase.REVEAL, MissionPhase.RETURN):
+        if self.phase in (
+            MissionPhase.ATTRACT,
+            MissionPhase.CRASH,
+            MissionPhase.REVEAL,
+            MissionPhase.RETURN,
+        ):
             return None
         if self.phase is MissionPhase.IGNITION:
             return "ALL CELLS READY!", "HOLD ON, SOT-KUN. IT IS TIME TO GO HOME!"

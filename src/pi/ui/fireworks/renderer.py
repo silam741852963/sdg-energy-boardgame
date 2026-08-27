@@ -235,6 +235,64 @@ class Renderer:
         )
         self.texture_program["u_resolution"].value = self.resolution
 
+        # The Earth uses a tessellated GPU sphere. Texture coordinates and
+        # lighting are interpolated by the rasterizer, avoiding costly inverse
+        # trigonometry for every screen pixel on the Raspberry Pi.
+        earth_vert = """#version 330
+        precision highp float;
+        in vec3 in_position;
+        in vec2 in_texcoord;
+        out vec2 v_texcoord;
+        out vec3 v_view_normal;
+        uniform vec2 u_resolution;
+        uniform vec2 u_pos;
+        uniform vec2 u_size;
+        uniform vec3 u_center;
+        uniform vec3 u_east;
+        uniform vec3 u_north;
+
+        void main() {
+            vec3 view_normal = vec3(
+                dot(in_position, u_east),
+                dot(in_position, u_north),
+                dot(in_position, u_center)
+            );
+            vec2 local = vec2(
+                0.5 + view_normal.x * 0.5,
+                0.5 - view_normal.y * 0.5
+            );
+            vec2 screen_pos = u_pos + local * u_size;
+            vec2 ndc = (screen_pos / u_resolution) * 2.0 - 1.0;
+            ndc.y = -ndc.y;
+            gl_Position = vec4(ndc, 0.0, 1.0);
+            v_texcoord = in_texcoord;
+            v_view_normal = view_normal;
+        }"""
+        earth_frag = """#version 330
+        precision highp float;
+        in vec2 v_texcoord;
+        in vec3 v_view_normal;
+        uniform sampler2D u_texture;
+        uniform float u_alpha;
+        out vec4 fragColor;
+
+        void main() {
+            vec3 view_normal = normalize(v_view_normal);
+            if (view_normal.z <= 0.0) discard;
+            vec3 earth = texture(u_texture, v_texcoord).rgb;
+            vec3 light_direction = normalize(vec3(-0.42, 0.34, 0.84));
+            float diffuse = max(0.0, dot(view_normal, light_direction));
+            float night_side = 0.26 + diffuse * 0.74;
+            float rim = pow(1.0 - view_normal.z, 2.2);
+            earth = earth * night_side + vec3(0.04, 0.20, 0.52) * rim * 0.72;
+            float edge_alpha = smoothstep(0.0, 0.035, view_normal.z);
+            fragColor = vec4(earth, u_alpha * edge_alpha);
+        }"""
+        self.earth_program = self.ctx.program(
+            vertex_shader=earth_vert, fragment_shader=earth_frag
+        )
+        self.earth_program["u_resolution"].value = self.resolution
+
         # 6. Fullscreen Blit Shader
         screen_vert = """#version 330
         precision highp float;
@@ -336,6 +394,60 @@ class Renderer:
         self.texture_vao = self.ctx.vertex_array(
             self.texture_program,
             [(self.unit_quad_buffer, "2f 2f", "in_vert", "in_texcoord")],
+        )
+        longitude_segments = 96
+        latitude_segments = 48
+        earth_vertices = []
+        for row in range(latitude_segments + 1):
+            v = row / latitude_segments
+            latitude = math.pi / 2.0 - v * math.pi
+            cos_latitude = math.cos(latitude)
+            for column in range(longitude_segments + 1):
+                u = column / longitude_segments
+                longitude = (u - 0.5) * math.tau
+                earth_vertices.append(
+                    (
+                        cos_latitude * math.sin(longitude),
+                        math.sin(latitude),
+                        cos_latitude * math.cos(longitude),
+                        u,
+                        v,
+                    )
+                )
+        earth_indices = []
+        row_width = longitude_segments + 1
+        for row in range(latitude_segments):
+            for column in range(longitude_segments):
+                top_left = row * row_width + column
+                bottom_left = top_left + row_width
+                earth_indices.extend(
+                    (
+                        top_left,
+                        bottom_left,
+                        top_left + 1,
+                        top_left + 1,
+                        bottom_left,
+                        bottom_left + 1,
+                    )
+                )
+        self.earth_vertex_buffer = self.ctx.buffer(
+            np.asarray(earth_vertices, dtype="f4").tobytes()
+        )
+        self.earth_index_buffer = self.ctx.buffer(
+            np.asarray(earth_indices, dtype="u4").tobytes()
+        )
+        self.earth_vao = self.ctx.vertex_array(
+            self.earth_program,
+            [
+                (
+                    self.earth_vertex_buffer,
+                    "3f 2f",
+                    "in_position",
+                    "in_texcoord",
+                )
+            ],
+            self.earth_index_buffer,
+            index_element_size=4,
         )
 
         # Line VBO/VAO setup (2 vertices of 2 floats each)
@@ -510,10 +622,23 @@ class Renderer:
         # Render instanced particles
         self.particle_vao.render(moderngl.TRIANGLE_STRIP, instances=num_particles)
 
-    def create_static_texture(self, width, height, rgba_bytes):
+    def create_static_texture(
+        self,
+        width,
+        height,
+        rgba_bytes,
+        smooth=False,
+        wrap_x=False,
+    ):
         """Upload a reusable RGBA scene layer once."""
         texture = self.ctx.texture((int(width), int(height)), 4, rgba_bytes)
-        texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+        texture.filter = (
+            (moderngl.LINEAR, moderngl.LINEAR)
+            if smooth
+            else (moderngl.NEAREST, moderngl.NEAREST)
+        )
+        texture.repeat_x = bool(wrap_x)
+        texture.repeat_y = False
         return texture
 
     def draw_static_texture(self, texture, x, y, width, height, color=(1.0, 1.0, 1.0, 1.0)):
@@ -523,6 +648,40 @@ class Renderer:
         self.texture_program["u_color"].value = tuple(float(value) for value in color)
         self.texture_program["u_texture"].value = 0
         self.texture_vao.render(moderngl.TRIANGLE_STRIP)
+
+    def draw_earth_globe(
+        self,
+        texture,
+        x,
+        y,
+        width,
+        height,
+        center_lon,
+        center_lat,
+        alpha=1.0,
+    ):
+        """Project and light an equirectangular Earth texture on the GPU."""
+        texture.use(0)
+        self.earth_program["u_pos"].value = (float(x), float(y))
+        self.earth_program["u_size"].value = (float(width), float(height))
+        cos_lon = math.cos(center_lon)
+        sin_lon = math.sin(center_lon)
+        cos_lat = math.cos(center_lat)
+        sin_lat = math.sin(center_lat)
+        self.earth_program["u_center"].value = (
+            cos_lat * sin_lon,
+            sin_lat,
+            cos_lat * cos_lon,
+        )
+        self.earth_program["u_east"].value = (cos_lon, 0.0, -sin_lon)
+        self.earth_program["u_north"].value = (
+            -sin_lat * sin_lon,
+            cos_lat,
+            -sin_lat * cos_lon,
+        )
+        self.earth_program["u_alpha"].value = float(alpha)
+        self.earth_program["u_texture"].value = 0
+        self.earth_vao.render(moderngl.TRIANGLES)
 
     def draw_rect(self, x, y, w, h, color, fill=True):
         r, g, b, *a = color

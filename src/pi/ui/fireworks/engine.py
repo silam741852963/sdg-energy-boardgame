@@ -430,6 +430,10 @@ class FireworkEngine:
                 self._play_launch_fireworks(len(mission_event.generators))
 
         actions = self.rocket_scene.update(self.snapshot, dt, fps or 60.0)
+        self.audio.update_mission_audio(
+            self.rocket_scene.phase.name,
+            self.rocket_scene.crash_progress,
+        )
         self.renderer.screen_shake = self.rocket_scene.screen_shake()
         if actions.launch_completed:
             self.game_state.mark_launch_complete()
@@ -678,6 +682,7 @@ class FireworkEngine:
         self.renderer.start_frame()
         self.lighting.draw_background(self.renderer)
         self.rocket_scene.draw_stars(self.renderer, self.frame_count)
+        self.rocket_scene.draw_intro(self.renderer, self.pixel_font)
         firework_offset = self.rocket_scene.firework_y_offset
         firework_lights, launch_lights = self.firework_manager.gather_light_sources(
             firework_offset_y=firework_offset
@@ -725,7 +730,10 @@ class FireworkEngine:
             self.gui.draw(self.renderer, self.fonts)
             self.draw_cursor()
 
-        if show_debug and self.rocket_scene.phase is not MissionPhase.ATTRACT:
+        if show_debug and self.rocket_scene.phase not in (
+            MissionPhase.ATTRACT,
+            MissionPhase.CRASH,
+        ):
             modes = []
             if self.mock_hall:
                 modes.append("HALL")

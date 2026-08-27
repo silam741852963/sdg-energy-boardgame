@@ -10,6 +10,10 @@ class AudioSystem:
         self.enabled = False
         self.sounds = {}
         self.rocket_channel = None
+        self.ambient_channel = None
+        self.cockpit_channel = None
+        self._mission_audio_phase = None
+        self._last_crash_progress = 0.0
 
         try:
             pygame.init()
@@ -22,6 +26,9 @@ class AudioSystem:
                 return
 
             pygame.mixer.set_num_channels(32)
+            pygame.mixer.set_reserved(2)
+            self.ambient_channel = pygame.mixer.Channel(0)
+            self.cockpit_channel = pygame.mixer.Channel(1)
             self.enabled = True
         except Exception as e:
             print(
@@ -32,6 +39,12 @@ class AudioSystem:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "..", ".."))
         self.audio_dir = os.path.join(root_dir, "resource", "audio")
+
+        ambient_path = os.path.join(self.audio_dir, "Space_ambient_airy.ogg")
+        try:
+            self.sounds["space_ambient"] = pygame.mixer.Sound(ambient_path)
+        except Exception as e:
+            print(f"Failed to load {ambient_path}: {e}")
 
         self._load_sound_variants("blast_near", "Firework_blast")
         self._load_sound_variants("blast_far", "Firework_blast_far")
@@ -50,6 +63,21 @@ class AudioSystem:
                 self.sounds["end_chime"] = pygame.mixer.Sound(array=self._generate_end_chime_samples())
                 self.sounds["mission_ready"] = pygame.mixer.Sound(
                     array=self._generate_mission_ready_samples()
+                )
+                self.sounds["cockpit_zoom"] = pygame.mixer.Sound(
+                    array=self._generate_cockpit_zoom_samples()
+                )
+                self.sounds["cockpit_power_failure"] = pygame.mixer.Sound(
+                    array=self._generate_cockpit_power_failure_samples()
+                )
+                self.sounds["cockpit_alarm"] = pygame.mixer.Sound(
+                    array=self._generate_cockpit_alarm_samples()
+                )
+                self.sounds["cockpit_lock"] = pygame.mixer.Sound(
+                    array=self._generate_cockpit_lock_samples()
+                )
+                self.sounds["cockpit_impact"] = pygame.mixer.Sound(
+                    array=self._generate_cockpit_impact_samples()
                 )
 
                 hall_frequencies = {
@@ -81,6 +109,78 @@ class AudioSystem:
                     self.fill_sounds.append(pygame.mixer.Sound(array=samples))
             except Exception as e:
                 print(f"Failed to synthesize UI sounds: {e}")
+
+    def update_mission_audio(self, phase_name, crash_progress=0.0):
+        """Synchronize long-running audio and one-shot cues with the cutscene."""
+        if not self.enabled:
+            return
+
+        previous_phase = self._mission_audio_phase
+        phase_changed = phase_name != previous_phase
+        if phase_changed:
+            if previous_phase == "CRASH":
+                self._stop_cockpit_alarm()
+            if phase_name == "ATTRACT":
+                self._start_space_ambient()
+            elif previous_phase == "ATTRACT":
+                self._stop_space_ambient()
+            if phase_name == "CRASH":
+                self._last_crash_progress = 0.0
+                self._play_scene_sound("cockpit_zoom", 0.72)
+            self._mission_audio_phase = phase_name
+
+        if phase_name != "CRASH":
+            self._last_crash_progress = 0.0
+            return
+
+        progress = max(0.0, min(1.0, float(crash_progress)))
+        previous = self._last_crash_progress
+
+        def crossed(threshold):
+            return previous < threshold <= progress
+
+        if crossed(0.11):
+            self._play_scene_sound("cockpit_power_failure", 0.72)
+        if crossed(0.27):
+            self._start_cockpit_alarm()
+        if crossed(0.66):
+            self._play_scene_sound("cockpit_lock", 0.76)
+        if crossed(0.90):
+            self._stop_cockpit_alarm()
+            self._play_scene_sound("cockpit_impact", 0.92)
+        self._last_crash_progress = progress
+
+    def _play_scene_sound(self, key, volume):
+        sound = self.sounds.get(key)
+        if sound is None:
+            return
+        channel = pygame.mixer.find_channel()
+        if channel:
+            channel.set_volume(volume)
+            channel.play(sound)
+
+    def _start_space_ambient(self):
+        sound = self.sounds.get("space_ambient")
+        if sound is None or self.ambient_channel is None:
+            return
+        if not self.ambient_channel.get_busy():
+            self.ambient_channel.set_volume(0.22)
+            self.ambient_channel.play(sound, loops=-1, fade_ms=1400)
+
+    def _stop_space_ambient(self):
+        if self.ambient_channel is not None and self.ambient_channel.get_busy():
+            self.ambient_channel.fadeout(700)
+
+    def _start_cockpit_alarm(self):
+        sound = self.sounds.get("cockpit_alarm")
+        if sound is None or self.cockpit_channel is None:
+            return
+        self.cockpit_channel.set_volume(0.48)
+        self.cockpit_channel.play(sound, loops=-1, fade_ms=180)
+
+    def _stop_cockpit_alarm(self):
+        if self.cockpit_channel is not None and self.cockpit_channel.get_busy():
+            self.cockpit_channel.fadeout(180)
 
     def _load_sound_variants(self, key, stem, count=3):
         variants = []
@@ -235,6 +335,89 @@ class AudioSystem:
             )
             chunks.append((wave * envelope * 0.31 * 32767).astype(np.int16))
         mono = np.concatenate(chunks)
+        return np.column_stack((mono, mono))
+
+    def _generate_cockpit_zoom_samples(self):
+        import numpy as np
+
+        sample_rate = 44100
+        duration = 1.55
+        count = int(sample_rate * duration)
+        time_axis = np.arange(count, dtype=np.float32) / sample_rate
+        sweep = 72.0 * time_axis + 145.0 * time_axis * time_axis
+        engine = np.sin(2.0 * np.pi * sweep)
+        shimmer = np.sin(2.0 * np.pi * (310.0 * time_axis + 85.0 * time_axis**2))
+        rng = np.random.default_rng(401)
+        noise = rng.uniform(-1.0, 1.0, count).astype(np.float32)
+        noise = np.convolve(noise, np.ones(32, dtype=np.float32) / 32.0, mode="same")
+        envelope = np.sin(np.pi * np.minimum(1.0, time_axis / duration)) ** 0.6
+        mono = np.clip((engine * 0.30 + shimmer * 0.13 + noise) * envelope, -1.0, 1.0)
+        left = (mono * 0.42 * 32767).astype(np.int16)
+        right = (np.roll(mono, 17) * 0.42 * 32767).astype(np.int16)
+        return np.column_stack((left, right))
+
+    def _generate_cockpit_power_failure_samples(self):
+        import numpy as np
+
+        sample_rate = 44100
+        duration = 1.25
+        count = int(sample_rate * duration)
+        time_axis = np.arange(count, dtype=np.float32) / sample_rate
+        phase = 2.0 * np.pi * (520.0 * time_axis - 175.0 * time_axis**2)
+        falling_tone = np.sin(phase) + 0.28 * np.sign(np.sin(phase * 0.5))
+        stutter = 0.42 + 0.58 * (np.sin(2.0 * np.pi * 8.0 * time_axis) > -0.15)
+        envelope = np.minimum(1.0, time_axis / 0.012) * np.exp(-1.8 * time_axis)
+        mono = np.clip(falling_tone * stutter * envelope * 0.34, -1.0, 1.0)
+        mono = (mono * 32767).astype(np.int16)
+        return np.column_stack((mono, mono))
+
+    def _generate_cockpit_alarm_samples(self):
+        import numpy as np
+
+        sample_rate = 44100
+        duration = 2.0
+        count = int(sample_rate * duration)
+        time_axis = np.arange(count, dtype=np.float32) / sample_rate
+        carrier = np.sin(2.0 * np.pi * 438.0 * time_axis)
+        carrier += 0.34 * np.sin(2.0 * np.pi * 876.0 * time_axis)
+        pulse = np.maximum(0.0, np.sin(2.0 * np.pi * time_axis)) ** 2.2
+        edge_fade = np.minimum(1.0, np.minimum(time_axis, duration - time_axis) / 0.012)
+        mono = np.clip(carrier * pulse * edge_fade * 0.35, -1.0, 1.0)
+        left = (mono * 32767).astype(np.int16)
+        right = (np.roll(mono, 11) * 32767).astype(np.int16)
+        return np.column_stack((left, right))
+
+    def _generate_cockpit_lock_samples(self):
+        import numpy as np
+
+        sample_rate = 44100
+        chunks = []
+        for frequency, duration in ((780.0, 0.10), (0.0, 0.055), (1050.0, 0.10), (0.0, 0.055), (1420.0, 0.22)):
+            count = int(sample_rate * duration)
+            time_axis = np.arange(count, dtype=np.float32) / sample_rate
+            if frequency == 0.0:
+                chunks.append(np.zeros(count, dtype=np.float32))
+                continue
+            envelope = np.sin(np.pi * time_axis / duration) ** 0.45
+            chunks.append(np.sin(2.0 * np.pi * frequency * time_axis) * envelope)
+        mono = (np.concatenate(chunks) * 0.34 * 32767).astype(np.int16)
+        return np.column_stack((mono, mono))
+
+    def _generate_cockpit_impact_samples(self):
+        import numpy as np
+
+        sample_rate = 44100
+        duration = 1.7
+        count = int(sample_rate * duration)
+        time_axis = np.arange(count, dtype=np.float32) / sample_rate
+        rng = np.random.default_rng(402)
+        noise = rng.uniform(-1.0, 1.0, count).astype(np.float32)
+        rumble = np.convolve(noise, np.ones(64, dtype=np.float32) / 64.0, mode="same")
+        boom = np.sin(2.0 * np.pi * (46.0 * time_axis - 7.5 * time_axis**2))
+        crack = noise * np.exp(-24.0 * time_axis)
+        envelope = np.minimum(1.0, time_axis / 0.006) * np.exp(-2.25 * time_axis)
+        mono = np.clip((boom * 0.62 + rumble * 3.2 + crack * 0.42) * envelope, -1.0, 1.0)
+        mono = (mono * 0.66 * 32767).astype(np.int16)
         return np.column_stack((mono, mono))
 
     def _generate_tick_samples(self):
