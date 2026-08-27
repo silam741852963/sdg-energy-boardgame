@@ -164,7 +164,7 @@ class AudioSystem:
         if sound is None or self.ambient_channel is None:
             return
         if not self.ambient_channel.get_busy():
-            self.ambient_channel.set_volume(0.22)
+            self.ambient_channel.set_volume(0.38)
             self.ambient_channel.play(sound, loops=-1, fade_ms=1400)
 
     def _stop_space_ambient(self):

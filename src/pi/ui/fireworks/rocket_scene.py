@@ -852,10 +852,12 @@ class RocketScene:
 
         pulse = 0.68 + 0.32 * math.sin(self.phase_elapsed * 12.0)
         red = (1.0, 0.12, 0.08, pulse * alpha)
-        bar_x = 575.0 * sx
+        cell_count = 4
         bar_y = 875.0 * sy
         bar_width = 92.0 * sx
-        for index in range(6):
+        spacing = 112.0 * sx
+        bar_x = (SCREEN_WIDTH - (bar_width + (cell_count - 1) * spacing)) / 2.0
+        for index in range(cell_count):
             renderer.draw_rect(
                 bar_x + index * 112.0 * sx,
                 bar_y,
