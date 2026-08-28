@@ -113,8 +113,12 @@ class RocketScene:
     ROCKET_ESCAPE_END = 0.92
     BLACK_FADE_START = 0.93
     BLACK_FADE_END = 0.99
-    EARTH_RETURN_ZOOM_SECONDS = 1.15
+    EARTH_RETURN_FOCUS_HOLD_SECONDS = 1.5
+    EARTH_RETURN_ZOOM_SECONDS = 4.0
     EARTH_RETURN_FADE_SECONDS = 1.25
+    EARTH_RETURN_STAR_SECONDS = 5.5
+    EARTH_RETURN_STAR_ANGLE = math.radians(8.0)
+    EARTH_RETURN_TRAIL_SEGMENTS = 5
     EARTH_SPIN_RADIANS_PER_SECOND = 0.13
     EARTH_IDLE_LATITUDE = math.radians(8.0)
     # Ōmagari, Daisen, Akita (39°27′11.1″ N, 140°28′31.6″ E).
@@ -136,6 +140,10 @@ class RocketScene:
         self.intro_elapsed = 0.0
         self._earth_return_zoom = 0.0
         self._earth_return_fade = 0.0
+        self._earth_return_stars = 0.0
+        self._earth_return_focus_hold = 0.0
+        self._star_field_angle = 0.0
+        self._earth_return_star_origin_angle = 0.0
         self._crash_start_angle = 0.0
         self._crash_start_longitude = 0.0
         self._crash_target_longitude = None
@@ -532,6 +540,13 @@ class RocketScene:
         self.intro_elapsed = return_intro_elapsed if returning_from_launch else 0.0
         self._earth_return_zoom = 1.0 if returning_from_launch else 0.0
         self._earth_return_fade = 1.0 if returning_from_launch else 0.0
+        self._earth_return_stars = 1.0 if returning_from_launch else 0.0
+        self._earth_return_focus_hold = (
+            self.EARTH_RETURN_FOCUS_HOLD_SECONDS
+            if returning_from_launch
+            else 0.0
+        )
+        self._earth_return_star_origin_angle = self._star_field_angle
         self._crash_start_angle = 0.0
         self._crash_start_longitude = 0.0
         self._crash_target_longitude = None
@@ -597,12 +612,30 @@ class RocketScene:
             self.intro_elapsed += dt
 
         if self.phase is MissionPhase.ATTRACT:
-            self._earth_return_zoom = max(
-                0.0, self._earth_return_zoom - dt / self.EARTH_RETURN_ZOOM_SECONDS
-            )
             self._earth_return_fade = max(
                 0.0, self._earth_return_fade - dt / self.EARTH_RETURN_FADE_SECONDS
             )
+            if self._earth_return_fade <= 0.0:
+                if self._earth_return_focus_hold > 0.0:
+                    self._earth_return_focus_hold = max(
+                        0.0, self._earth_return_focus_hold - dt
+                    )
+                else:
+                    self._earth_return_zoom = max(
+                        0.0,
+                        self._earth_return_zoom
+                        - dt / self.EARTH_RETURN_ZOOM_SECONDS,
+                    )
+                self._earth_return_stars = max(
+                    0.0,
+                    self._earth_return_stars
+                    - dt / self.EARTH_RETURN_STAR_SECONDS,
+                )
+                self._star_field_angle = (
+                    self._earth_return_star_origin_angle
+                    + self.EARTH_RETURN_STAR_ANGLE
+                    * (1.0 - self._earth_return_stars**2.0)
+                )
             if snapshot.launch_committed:
                 actions.reset_requested = True
             elif has_selection:
@@ -799,6 +832,24 @@ class RocketScene:
         center_x = SCREEN_WIDTH / 2
         center_y = 365.0 * SCALE_Y
         return center_x, center_y, width, height
+
+    def _earth_return_screen_center(self):
+        """Earth center after applying the active rocket-focused camera zoom."""
+        center_x, center_y, _, _ = self._intro_earth_geometry()
+        if self._earth_return_zoom <= 0.0:
+            return center_x, center_y
+        pose = self._intro_rocket_pose()
+        zoom_progress = 1.0 - self._earth_return_zoom
+        eased_zoom = self._ease(zoom_progress)
+        zoom = 3.8 - 2.8 * eased_zoom
+        target_x = SCREEN_WIDTH / 2
+        target_y = 360.0 * SCALE_Y
+        rocket_x = target_x + (pose[0] - target_x) * eased_zoom
+        rocket_y = target_y + (pose[1] - target_y) * eased_zoom
+        return (
+            rocket_x + (center_x - pose[0]) * zoom,
+            rocket_y + (center_y - pose[1]) * zoom,
+        )
 
     def _intro_orbit_position(self, angle):
         center_x, center_y, _, _ = self._intro_earth_geometry()
@@ -1369,6 +1420,17 @@ class RocketScene:
         streaks = []
         camera_shift = self._ease(self.scene_progress) * 280.0 * SCALE_Y
         launch_activity = self.launch_cosmos_strength()
+        earth_star_strength = (
+            self._earth_return_stars
+            if self.phase is MissionPhase.ATTRACT
+            else 0.0
+        )
+        earth_star_angle = self._star_field_angle
+        # Keep the field nearly stationary; the luminous curved trails carry
+        # the orbital motion without making the whole view feel like it spins.
+        orbit_cos = math.cos(earth_star_angle)
+        orbit_sin = math.sin(earth_star_angle)
+        orbit_center_x, orbit_center_y = self._earth_return_screen_center()
         successful_return = (
             self.phase is MissionPhase.RETURN
             and self._return_camera_start > 0.0
@@ -1386,6 +1448,20 @@ class RocketScene:
         )
         for x, y, size, alpha, depth, phase, blink_speed, blink_strength in self._stars:
             draw_y = (y - camera_shift * depth + self.camera_y * depth * 0.055) % SCREEN_HEIGHT
+            draw_x = x
+            if abs(earth_star_angle) > 0.0001:
+                relative_x = x - orbit_center_x
+                relative_y = draw_y - orbit_center_y
+                draw_x = (
+                    orbit_center_x
+                    + relative_x * orbit_cos
+                    - relative_y * orbit_sin
+                )
+                draw_y = (
+                    orbit_center_y
+                    + relative_x * orbit_sin
+                    + relative_y * orbit_cos
+                )
             activity_speed = blink_speed * (1.0 + launch_activity * 2.4)
             wave = 0.5 + 0.5 * math.sin(frame_count * activity_speed + phase)
             blink = wave ** (6.0 - launch_activity * 2.5)
@@ -1396,7 +1472,64 @@ class RocketScene:
             blink_size = size * (
                 1.0 + blink_strength * blink * 0.68 + reactive_flash * 0.72
             )
-            rows.append((x, draw_y, blink_size, 0.68, 0.78, 1.0, min(1.0, twinkle)))
+            rows.append((draw_x, draw_y, blink_size, 0.68, 0.78, 1.0, min(1.0, twinkle)))
+            if earth_star_strength > 0.01:
+                radial_x = draw_x - orbit_center_x
+                radial_y = draw_y - orbit_center_y
+                # Remaining motion is also normalized angular velocity for the
+                # quadratic ease-out, so trails naturally contract as the sky
+                # settles around Earth.
+                trail_velocity = earth_star_strength
+                arc_angle = (
+                    0.28
+                    * trail_velocity**1.10
+                    * (0.82 + depth * 0.34)
+                )
+                previous_x = draw_x
+                previous_y = draw_y
+                for segment in range(1, self.EARTH_RETURN_TRAIL_SEGMENTS + 1):
+                    segment_angle = (
+                        -arc_angle
+                        * segment
+                        / self.EARTH_RETURN_TRAIL_SEGMENTS
+                    )
+                    segment_cos = math.cos(segment_angle)
+                    segment_sin = math.sin(segment_angle)
+                    tail_x = (
+                        orbit_center_x
+                        + radial_x * segment_cos
+                        - radial_y * segment_sin
+                    )
+                    tail_y = (
+                        orbit_center_y
+                        + radial_x * segment_sin
+                        + radial_y * segment_cos
+                    )
+                    segment_fade = (
+                        1.0
+                        - (segment - 1)
+                        / (self.EARTH_RETURN_TRAIL_SEGMENTS + 1.0)
+                    )
+                    streaks.append(
+                        (
+                            tail_x,
+                            tail_y,
+                            previous_x,
+                            previous_y,
+                            0.70,
+                            0.88,
+                            1.0,
+                            min(
+                                0.96,
+                                alpha
+                                * trail_velocity**0.85
+                                * segment_fade
+                                * (0.64 + depth * 0.56),
+                            ),
+                        )
+                    )
+                    previous_x = tail_x
+                    previous_y = tail_y
             if streak_progress > 0.0:
                 speed = streak_progress**2.0
                 trail_length = (12.0 + speed * 900.0) * depth * SCALE_Y
@@ -1406,9 +1539,9 @@ class RocketScene:
                 )
                 streaks.append(
                     (
-                        x,
+                        draw_x,
                         draw_y - trail_length,
-                        x,
+                        draw_x,
                         draw_y,
                         0.58,
                         0.78,
