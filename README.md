@@ -1,38 +1,47 @@
 # SDG Energy Boardgame
 
 A hardware–software board game for teaching sustainable energy concepts. Players
-move Sot-kun, the magnetic selector, between micro-energy generators, reserving two to four completed
-cells in one on-screen battery to launch Sot-kun's rocket home.
+move Sot-kun, a magnetic selector, between four micro-energy generators and fill
+two to four cells in an on-screen battery to launch Sot-kun's rocket home.
 
-The application targets a 2 GB Raspberry Pi 5 connected to CleanBoost BLE beacons and
-Hall-effect sensors, but every input can be mocked for development on another
-Linux computer.
+The target and tested deployment platform is a **Raspberry Pi 5 with 2 GB of
+RAM**, connected to four CleanBoost BLE beacons, four Hall-effect sensors, a PWM
+output, a 1920×1080 display, and audio. BLE and Hall input can also be mocked for
+development on another Linux computer.
 
-## Features
+## What the application does
 
-- Wind, solar, hand-crank, and coil generator modes
-- BLE energy input from four configured CleanBoost devices
-- GPIO Hall-effect selection with automatic GPIO fallback
-- Full-HD Pygame and ModernGL interface with GPU particle effects
-- A parallax night city, bright red-and-white textured rocket, compact cell fireworks, and particle-lit launch effects
-- Retained personal-best code behind a disabled runtime feature flag
-- Fully mocked or mixed real/mock development modes
+- Supports wind, solar, hand-crank, and coil generators.
+- Receives energy from four configured CleanBoost BLE devices.
+- Uses four GPIO Hall-effect inputs to follow the movable Sot-kun selector.
+- Drives a 1 kHz, 50% duty-cycle PWM square wave while real GPIO is enabled.
+- Renders a full-HD Pygame/ModernGL experience with GPU particles, lighting,
+  parallax scenery, a cockpit crash introduction, tiered rocket launches, and a
+  GPU-rendered Earth return focused on Ōmagari, Akita.
+- Stores personal bests by exact battery loadout; rankings are enabled by
+  default.
+- Supports fully mocked and mixed real/mock input modes.
 
-## Requirements
+## Tested platform and requirements
+
+The production configuration has been tested on a **2 GB Raspberry Pi 5** at
+1920×1080 and 60 FPS. The renderer requires a hardware-accelerated OpenGL 3.3
+core context and deliberately rejects software renderers such as llvmpipe,
+softpipe, and swrast.
+
+Software requirements:
 
 - Python 3.10 or newer
-- A working OpenGL context (OpenGL 3.3-capable drivers recommended)
-- Linux Bluetooth/BlueZ for real BLE operation
+- Linux Bluetooth/BlueZ for real BLE input
 - Raspberry Pi GPIO support for real Hall sensors and PWM output
-- Audio output supported by SDL/Pygame
+- An SDL/Pygame-compatible display and audio device
+- The Python packages pinned in `pyproject.toml`
 
-On a minimal Raspberry Pi OS installation, system packages for Bluetooth,
-OpenGL, SDL, audio, and Python virtual environments may also be required. Their
-exact names vary by OS release.
+On a minimal Raspberry Pi OS installation, install the OS packages that provide
+Bluetooth, Mesa/OpenGL, SDL audio/video, GPIO access, and Python virtual
+environments. Package names vary by Raspberry Pi OS release.
 
 ## Installation
-
-Clone the repository and create an isolated environment:
 
 ```bash
 git clone <repository-url> sdg-energy-boardgame
@@ -42,33 +51,33 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 ```
 
-`pip install -e .` installs the package, dependencies, and the
-`sdg-energy-boardgame` command. The legacy `requirements.txt` remains available
-for deployment tooling that consumes pinned requirement files directly.
+The editable install provides the `sdg-energy-boardgame` command. `pyproject.toml`
+is the package definition and direct dependency source; `requirements.txt` is a
+pinned deployment snapshot that also includes transitive packages.
 
 ## Running
 
-For development without physical hardware:
-
-```bash
-./run.sh --debug
-```
-
-For production with BLE, Hall sensors, and PWM:
+Run with real BLE, Hall sensors, and PWM:
 
 ```bash
 ./run.sh
 ```
 
-The launcher is independent of the current working directory. It looks for
-`.venv/bin/python`, then `venv/bin/python`, then `python3` on `PATH`. Override the
-interpreter when needed:
+Run without physical input hardware:
+
+```bash
+./run.sh --debug
+```
+
+The launcher resolves the repository root, prefers `.venv/bin/python`, then
+`venv/bin/python`, and finally `python3` on `PATH`. Set `SDG_PYTHON` to select an
+explicit interpreter:
 
 ```bash
 SDG_PYTHON=/opt/sdg/venv/bin/python /opt/sdg-energy-boardgame/run.sh
 ```
 
-An editable installation also provides:
+An editable installation also supports:
 
 ```bash
 sdg-energy-boardgame --debug
@@ -77,25 +86,34 @@ python -m pi.main --debug
 
 ### Input modes
 
-| Command | BLE energy | Hall selection / PWM |
-| --- | --- | --- |
-| `./run.sh` | Real | Real |
-| `./run.sh --debug ble` | Mock | Real |
-| `./run.sh --debug hall-ic` | Real | Mock/disabled |
-| `./run.sh --debug` or `--debug all` | Mock | Mock/disabled |
+| Command | BLE energy | Hall selection | PWM |
+| --- | --- | --- | --- |
+| `./run.sh` | Real | Real | Enabled |
+| `./run.sh --debug ble` | Mock | Real | Enabled |
+| `./run.sh --debug hall-ic` | Real | Mock | Disabled |
+| `./run.sh --debug` or `--debug all` | Mock | Mock | Disabled |
 
-If GPIO initialization fails in a real-Hall mode, the application logs a warning
-and continues with mocked Hall input. In mocked Hall mode, keys `1`–`4` move one
-virtual Sot-kun selector between Wind, Solar, Hand Crank, and Coil; pressing the active key
-lifts it. In mocked BLE mode, `Q`, `W`, `E`, and `R`
-charge those matching cells. `0` clears all mocked Hall selections, `Backspace`
-resets, `M` toggles metrics, and `Esc` quits. Mock energy is manual and
-deterministic; it is never generated randomly.
+If GPIO initialization fails in a real-Hall mode, the application warns and
+continues with mocked Hall input; PWM is disabled with it.
+
+Mock controls:
+
+| Key | Action |
+| --- | --- |
+| `1` / `2` / `3` / `4` | Move Sot-kun to Wind / Solar / Hand Crank / Coil; press the active key again to lift it |
+| `Q` / `W` / `E` / `R` | Add energy to Wind / Solar / Hand Crank / Coil when mock BLE is active |
+| `0` | Clear the mocked Hall selection |
+| `Backspace` | Reset the mission |
+| `M` | Toggle performance metrics |
+| `F5` | Export the current firework specification in fully mocked mode |
+| `Esc` | Close an overlay or quit |
+
+Mock energy is manual and deterministic; it is not generated randomly.
 
 ## Hardware configuration
 
-Generator definitions, CleanBoost MAC addresses, gauge limits, and fill rates are
-in [`src/pi/config.py`](src/pi/config.py).
+Generator definitions, CleanBoost MAC addresses, energy limits, and per-beacon
+fill amounts are in [`src/pi/config.py`](src/pi/config.py).
 
 Default BCM Hall sensor pins:
 
@@ -106,111 +124,112 @@ Default BCM Hall sensor pins:
 | Hand Crank | 22 |
 | Coil | 23 |
 
-The PWM square wave uses BCM pin 2 at 1 kHz and 50% duty cycle. GPIO is 3.3 V;
-external level conversion is required for 5 V hardware. Pin mapping and active
-polarity are configured in [`receiver_wire.py`](src/pi/hardware/receiver_wire.py).
+Hall inputs currently use gpiozero `Button` objects with internal pull-ups,
+50 ms debounce, and active detection through `is_pressed`. Pin mapping and
+polarity are defined in
+[`receiver_wire.py`](src/pi/hardware/receiver_wire.py).
 
-## Game behavior
+PWM uses BCM pin 2 at 1 kHz and 50% duty cycle. Raspberry Pi GPIO is 3.3 V;
+external level conversion is required for 5 V hardware.
 
-1. With no Hall sensors selected, Ablic floats over a procedural star field
-   with clearly blinking stars and a recurring comet. The first comet appears
-   within four seconds of startup.
-2. The first selected sensor pans down to the grounded rocket and adds its colored
-   cell to the battery. Each generator plays a distinct rising confirmation tone;
-   removal plays its descending counterpart.
-3. Fill that cell to 100%, then help Sot-kun move to another sensor. A full
-   cell remains in the battery with all its energy; leaving an unfinished cell
-   removes it and discards only its partial energy. Up to four full cells can be
-   reserved in order.
-4. Matching CleanBoost advertisements animate into their selected cell over 0.3
-   seconds. Energy does not drain.
-5. Each cell reaching 100% plays an extended generator-colored firework sequence.
-   Four recessed ports on the rocket light in the completed generators' colors.
-   The first full cell starts a barely visible micro-tremble and sparse, small
-   nozzle leak. The second stage is clearly active, while the third becomes
-   dramatically denser, brighter, longer-lived, and more energetic.
-6. At two and three full cells, an eight-second on-screen countdown lets the
-   player move Sot-kun to an optional next cell. A new Hall selection cancels
-   the countdown immediately. Four full cells launch without another wait.
-7. When the countdown expires, the battery atomically locks. Two-cell launches
-   use the former four-cell spectacle as their baseline; three- and four-cell
-   launches add progressively richer exhaust, fireworks, impact, and shake.
-   Their launch animations last approximately 15.6, 18.6, and 21.6 seconds.
-   Rocket wash bends grass outward as charge builds. Its influence radius and
-   bend/flutter velocity receive a second 2× increase, then span far beyond the
-   entire view at peak liftoff before fading as the rocket climbs away.
-8. The camera follows the rocket high above the initial scene through a longer
-   3.6-second departure, then freezes there under the record overlay. After the
-   player saves or skips the result, the
-   return-to-Ablic animation plays and unlocks the next mission with the rocket
-   restored to its launch base. Sot-kun held through reset must be removed and
-   presented again; a newly presented Sot-kun responds immediately. A ready chime
-   confirms that the screen is interactive.
+## Mission flow
 
-After the rocket returns, the player can save the run under their name. Records
-are separated by exact battery loadout: both the number of cells and the kinds
-of generators must match. Each record shows the total charging/decision time
-and the time spent filling every cell. Existing names remain available for
-auto-fill.
+1. Startup shows a rotating Earth and star field, zooms toward Ōmagari, and
+   transitions through a cockpit failure/crash sequence into the Ablic attract
+   screen.
+2. With no generator selected, Ablic floats over the night city. The first
+   comet appears within four seconds; later comets recur after randomized waits.
+3. Selecting a Hall sensor reveals the grounded rocket and adds that generator's
+   colored cell to the battery. Selection and removal use distinct audio cues.
+4. Matching BLE advertisements fill only a currently selected cell. CleanBoost
+   fills animate over 0.3 seconds, and energy never drains.
+5. Moving Sot-kun away from an unfinished cell removes it and discards its
+   partial energy. A 100% cell remains reserved in its original order. Up to four
+   cells can be reserved.
+6. Filling a cell triggers a generator-colored firework show and lights a
+   matching rocket port. Pre-launch shake and exhaust grow nonlinearly with the
+   number of completed cells.
+7. Two or three full cells start an eight-second continuation countdown. Moving
+   to a new unfinished cell cancels it; four full cells commit immediately.
+8. On commitment the battery locks. Two-, three-, and four-cell launches use
+   progressively longer and richer ignition/ascent tiers, followed by a
+   3.6-second departure.
+9. The result overlay accepts or skips a player name and shows rankings for the
+   exact cell loadout. The return then reverses the scene back to Earth and
+   restores a fresh mission. A selector held through reset must be removed and
+   presented again.
 
-## Runtime data
+## Rankings and runtime data
+
+Rankings are enabled by `RANKINGS_ENABLED = True`. Total time stops when launch
+is committed, so launch animation length does not affect the result. The game
+keeps one personal best per player and exact ordered battery loadout and records
+individual cell times.
 
 The application creates these files in the repository/deployment root as needed:
 
-- `leaderboard.json` — versioned rocket records; old generator records migrate on load
-- `players_database.json` — player-name suggestions for auto-fill
-- `clean_boost_test.log` — CleanBoost test statistics
-- `hall_ic_debug.log` — timestamped GPIO transitions
+- `leaderboard.json` — schema-versioned rankings; legacy one-generator records
+  are accepted on load
+- `players_database.json` — normalized player names used for suggestions
+- `clean_boost_test.log` — CleanBoost reception diagnostics
+- `hall_ic_debug.log` — timestamped GPIO state scans
 
-The process user must be able to write to that directory. Back up the JSON files
-if rankings must survive a redeployment.
+Leaderboard and player writes are atomic. A parse error disables overwriting of
+the affected file to avoid destroying recoverable data. The process user needs
+write permission in the deployment root; back up the JSON files if rankings
+must survive redeployment.
 
 ## Resources
 
-- `resource/audio/` contains three synthesized WAV variants per exploding firework
-  sound role.
-- `resource/firework-scripts/` contains timed JSON show definitions.
+- `resource/audio/` contains the ambient loop and prerecorded firework WAVs.
+  Interface, cockpit, selection, and rocket sounds are synthesized once at
+  startup.
+- `resource/images/` contains the NASA-derived Earth texture used by the opening
+  and return cutscenes.
+- `resource/firework-scripts/` contains four six-event cell shows and one
+  eight-event launch show.
 - `resource/firework-settings/` contains reusable firework specifications.
 - `resource/drone-pattern/` contains metadata and ASCII drone formations.
 
-Resource paths are resolved from the installed source location, so launching from
-a different working directory is supported. A deployment must retain the
-`resource/` directory beside `src/`.
+Resource paths are resolved relative to the installed source tree. Deploy
+`src/` and `resource/` together.
 
 ## Development and validation
 
-Compile and import the application without opening a display:
+Run non-graphical checks with the selected environment's Python:
 
 ```bash
 python -m compileall -q src
 PYTHONPATH=src python -c 'import pi.main; import pi.logic.game_state'
 ```
 
-Run the local regression suite and complete interactive application with:
+If a local, untracked `tests/` directory is present, run it with:
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
-./run.sh --debug
 ```
 
-The local `tests/` directory is intentionally ignored by Git. Final GPU, GPIO,
-BLE, audio, and sustained 1080p/60 FPS behavior still require validation on the
-target Raspberry Pi 5.
+The repository intentionally does not track `tests/`. Use `./run.sh --debug` for
+an interactive software-input check. Hardware validation covers BLE reception,
+GPIO transitions, PWM, audio, and sustained hardware-accelerated 1080p output on
+the tested Raspberry Pi 5 2 GB configuration.
 
-For module responsibilities, threading, state transitions, resource formats, and
-deployment notes, see [`docs/architecture.md`](docs/architecture.md).
+For threading, state ownership, render budgets, persistence, and deployment
+details, see [`docs/architecture.md`](docs/architecture.md).
 
 ## Troubleshooting
 
-- **No display/OpenGL context:** run inside a graphical session with current GPU
-  drivers; verify SDL is using the intended display.
-- **No BLE events:** confirm Bluetooth is enabled, BlueZ permissions are granted,
-  and the beacon MAC addresses match `CLEANBOOST_MACS`.
-- **GPIO warning:** verify the process is running on a Raspberry Pi with an
-  available gpiozero pin factory and sufficient device permissions.
-- **No audio:** check the SDL audio device before launch; Pygame initializes audio
-  as part of the visual engine.
-- **Missing assets:** deploy the whole repository, not only the Python package.
+- **Software renderer rejected:** enable the Pi's hardware-accelerated Mesa/V3D
+  driver and verify that the graphical session exposes OpenGL 3.3 core.
+- **No display/OpenGL context:** run inside a graphical session and verify SDL is
+  using the intended 1920×1080 display.
+- **No BLE events:** enable Bluetooth, check BlueZ permissions, and confirm the
+  device addresses match `CLEANBOOST_MACS`.
+- **GPIO warning:** check gpiozero's pin factory, BCM wiring, and device
+  permissions. The application falls back to mock Hall input.
+- **No audio:** verify the SDL audio device before launch.
+- **Missing assets:** deploy the complete repository, especially `resource/`
+  beside `src/`.
 - **Wrong Python:** set `SDG_PYTHON` to the intended virtual-environment Python.
 
 ## License
