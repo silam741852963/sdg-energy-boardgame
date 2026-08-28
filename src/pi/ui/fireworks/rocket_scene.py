@@ -26,6 +26,7 @@ class MissionPhase(Enum):
     IGNITION = auto()
     ASCENT = auto()
     DEPARTURE = auto()
+    RECORD_HOLD = auto()
     RETURN = auto()
 
 
@@ -102,8 +103,18 @@ class RocketScene:
     # sequence substantially more room to breathe.
     CRASH_ZOOM_PROGRESS = 0.14
     CRASH_IMPACT_PROGRESS = 0.90
-    REVEAL_SECONDS = 2.0
+    REVEAL_SECONDS = 3.6
+    REVEAL_RETURN_SECONDS = 2.0
+    REVEAL_CAMERA_TRAVEL = 1050.0 * SCALE_Y
     DEPARTURE_SECONDS = 3.6
+    RETURN_SECONDS = 11.2
+    STAR_STREAK_START = 0.20
+    ROCKET_ESCAPE_START = 0.84
+    ROCKET_ESCAPE_END = 0.92
+    BLACK_FADE_START = 0.93
+    BLACK_FADE_END = 0.99
+    EARTH_RETURN_ZOOM_SECONDS = 1.15
+    EARTH_RETURN_FADE_SECONDS = 1.25
     EARTH_SPIN_RADIANS_PER_SECOND = 0.13
     EARTH_IDLE_LATITUDE = math.radians(8.0)
     # Ōmagari, Daisen, Akita (39°27′11.1″ N, 140°28′31.6″ E).
@@ -123,8 +134,11 @@ class RocketScene:
         self.scene_progress = 0.0
         self.phase_elapsed = 0.0
         self.intro_elapsed = 0.0
+        self._earth_return_zoom = 0.0
+        self._earth_return_fade = 0.0
         self._crash_start_angle = 0.0
         self._crash_start_longitude = 0.0
+        self._crash_target_longitude = None
         self._intro_played = False
         self._logo_hidden_for_reveal = False
         self.launch_tier = None
@@ -133,6 +147,7 @@ class RocketScene:
         self.rocket_offset_y = 0.0
         self.camera_y = 0.0
         self._return_camera_start = 0.0
+        self._return_rocket_start = 0.0
         self.emission_scale = 1.0
         self._slow_seconds = 0.0
         self._fast_seconds = 0.0
@@ -161,6 +176,13 @@ class RocketScene:
 
     @property
     def drone_y_offset(self):
+        if self.phase is MissionPhase.RECORD_HOLD or (
+            self.phase is MissionPhase.RETURN
+            and self._return_camera_start > 0.0
+        ):
+            # Keep the Ablic mark out of the upward launch wipe. It belongs to
+            # the Earth attract screen after the stage has fully reset.
+            return -1550.0 * SCALE_Y
         if self.phase is MissionPhase.CRASH:
             exit_progress = self._ease(
                 min(1.0, self.crash_progress / self.CRASH_ZOOM_PROGRESS)
@@ -174,6 +196,8 @@ class RocketScene:
 
     @property
     def scene_alpha(self):
+        if self.phase is MissionPhase.RETURN and self._return_camera_start > 0.0:
+            return 1.0
         return self._ease(self.scene_progress)
 
     @property
@@ -183,6 +207,37 @@ class RocketScene:
         if self.phase in (MissionPhase.ATTRACT, MissionPhase.CRASH):
             return 1.0
         return 0.0
+
+    @property
+    def transition_black_alpha(self):
+        if self.phase is MissionPhase.RETURN and self._return_camera_start > 0.0:
+            return self._ease(
+                min(
+                    1.0,
+                    max(
+                        0.0,
+                        (1.0 - self.scene_progress - self.BLACK_FADE_START)
+                        / (self.BLACK_FADE_END - self.BLACK_FADE_START),
+                    ),
+                )
+            )
+        if self.phase is MissionPhase.ATTRACT and self._earth_return_fade > 0.0:
+            return self._ease(self._earth_return_fade)
+        return 0.0
+
+    def draw_transition_fade(self, renderer):
+        alpha = self.transition_black_alpha
+        if alpha <= 0.001:
+            return
+        renderer.set_blend_mode("alpha")
+        renderer.draw_rect(
+            0.0,
+            0.0,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            (0.0, 0.0, 0.0, alpha),
+            fill=True,
+        )
 
     @property
     def firework_y_offset(self):
@@ -243,6 +298,8 @@ class RocketScene:
                 MissionPhase.IGNITION,
                 MissionPhase.ASCENT,
                 MissionPhase.DEPARTURE,
+                MissionPhase.RECORD_HOLD,
+                MissionPhase.RETURN,
             )
             self._comet_wait -= dt * (2.2 if launch_active else 1.0)
             if self._comet_wait > 0.0:
@@ -467,12 +524,17 @@ class RocketScene:
         return self._earth_texture
 
     def reset(self):
+        returning_from_launch = self._return_camera_start > 0.0
+        return_intro_elapsed = self.intro_elapsed
         self.phase = MissionPhase.ATTRACT
         self.scene_progress = 0.0
         self.phase_elapsed = 0.0
-        self.intro_elapsed = 0.0
+        self.intro_elapsed = return_intro_elapsed if returning_from_launch else 0.0
+        self._earth_return_zoom = 1.0 if returning_from_launch else 0.0
+        self._earth_return_fade = 1.0 if returning_from_launch else 0.0
         self._crash_start_angle = 0.0
         self._crash_start_longitude = 0.0
+        self._crash_target_longitude = None
         self._intro_played = False
         self._logo_hidden_for_reveal = False
         self.launch_tier = None
@@ -481,6 +543,7 @@ class RocketScene:
         self.rocket_offset_y = 0.0
         self.camera_y = 0.0
         self._return_camera_start = 0.0
+        self._return_rocket_start = 0.0
         self._emission_accumulator = 0.0
         self._prelaunch_emission_accumulator = 0.0
         self._cell_message = None
@@ -504,6 +567,7 @@ class RocketScene:
         self.rocket_offset_y = 0.0
         self.camera_y = 0.0
         self._return_camera_start = 0.0
+        self._return_rocket_start = 0.0
         self._shockwave_age = None
         self._cosmic_events.clear()
         self.audio.start_rocket_thrust(count)
@@ -527,11 +591,18 @@ class RocketScene:
         if self.phase in (
             MissionPhase.ATTRACT,
             MissionPhase.CRASH,
+            MissionPhase.RECORD_HOLD,
             MissionPhase.RETURN,
         ):
             self.intro_elapsed += dt
 
         if self.phase is MissionPhase.ATTRACT:
+            self._earth_return_zoom = max(
+                0.0, self._earth_return_zoom - dt / self.EARTH_RETURN_ZOOM_SECONDS
+            )
+            self._earth_return_fade = max(
+                0.0, self._earth_return_fade - dt / self.EARTH_RETURN_FADE_SECONDS
+            )
             if snapshot.launch_committed:
                 actions.reset_requested = True
             elif has_selection:
@@ -541,6 +612,9 @@ class RocketScene:
                 else:
                     self._crash_start_angle = self._intro_orbit_angle()
                     self._crash_start_longitude = self._earth_idle_longitude()
+                    self._crash_target_longitude = self._forward_target_longitude(
+                        self._crash_start_longitude
+                    )
                     self.phase = MissionPhase.CRASH
                     self.phase_elapsed = 0.0
         elif self.phase is MissionPhase.CRASH:
@@ -563,8 +637,51 @@ class RocketScene:
             if has_selection and not snapshot.launch_committed:
                 self.phase = MissionPhase.REVEAL
             else:
-                self.scene_progress = max(0.0, self.scene_progress - dt / self.REVEAL_SECONDS)
-                self.camera_y = self._return_camera_start * self._ease(self.scene_progress)
+                return_seconds = (
+                    self.RETURN_SECONDS
+                    if snapshot.launch_committed
+                    else self.REVEAL_RETURN_SECONDS
+                )
+                self.scene_progress = max(
+                    0.0, self.scene_progress - dt / return_seconds
+                )
+                # Keep the post-launch exit moving upward.  The old return
+                # eased camera_y back toward zero, producing a noticeable
+                # downward dip before the Earth intro was restored.
+                if snapshot.launch_committed:
+                    exit_linear = 1.0 - self.scene_progress
+                    # Match the record-hold cruise on the first frame, then
+                    # accelerate the camera and rocket together. Their summed
+                    # screen position stays fixed until the deliberate escape.
+                    camera_travel = (
+                        420.0 * SCALE_Y * self.RETURN_SECONDS * exit_linear
+                        + SCREEN_HEIGHT * 40.0 * exit_linear**2.8
+                    )
+                    self.camera_y = self._return_camera_start + camera_travel
+                    escape_progress = self._ease(
+                        min(
+                            1.0,
+                            max(
+                                0.0,
+                                (exit_linear - self.ROCKET_ESCAPE_START)
+                                / (
+                                    self.ROCKET_ESCAPE_END
+                                    - self.ROCKET_ESCAPE_START
+                                ),
+                            ),
+                        )
+                    )
+                    self.rocket_offset_y = (
+                        self._return_rocket_start
+                        - camera_travel
+                        - SCREEN_HEIGHT * 2.4 * escape_progress
+                    )
+                    if exit_linear < self.BLACK_FADE_START:
+                        self._emit_exhaust(dt, grounded=False)
+                else:
+                    self.camera_y = self._return_camera_start * self._ease(
+                        self.scene_progress
+                    )
                 if self.scene_progress <= 0.0:
                     self.phase = MissionPhase.ATTRACT
                     self.camera_y = 0.0
@@ -591,7 +708,9 @@ class RocketScene:
             self.phase_elapsed += dt
             progress = min(1.0, self.phase_elapsed / self.launch_tier.ascent_seconds)
             self.rocket_offset_y = -((progress ** 2.15) * (SCREEN_HEIGHT * 3.0))
-            desired_follow = max(0.0, -self.rocket_offset_y - 280 * SCALE_Y)
+            desired_follow = max(
+                0.0, -self.rocket_offset_y - 105 * SCALE_Y
+            )
             self.camera_y = desired_follow
             self._emit_exhaust(dt, grounded=False)
             if self._shockwave_age is not None:
@@ -603,18 +722,47 @@ class RocketScene:
             self.phase_elapsed += dt
             progress = min(1.0, self.phase_elapsed / self.DEPARTURE_SECONDS)
             self.rocket_offset_y = -(SCREEN_HEIGHT * (3.0 + (progress ** 1.35) * 1.6))
-            desired_follow = max(0.0, -self.rocket_offset_y - 280 * SCALE_Y)
-            release = self._ease(max(0.0, (progress - 0.78) / 0.22))
-            self.camera_y = desired_follow * (1.0 - 0.16 * release)
-            if progress < 0.90:
-                self._emit_exhaust(dt, grounded=False)
+            desired_follow = max(
+                0.0, -self.rocket_offset_y - 105 * SCALE_Y
+            )
+            self.camera_y = desired_follow
+            self._emit_exhaust(dt, grounded=False)
             if progress >= 1.0:
-                self.phase = MissionPhase.RETURN
-                self._return_camera_start = self.camera_y
-                self.audio.stop_rocket_thrust()
+                self.phase = MissionPhase.RECORD_HOLD
                 actions.launch_completed = True
+        elif self.phase is MissionPhase.RECORD_HOLD:
+            self.phase_elapsed += dt
+            self._advance_record_hold(dt)
 
         return actions
+
+    def sustain_record_hold(self, dt, fps=60.0):
+        """Keep the centered rocket alive while ranking input owns the UI."""
+        if self.phase is not MissionPhase.RECORD_HOLD:
+            return
+        dt = min(0.1, max(0.0, dt))
+        self._update_adaptive_density(fps, dt)
+        self._update_comet(dt)
+        self._update_cosmic_events(dt)
+        self.phase_elapsed += dt
+        self.intro_elapsed += dt
+        self._advance_record_hold(dt)
+
+    def _advance_record_hold(self, dt):
+        cruise_distance = 420.0 * SCALE_Y * dt
+        self.rocket_offset_y -= cruise_distance
+        self.camera_y += cruise_distance
+        self._emit_exhaust(dt, grounded=False)
+
+    def release_record_hold(self):
+        """Begin the accelerating escape after ranking UI is dismissed."""
+        if self.phase is not MissionPhase.RECORD_HOLD:
+            return
+        self.phase = MissionPhase.RETURN
+        self.phase_elapsed = 0.0
+        self.scene_progress = 1.0
+        self._return_camera_start = self.camera_y
+        self._return_rocket_start = self.rocket_offset_y
 
     @property
     def crash_progress(self):
@@ -632,6 +780,17 @@ class RocketScene:
     def _lerp_angle(start, end, amount):
         delta = (end - start + math.pi) % math.tau - math.pi
         return start + delta * amount
+
+    def _forward_target_longitude(self, start):
+        target = self.OMAGARI_LONGITUDE
+        minimum = (
+            start
+            + self.CRASH_SECONDS * self.EARTH_SPIN_RADIANS_PER_SECOND
+            + 0.35
+        )
+        while target < minimum:
+            target += math.tau
+        return target
 
     @staticmethod
     def _intro_earth_geometry():
@@ -760,6 +919,23 @@ class RocketScene:
                 self._crash_start_longitude
                 + self.phase_elapsed * self.EARTH_SPIN_RADIANS_PER_SECOND
             )
+        elif self._earth_return_zoom > 0.0:
+            # Re-enter from the departing rocket, then rapidly widen to the
+            # normal Earth framing instead of cutting to a static wide shot.
+            zoom_progress = 1.0 - self._earth_return_zoom
+            eased_zoom = self._ease(zoom_progress)
+            zoom = 3.8 - 2.8 * eased_zoom
+            target_x = SCREEN_WIDTH / 2
+            target_y = 360.0 * SCALE_Y
+            orbit_x, orbit_y = pose[0], pose[1]
+            rocket_x = target_x + (orbit_x - target_x) * eased_zoom
+            rocket_y = target_y + (orbit_y - target_y) * eased_zoom
+            center_x = rocket_x + (center_x - orbit_x) * zoom
+            center_y = rocket_y + (center_y - orbit_y) * zoom
+            earth_width *= zoom
+            earth_height *= zoom
+            pose = (rocket_x, rocket_y, pose[2], pose[3])
+            rocket_scale = 1.0 + (zoom - 1.0) * 1.15
 
         rocket_behind = pose[1] < center_y and self.phase is not MissionPhase.CRASH
         if rocket_behind:
@@ -791,11 +967,14 @@ class RocketScene:
         omagari_lock = self._ease(
             min(1.0, max(0.0, (cockpit_progress - 0.24) / 0.66))
         )
-        longitude = self._lerp_angle(
-            spinning_longitude,
-            self.OMAGARI_LONGITUDE,
-            omagari_lock,
-        )
+        target_longitude = self._crash_target_longitude
+        if target_longitude is None:
+            target_longitude = self._forward_target_longitude(
+                self._crash_start_longitude
+            )
+        longitude = spinning_longitude + (
+            target_longitude - spinning_longitude
+        ) * omagari_lock
         latitude = (
             self.EARTH_IDLE_LATITUDE
             + (self.OMAGARI_LATITUDE - self.EARTH_IDLE_LATITUDE) * omagari_lock
@@ -823,16 +1002,6 @@ class RocketScene:
                 (window_right, window_top, 18 * sx, window_bottom - window_top, *frame_edge),
                 (window_left, window_top, window_right - window_left, 14 * sy, *frame_edge),
                 (window_left, window_bottom - 18 * sy, window_right - window_left, 18 * sy, *frame_edge),
-            ]
-        )
-
-        # Window braces frame the view without covering the Ōmagari approach.
-        renderer.draw_colored_lines(
-            [
-                (window_left, window_top, window_left + 155 * sx, window_top + 120 * sy, 0.20, 0.31, 0.39, alpha),
-                (window_right, window_top, window_right - 155 * sx, window_top + 120 * sy, 0.20, 0.31, 0.39, alpha),
-                (window_left, window_bottom, window_left + 155 * sx, window_bottom - 115 * sy, 0.20, 0.31, 0.39, alpha),
-                (window_right, window_bottom, window_right - 155 * sx, window_bottom - 115 * sy, 0.20, 0.31, 0.39, alpha),
             ]
         )
 
@@ -1074,6 +1243,19 @@ class RocketScene:
             self._slow_seconds = 0.0
             self._fast_seconds = 0.0
 
+    def _rocket_screen_offset_y(self):
+        """Single flight transform shared by the rocket and its exhaust."""
+        successful_escape = (
+            self.phase is MissionPhase.RETURN
+            and self._return_camera_start > 0.0
+        )
+        reveal_offset = (
+            0.0
+            if successful_escape
+            else (1.0 - self._ease(self.scene_progress)) * self.REVEAL_CAMERA_TRAVEL
+        )
+        return reveal_offset + self.rocket_offset_y + self.camera_y
+
     def _emit_exhaust(self, dt, grounded):
         tier = self.launch_tier
         if tier is None:
@@ -1086,7 +1268,7 @@ class RocketScene:
             return
         count = min(count, 36)
         rocket_x = SCREEN_WIDTH / 2
-        exhaust_y = 805 * SCALE_Y + self.rocket_offset_y + self.camera_y
+        exhaust_y = 805 * SCALE_Y + self._rocket_screen_offset_y()
         spread = 1.7 + tier.plume_layers * 0.8
         tail_half_width = (24 + tier.plume_layers * 5) * SCALE_X
         exhaust_x = np.array(
@@ -1176,12 +1358,32 @@ class RocketScene:
         if self.phase is MissionPhase.DEPARTURE:
             progress = min(1.0, self.phase_elapsed / self.DEPARTURE_SECONDS)
             return max(0.25, 1.0 - progress * 0.62)
+        if self.phase is MissionPhase.RECORD_HOLD:
+            return 0.42
+        if self.phase is MissionPhase.RETURN and self._return_camera_start > 0.0:
+            return 0.42 + (1.0 - self.scene_progress) * 0.58
         return 0.0
 
     def draw_stars(self, renderer, frame_count):
         rows = []
+        streaks = []
         camera_shift = self._ease(self.scene_progress) * 280.0 * SCALE_Y
         launch_activity = self.launch_cosmos_strength()
+        successful_return = (
+            self.phase is MissionPhase.RETURN
+            and self._return_camera_start > 0.0
+        )
+        return_progress = (
+            max(0.0, 1.0 - self.scene_progress) if successful_return else 0.0
+        )
+        streak_progress = min(
+            1.0,
+            max(
+                0.0,
+                (return_progress - self.STAR_STREAK_START)
+                / (self.ROCKET_ESCAPE_END - self.STAR_STREAK_START),
+            ),
+        )
         for x, y, size, alpha, depth, phase, blink_speed, blink_strength in self._stars:
             draw_y = (y - camera_shift * depth + self.camera_y * depth * 0.055) % SCREEN_HEIGHT
             activity_speed = blink_speed * (1.0 + launch_activity * 2.4)
@@ -1195,6 +1397,25 @@ class RocketScene:
                 1.0 + blink_strength * blink * 0.68 + reactive_flash * 0.72
             )
             rows.append((x, draw_y, blink_size, 0.68, 0.78, 1.0, min(1.0, twinkle)))
+            if streak_progress > 0.0:
+                speed = streak_progress**2.0
+                trail_length = (12.0 + speed * 900.0) * depth * SCALE_Y
+                streak_alpha = min(
+                    0.92,
+                    alpha * (0.18 + depth * 0.62) * speed * 1.45,
+                )
+                streaks.append(
+                    (
+                        x,
+                        draw_y - trail_length,
+                        x,
+                        draw_y,
+                        0.58,
+                        0.78,
+                        1.0,
+                        streak_alpha,
+                    )
+                )
 
         for event in self._cosmic_events:
             if event["kind"] == "meteor_shower":
@@ -1271,6 +1492,8 @@ class RocketScene:
                 )
             )
         renderer.set_blend_mode("additive")
+        if streaks:
+            renderer.draw_colored_lines(streaks)
         renderer.draw_particles(np.asarray(rows, dtype=np.float32))
 
     def grass_propulsion_strength(self):
@@ -1341,10 +1564,21 @@ class RocketScene:
         return tuple(min(1.0, base[index] + light[index] * gain) for index in range(3))
 
     def draw_far_city(self, renderer, firework_lights=None):
+        resumed_reveal = (
+            self.phase is MissionPhase.REVEAL
+            and not self._logo_hidden_for_reveal
+        )
         attract_alpha = (
             0.78
             if self._intro_played
-            and self.phase in (MissionPhase.ATTRACT, MissionPhase.RETURN)
+            and (
+                self.phase in (MissionPhase.ATTRACT, MissionPhase.RETURN)
+                or resumed_reveal
+            )
+            and not (
+                self.phase is MissionPhase.RETURN
+                and self._return_camera_start > 0.0
+            )
             else 0.0
         )
         alpha = max(self.scene_alpha, attract_alpha)
@@ -1359,7 +1593,7 @@ class RocketScene:
         )
         ground_y = (
             820 * SCALE_Y
-            + (1.0 - eased_scene) * 700.0 * SCALE_Y
+            + (1.0 - eased_scene) * self.REVEAL_CAMERA_TRAVEL
             + self.camera_y
         )
 
@@ -1394,7 +1628,7 @@ class RocketScene:
         firework_lights = firework_lights if firework_lights is not None else np.empty((0, 8))
         launch_lights = launch_lights if launch_lights is not None else np.empty((0, 8))
         eased_scene = self._ease(self.scene_progress)
-        reveal_offset = (1.0 - eased_scene) * 700.0 * SCALE_Y
+        reveal_offset = (1.0 - eased_scene) * self.REVEAL_CAMERA_TRAVEL
         if alpha <= 0.0:
             return
 
@@ -1413,14 +1647,15 @@ class RocketScene:
         self._draw_ground(renderer, ground_y, frame_count, alpha, firework_lights, launch_lights)
         self._draw_launch_base(renderer, ground_y, alpha, firework_lights, launch_lights)
 
-        rocket_y = reveal_offset + self.rocket_offset_y + self.camera_y
+        rocket_y = self._rocket_screen_offset_y()
         shake_x, shake_y = self.charge_shake(frame_count)
         if self.phase is MissionPhase.IGNITION and self.launch_tier:
             build = min(1.0, self.phase_elapsed / self.launch_tier.ignition_seconds)
             amount = self.launch_tier.shake * build
             shake_x = self._rng.uniform(-amount, amount)
             shake_y = self._rng.uniform(-amount * 0.45, amount * 0.45)
-        self._draw_ground_impact(renderer, ground_y, alpha)
+        if self.phase is not MissionPhase.RETURN:
+            self._draw_ground_impact(renderer, ground_y, alpha)
         self._draw_rocket(
             renderer,
             rocket_y + shake_y,
@@ -1431,6 +1666,47 @@ class RocketScene:
             frame_count,
         )
         renderer.set_blend_mode("additive")
+
+    def draw_rocket_foreground(
+        self,
+        renderer,
+        frame_count,
+        firework_lights=None,
+        launch_lights=None,
+    ):
+        """Keep the rocket body in front of its exhaust particle layer."""
+        if self.phase not in (
+            MissionPhase.RECORD_HOLD,
+            MissionPhase.RETURN,
+        ):
+            return
+        alpha = self.scene_alpha
+        if alpha <= 0.001:
+            return
+        firework_lights = (
+            firework_lights
+            if firework_lights is not None
+            else np.empty((0, 8))
+        )
+        launch_lights = (
+            launch_lights
+            if launch_lights is not None
+            else np.empty((0, 8))
+        )
+        rocket_y = self._rocket_screen_offset_y()
+        shake_x = 0.0
+        shake_y = 0.0
+        self._draw_rocket(
+            renderer,
+            rocket_y + shake_y,
+            shake_x,
+            alpha,
+            firework_lights,
+            launch_lights,
+            frame_count,
+        )
+        renderer.set_blend_mode("additive")
+
 
     def _draw_city_layer(self, renderer, buildings, base_y, parallax_x, alpha, lights, near):
         renderer.set_blend_mode("alpha")
@@ -1791,6 +2067,7 @@ class RocketScene:
             MissionPhase.ATTRACT,
             MissionPhase.CRASH,
             MissionPhase.REVEAL,
+            MissionPhase.RECORD_HOLD,
             MissionPhase.RETURN,
         ):
             return None

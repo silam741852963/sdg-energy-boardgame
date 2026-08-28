@@ -606,7 +606,7 @@ class AudioSystem:
         self.rocket_channel = pygame.mixer.find_channel()
         if self.rocket_channel:
             self.rocket_channel.set_volume(0.72)
-            self.rocket_channel.play(sound)
+            self.rocket_channel.play(sound, loops=-1)
 
     def stop_rocket_thrust(self):
         if self.rocket_channel:

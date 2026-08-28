@@ -280,6 +280,7 @@ class FireworkEngine:
         self.name_suggestion = ""
         self.leaderboard_search_input = ""
         self.ranking_display_entry = None
+        self.rocket_scene.release_record_hold()
 
     def _handle_ranking_key(self, event):
         if self.show_name_entry:
@@ -411,6 +412,12 @@ class FireworkEngine:
             return
 
         if self.show_name_entry or self.show_leaderboard:
+            self.snapshot = self.game_state.snapshot()
+            self.rocket_scene.sustain_record_hold(dt, fps or 60.0)
+            self.audio.update_mission_audio(
+                self.rocket_scene.phase.name,
+                self.rocket_scene.crash_progress,
+            )
             self.lighting.update()
             self.script_manager.update()
             self.firework_manager.update()
@@ -444,6 +451,8 @@ class FireworkEngine:
                 and self.game_state.current_ranking_entry is not None
             ):
                 self._begin_ranking_flow()
+            if not (self.show_name_entry or self.show_leaderboard):
+                self.rocket_scene.release_record_hold()
         if actions.reset_requested:
             self._reset_mission_input()
             self.rocket_scene.reset()
@@ -705,6 +714,12 @@ class FireworkEngine:
             self.frame_count,
             scene_effect=True,
         )
+        self.rocket_scene.draw_rocket_foreground(
+            self.renderer,
+            self.frame_count,
+            firework_lights=firework_lights,
+            launch_lights=launch_lights,
+        )
 
         show_debug = self.mock_ble or self.mock_hall
         self.drone_manager.draw(
@@ -766,6 +781,8 @@ class FireworkEngine:
 
         if self.show_name_entry or self.show_leaderboard:
             self._draw_rocket_ranking_overlay()
+
+        self.rocket_scene.draw_transition_fade(self.renderer)
 
         try:
             screen_w, screen_h = pygame.display.get_window_size()
