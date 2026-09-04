@@ -6,10 +6,10 @@ from ..logic.game_state import GameState
 
 # Pin mapping: BCM GPIO Pin numbers
 GPIO_PINS = {
-    GeneratorType.WIND: 17,
-    GeneratorType.SOLAR: 27,
-    GeneratorType.HAND_CRANK: 22,
-    GeneratorType.COIL: 23,
+    GeneratorType.SOLAR: 17,
+    GeneratorType.WIND: 27,
+    GeneratorType.COIL: 22,
+    GeneratorType.HAND_CRANK: 23,
 }
 
 # Configuration for Hall-IC output type:
@@ -60,7 +60,7 @@ class WireReceiver:
                 active_list.append(gen_type)
         
         # Log pin states on change
-        self._log(f"Pin states scan: WIND={states['WIND']}, SOLAR={states['SOLAR']}, HAND_CRANK={states['HAND_CRANK']}, COIL={states['COIL']}")
+        self._log(f"Pin states scan: SOLAR={states['SOLAR']}, WIND={states['WIND']}, COIL={states['COIL']}, HAND_CRANK={states['HAND_CRANK']}")
         
         # Update game state with all active sensors immediately
         self.game_state.set_active_sensors(active_list)
@@ -68,7 +68,7 @@ class WireReceiver:
     async def start_listening(self):
         """Initializes GPIO pins and listens for Hall-IC signals."""
         self._log("WireReceiver starting...")
-        self._log(f"Config: PULL_UP={HALL_IC_PULL_UP}, ACTIVE_STATE={HALL_IC_ACTIVE_STATE}, Pins: WIND={GPIO_PINS[GeneratorType.WIND]}, SOLAR={GPIO_PINS[GeneratorType.SOLAR]}, HAND_CRANK={GPIO_PINS[GeneratorType.HAND_CRANK]}, COIL={GPIO_PINS[GeneratorType.COIL]}")
+        self._log(f"Config: PULL_UP={HALL_IC_PULL_UP}, ACTIVE_STATE={HALL_IC_ACTIVE_STATE}, Pins: SOLAR={GPIO_PINS[GeneratorType.SOLAR]}, WIND={GPIO_PINS[GeneratorType.WIND]}, COIL={GPIO_PINS[GeneratorType.COIL]}, HAND_CRANK={GPIO_PINS[GeneratorType.HAND_CRANK]}")
 
         for gen_type, pin in GPIO_PINS.items():
             # bounce_time=0.05: Ignored rapid signal noise for 50ms for faster response

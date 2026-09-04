@@ -42,7 +42,7 @@ class CLIRenderer:
         )
 
         # 2. Rankings Layout
-        active_gen = self.game_state.active_generator or GeneratorType.WIND
+        active_gen = self.game_state.active_generator or GeneratorType.SOLAR
         table = Table(title=f"Top Players ({active_gen.value})")
         table.add_column("Rank", style="cyan", no_wrap=True)
         table.add_column("Player", style="magenta")

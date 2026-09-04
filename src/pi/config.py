@@ -2,10 +2,10 @@ from enum import Enum
 
 
 class GeneratorType(Enum):
-    WIND = "Wind Turbine"
     SOLAR = "Solar Panel"
-    HAND_CRANK = "Hand Crank"
+    WIND = "Wind Turbine"
     COIL = "Coil Pipe"
+    HAND_CRANK = "Hand Crank"
 
 
 CLEANBOOST_MACS = {

@@ -356,16 +356,16 @@ class FireworkEngine:
         mouse_clicked = False
         mouse_position = pygame.mouse.get_pos()
         charge_keys = {
-            pygame.K_q: GeneratorType.WIND,
-            pygame.K_w: GeneratorType.SOLAR,
-            pygame.K_e: GeneratorType.HAND_CRANK,
-            pygame.K_r: GeneratorType.COIL,
+            pygame.K_q: GeneratorType.SOLAR,
+            pygame.K_w: GeneratorType.WIND,
+            pygame.K_e: GeneratorType.COIL,
+            pygame.K_r: GeneratorType.HAND_CRANK,
         }
         selector_keys = {
-            pygame.K_1: GeneratorType.WIND,
-            pygame.K_2: GeneratorType.SOLAR,
-            pygame.K_3: GeneratorType.HAND_CRANK,
-            pygame.K_4: GeneratorType.COIL,
+            pygame.K_1: GeneratorType.SOLAR,
+            pygame.K_2: GeneratorType.WIND,
+            pygame.K_3: GeneratorType.COIL,
+            pygame.K_4: GeneratorType.HAND_CRANK,
         }
 
         for event in events:
