@@ -106,17 +106,17 @@ class RocketScene:
     REVEAL_SECONDS = 3.6
     REVEAL_RETURN_SECONDS = 2.0
     REVEAL_CAMERA_TRAVEL = 1050.0 * SCALE_Y
-    DEPARTURE_SECONDS = 3.6
-    RETURN_SECONDS = 11.2
-    STAR_STREAK_START = 0.20
+    DEPARTURE_SECONDS = 1.8
+    RETURN_SECONDS = 5.6
+    STAR_STREAK_START = 0.60
     ROCKET_ESCAPE_START = 0.84
     ROCKET_ESCAPE_END = 0.92
     BLACK_FADE_START = 0.93
     BLACK_FADE_END = 0.99
-    EARTH_RETURN_FOCUS_HOLD_SECONDS = 1.5
-    EARTH_RETURN_ZOOM_SECONDS = 4.0
-    EARTH_RETURN_FADE_SECONDS = 1.25
-    EARTH_RETURN_STAR_SECONDS = 5.5
+    EARTH_RETURN_FOCUS_HOLD_SECONDS = 0.75
+    EARTH_RETURN_ZOOM_SECONDS = 2.0
+    EARTH_RETURN_FADE_SECONDS = 0.625
+    EARTH_RETURN_STAR_SECONDS = 2.75
     EARTH_RETURN_STAR_ANGLE = math.radians(8.0)
     EARTH_RETURN_TRAIL_SEGMENTS = 5
     EARTH_SPIN_RADIANS_PER_SECOND = 0.13
@@ -185,8 +185,7 @@ class RocketScene:
     @property
     def drone_y_offset(self):
         if self.phase is MissionPhase.RECORD_HOLD or (
-            self.phase is MissionPhase.RETURN
-            and self._return_camera_start > 0.0
+            self.phase is MissionPhase.RETURN and self._return_camera_start > 0.0
         ):
             # Keep the Ablic mark out of the upward launch wipe. It belongs to
             # the Earth attract screen after the stage has fully reset.
@@ -262,7 +261,9 @@ class RocketScene:
                 min(1.0, (progress - impact) / (1.0 - impact)) * math.pi
             )
             amount = 13.0 * strength
-            return self._rng.uniform(-amount, amount), self._rng.uniform(-amount, amount)
+            return self._rng.uniform(-amount, amount), self._rng.uniform(
+                -amount, amount
+            )
         if not self.launch_tier:
             return 0.0, 0.0
         if self.phase is MissionPhase.IGNITION:
@@ -326,22 +327,31 @@ class RocketScene:
         )
         if comet["age"] >= comet["duration"] or outside:
             self._comet = None
-            if self.phase in (MissionPhase.IGNITION, MissionPhase.ASCENT, MissionPhase.DEPARTURE):
+            if self.phase in (
+                MissionPhase.IGNITION,
+                MissionPhase.ASCENT,
+                MissionPhase.DEPARTURE,
+            ):
                 self._comet_wait = self._sky_rng.uniform(2.5, 5.0)
             else:
                 self._comet_wait = self._sky_rng.uniform(8.0, 14.0)
 
     def _spawn_comet(self, launch_boost=False):
         direction = self._sky_rng.choice((-1.0, 1.0))
-        speed_scale = 1.28 if launch_boost else 1.0
+        # Launch comets cover the same path in half the former time.
+        speed_scale = 2.56 if launch_boost else 1.0
         speed = self._sky_rng.uniform(390.0, 520.0) * SCALE_X * speed_scale
         self._comet = {
             "x": -90.0 * SCALE_X if direction > 0.0 else SCREEN_WIDTH + 90.0 * SCALE_X,
             "y": self._sky_rng.uniform(70.0, 310.0) * SCALE_Y,
             "vx": speed * direction,
-            "vy": self._sky_rng.uniform(65.0, 125.0) * SCALE_Y,
+            "vy": self._sky_rng.uniform(65.0, 125.0)
+            * SCALE_Y
+            * (2.0 if launch_boost else 1.0),
             "age": 0.0,
-            "duration": self._sky_rng.uniform(3.8, 5.2),
+            "duration": self._sky_rng.uniform(1.9, 2.6)
+            if launch_boost
+            else self._sky_rng.uniform(3.8, 5.2),
             "boost": 1.55 if launch_boost else 1.0,
         }
 
@@ -358,25 +368,27 @@ class RocketScene:
                 (
                     self._sky_rng.uniform(120.0, SCREEN_WIDTH - 120.0),
                     self._sky_rng.uniform(60.0, 330.0) * SCALE_Y,
-                    direction * self._sky_rng.uniform(300.0, 470.0) * SCALE_X,
-                    self._sky_rng.uniform(90.0, 170.0) * SCALE_Y,
-                    index * self._sky_rng.uniform(0.12, 0.24),
+                    direction * self._sky_rng.uniform(600.0, 940.0) * SCALE_X,
+                    self._sky_rng.uniform(180.0, 340.0) * SCALE_Y,
+                    index * self._sky_rng.uniform(0.06, 0.12),
                 )
             )
         self._cosmic_events = [
             {
                 "kind": "meteor_shower",
                 "age": 0.0,
-                "duration": 2.8,
+                "duration": 1.4,
                 "streaks": tuple(meteor_streaks),
             },
             {
                 "kind": "constellation_pulse",
                 "age": 0.0,
-                "duration": 3.4,
+                "duration": 1.7,
                 "x": self._sky_rng.uniform(480.0, SCREEN_WIDTH - 480.0),
                 "y": self._sky_rng.uniform(170.0, 390.0) * SCALE_Y,
-                "phases": tuple(self._sky_rng.uniform(0.0, math.tau) for _ in range(30)),
+                "phases": tuple(
+                    self._sky_rng.uniform(0.0, math.tau) for _ in range(30)
+                ),
             },
         ]
 
@@ -471,7 +483,11 @@ class RocketScene:
             canvas[y0:y1, x0:x1, 3] = alpha
 
         for x, width, height, cols, rows, lit_windows, roof, variation in buildings:
-            if near and x < SCREEN_WIDTH / 2 + 310 * SCALE_X and x + width > SCREEN_WIDTH / 2 - 310 * SCALE_X:
+            if (
+                near
+                and x < SCREEN_WIDTH / 2 + 310 * SCALE_X
+                and x + width > SCREEN_WIDTH / 2 - 310 * SCALE_X
+            ):
                 continue
             y = asset_height - height
             base = self._facade_base(near, variation)
@@ -480,7 +496,13 @@ class RocketScene:
             rect(x, y, width, height, base_rgb)
             rect(x, y, width, max(2, 2 * SCALE_Y), edge_base)
             rect(x, y, max(2, 2 * SCALE_X), height, edge_base)
-            rect(x + width - max(2, 2 * SCALE_X), y, max(2, 2 * SCALE_X), height, edge_base)
+            rect(
+                x + width - max(2, 2 * SCALE_X),
+                y,
+                max(2, 2 * SCALE_X),
+                height,
+                edge_base,
+            )
 
             for band in range(1, max(2, int(height / (72 * SCALE_Y)))):
                 rect(x, y + band * 72 * SCALE_Y, width, max(1, SCALE_Y), edge_base, 205)
@@ -500,11 +522,19 @@ class RocketScene:
                     rect(wx, wy, win_w, win_h, (208, 137, 26))
 
             if roof == "step":
-                rect(x + width * 0.28, y - 18 * SCALE_Y, width * 0.44, 18 * SCALE_Y, base_rgb)
+                rect(
+                    x + width * 0.28,
+                    y - 18 * SCALE_Y,
+                    width * 0.44,
+                    18 * SCALE_Y,
+                    base_rgb,
+                )
             elif roof == "antenna":
                 antenna_x = x + width * 0.5
                 antenna_h = (28 + variation * 36) * SCALE_Y
-                rect(antenna_x, y - antenna_h, max(1, 2 * SCALE_X), antenna_h, edge_base)
+                rect(
+                    antenna_x, y - antenna_h, max(1, 2 * SCALE_X), antenna_h, edge_base
+                )
 
         return asset_width, asset_height, canvas.tobytes()
 
@@ -542,9 +572,7 @@ class RocketScene:
         self._earth_return_fade = 1.0 if returning_from_launch else 0.0
         self._earth_return_stars = 1.0 if returning_from_launch else 0.0
         self._earth_return_focus_hold = (
-            self.EARTH_RETURN_FOCUS_HOLD_SECONDS
-            if returning_from_launch
-            else 0.0
+            self.EARTH_RETURN_FOCUS_HOLD_SECONDS if returning_from_launch else 0.0
         )
         self._earth_return_star_origin_angle = self._star_field_angle
         self._crash_start_angle = 0.0
@@ -623,13 +651,11 @@ class RocketScene:
                 else:
                     self._earth_return_zoom = max(
                         0.0,
-                        self._earth_return_zoom
-                        - dt / self.EARTH_RETURN_ZOOM_SECONDS,
+                        self._earth_return_zoom - dt / self.EARTH_RETURN_ZOOM_SECONDS,
                     )
                 self._earth_return_stars = max(
                     0.0,
-                    self._earth_return_stars
-                    - dt / self.EARTH_RETURN_STAR_SECONDS,
+                    self._earth_return_stars - dt / self.EARTH_RETURN_STAR_SECONDS,
                 )
                 self._star_field_angle = (
                     self._earth_return_star_origin_angle
@@ -661,7 +687,9 @@ class RocketScene:
             if not has_selection:
                 self.phase = MissionPhase.RETURN
             else:
-                self.scene_progress = min(1.0, self.scene_progress + dt / self.REVEAL_SECONDS)
+                self.scene_progress = min(
+                    1.0, self.scene_progress + dt / self.REVEAL_SECONDS
+                )
                 if self.scene_progress >= 1.0:
                     self.phase = MissionPhase.CHARGING
         elif self.phase is MissionPhase.CHARGING and not has_selection:
@@ -697,10 +725,7 @@ class RocketScene:
                             max(
                                 0.0,
                                 (exit_linear - self.ROCKET_ESCAPE_START)
-                                / (
-                                    self.ROCKET_ESCAPE_END
-                                    - self.ROCKET_ESCAPE_START
-                                ),
+                                / (self.ROCKET_ESCAPE_END - self.ROCKET_ESCAPE_START),
                             ),
                         )
                     )
@@ -740,10 +765,8 @@ class RocketScene:
         elif self.phase is MissionPhase.ASCENT:
             self.phase_elapsed += dt
             progress = min(1.0, self.phase_elapsed / self.launch_tier.ascent_seconds)
-            self.rocket_offset_y = -((progress ** 2.15) * (SCREEN_HEIGHT * 3.0))
-            desired_follow = max(
-                0.0, -self.rocket_offset_y - 105 * SCALE_Y
-            )
+            self.rocket_offset_y = -((progress**2.15) * (SCREEN_HEIGHT * 3.0))
+            desired_follow = max(0.0, -self.rocket_offset_y - 105 * SCALE_Y)
             self.camera_y = desired_follow
             self._emit_exhaust(dt, grounded=False)
             if self._shockwave_age is not None:
@@ -754,10 +777,8 @@ class RocketScene:
         elif self.phase is MissionPhase.DEPARTURE:
             self.phase_elapsed += dt
             progress = min(1.0, self.phase_elapsed / self.DEPARTURE_SECONDS)
-            self.rocket_offset_y = -(SCREEN_HEIGHT * (3.0 + (progress ** 1.35) * 1.6))
-            desired_follow = max(
-                0.0, -self.rocket_offset_y - 105 * SCALE_Y
-            )
+            self.rocket_offset_y = -(SCREEN_HEIGHT * (3.0 + (progress**1.35) * 1.6))
+            desired_follow = max(0.0, -self.rocket_offset_y - 105 * SCALE_Y)
             self.camera_y = desired_follow
             self._emit_exhaust(dt, grounded=False)
             if progress >= 1.0:
@@ -807,7 +828,10 @@ class RocketScene:
         return -0.28 + self.intro_elapsed * 0.46
 
     def _earth_idle_longitude(self):
-        return math.radians(-105.0) + self.intro_elapsed * self.EARTH_SPIN_RADIANS_PER_SECOND
+        return (
+            math.radians(-105.0)
+            + self.intro_elapsed * self.EARTH_SPIN_RADIANS_PER_SECOND
+        )
 
     @staticmethod
     def _lerp_angle(start, end, amount):
@@ -816,11 +840,7 @@ class RocketScene:
 
     def _forward_target_longitude(self, start):
         target = self.OMAGARI_LONGITUDE
-        minimum = (
-            start
-            + self.CRASH_SECONDS * self.EARTH_SPIN_RADIANS_PER_SECOND
-            + 0.35
-        )
+        minimum = start + self.CRASH_SECONDS * self.EARTH_SPIN_RADIANS_PER_SECOND + 0.35
         while target < minimum:
             target += math.tau
         return target
@@ -933,7 +953,9 @@ class RocketScene:
             )
         renderer.draw_particles(plume)
 
-    def _draw_earth(self, renderer, center_x, center_y, width, height, longitude, latitude, alpha):
+    def _draw_earth(
+        self, renderer, center_x, center_y, width, height, longitude, latitude, alpha
+    ):
         texture, _, _ = self._ensure_earth_texture(renderer)
         renderer.set_blend_mode("alpha")
         renderer.draw_earth_globe(
@@ -1015,17 +1037,15 @@ class RocketScene:
             self._crash_start_longitude
             + self.phase_elapsed * self.EARTH_SPIN_RADIANS_PER_SECOND
         )
-        omagari_lock = self._ease(
-            min(1.0, max(0.0, (cockpit_progress - 0.24) / 0.66))
-        )
+        omagari_lock = self._ease(min(1.0, max(0.0, (cockpit_progress - 0.24) / 0.66)))
         target_longitude = self._crash_target_longitude
         if target_longitude is None:
             target_longitude = self._forward_target_longitude(
                 self._crash_start_longitude
             )
-        longitude = spinning_longitude + (
-            target_longitude - spinning_longitude
-        ) * omagari_lock
+        longitude = (
+            spinning_longitude + (target_longitude - spinning_longitude) * omagari_lock
+        )
         latitude = (
             self.EARTH_IDLE_LATITUDE
             + (self.OMAGARI_LATITUDE - self.EARTH_IDLE_LATITUDE) * omagari_lock
@@ -1047,12 +1067,48 @@ class RocketScene:
             [
                 (0, 0, SCREEN_WIDTH, window_top, *frame),
                 (0, window_top, window_left, window_bottom - window_top, *frame),
-                (window_right, window_top, SCREEN_WIDTH - window_right, window_bottom - window_top, *frame),
-                (0, window_bottom, SCREEN_WIDTH, SCREEN_HEIGHT - window_bottom, *console),
-                (window_left - 18 * sx, window_top, 18 * sx, window_bottom - window_top, *frame_edge),
-                (window_right, window_top, 18 * sx, window_bottom - window_top, *frame_edge),
-                (window_left, window_top, window_right - window_left, 14 * sy, *frame_edge),
-                (window_left, window_bottom - 18 * sy, window_right - window_left, 18 * sy, *frame_edge),
+                (
+                    window_right,
+                    window_top,
+                    SCREEN_WIDTH - window_right,
+                    window_bottom - window_top,
+                    *frame,
+                ),
+                (
+                    0,
+                    window_bottom,
+                    SCREEN_WIDTH,
+                    SCREEN_HEIGHT - window_bottom,
+                    *console,
+                ),
+                (
+                    window_left - 18 * sx,
+                    window_top,
+                    18 * sx,
+                    window_bottom - window_top,
+                    *frame_edge,
+                ),
+                (
+                    window_right,
+                    window_top,
+                    18 * sx,
+                    window_bottom - window_top,
+                    *frame_edge,
+                ),
+                (
+                    window_left,
+                    window_top,
+                    window_right - window_left,
+                    14 * sy,
+                    *frame_edge,
+                ),
+                (
+                    window_left,
+                    window_bottom - 18 * sy,
+                    window_right - window_left,
+                    18 * sy,
+                    *frame_edge,
+                ),
             ]
         )
 
@@ -1065,8 +1121,20 @@ class RocketScene:
             [
                 (target_x - arm, target_y, target_x - gap, target_y, *reticle),
                 (target_x + gap, target_y, target_x + arm, target_y, *reticle),
-                (target_x, target_y - arm * sy / sx, target_x, target_y - gap * sy / sx, *reticle),
-                (target_x, target_y + gap * sy / sx, target_x, target_y + arm * sy / sx, *reticle),
+                (
+                    target_x,
+                    target_y - arm * sy / sx,
+                    target_x,
+                    target_y - gap * sy / sx,
+                    *reticle,
+                ),
+                (
+                    target_x,
+                    target_y + gap * sy / sx,
+                    target_x,
+                    target_y + arm * sy / sx,
+                    *reticle,
+                ),
             ]
         )
 
@@ -1171,7 +1239,7 @@ class RocketScene:
         if progress <= 0.001:
             return
         longitude, latitude, omagari_lock = self._cockpit_earth_orientation(progress)
-        earth_size = (590.0 + (progress ** 2.05) * 1730.0) * min(SCALE_X, SCALE_Y)
+        earth_size = (590.0 + (progress**2.05) * 1730.0) * min(SCALE_X, SCALE_Y)
         self._draw_earth(
             renderer,
             SCREEN_WIDTH / 2,
@@ -1245,7 +1313,10 @@ class RocketScene:
             dtype=np.float32,
         )
         y = np.array(
-            [805 * SCALE_Y + self._rng.uniform(-2.0, 4.0) * SCALE_Y for _ in range(count)],
+            [
+                805 * SCALE_Y + self._rng.uniform(-2.0, 4.0) * SCALE_Y
+                for _ in range(count)
+            ],
             dtype=np.float32,
         )
         vx = np.array(
@@ -1297,8 +1368,7 @@ class RocketScene:
     def _rocket_screen_offset_y(self):
         """Single flight transform shared by the rocket and its exhaust."""
         successful_escape = (
-            self.phase is MissionPhase.RETURN
-            and self._return_camera_start > 0.0
+            self.phase is MissionPhase.RETURN and self._return_camera_start > 0.0
         )
         reveal_offset = (
             0.0
@@ -1323,16 +1393,24 @@ class RocketScene:
         spread = 1.7 + tier.plume_layers * 0.8
         tail_half_width = (24 + tier.plume_layers * 5) * SCALE_X
         exhaust_x = np.array(
-            [rocket_x + self._rng.uniform(-tail_half_width, tail_half_width) for _ in range(count)],
+            [
+                rocket_x + self._rng.uniform(-tail_half_width, tail_half_width)
+                for _ in range(count)
+            ],
             dtype=np.float32,
         )
         exhaust_origin_y = np.array(
             [exhaust_y + self._rng.uniform(-3.0, 5.0) * SCALE_Y for _ in range(count)],
             dtype=np.float32,
         )
-        vx = np.array([self._rng.uniform(-spread, spread) for _ in range(count)], dtype=np.float32)
+        vx = np.array(
+            [self._rng.uniform(-spread, spread) for _ in range(count)], dtype=np.float32
+        )
         base_vy = 2.5 if grounded else 5.0 + tier.plume_layers
-        vy = np.array([self._rng.uniform(base_vy * 0.65, base_vy * 1.35) for _ in range(count)], dtype=np.float32)
+        vy = np.array(
+            [self._rng.uniform(base_vy * 0.65, base_vy * 1.35) for _ in range(count)],
+            dtype=np.float32,
+        )
         colors = ["gold", "orange", "silver"] + [
             GENERATOR_PARTICLE_COLORS[generator] for generator in self.launch_generators
         ]
@@ -1352,7 +1430,10 @@ class RocketScene:
         )
         smoke_count = max(1, count // 6)
         smoke_vx = np.array(
-            [self._rng.uniform(-spread * 1.4, spread * 1.4) for _ in range(smoke_count)],
+            [
+                self._rng.uniform(-spread * 1.4, spread * 1.4)
+                for _ in range(smoke_count)
+            ],
             dtype=np.float32,
         )
         smoke_vy = np.array(
@@ -1360,7 +1441,10 @@ class RocketScene:
             dtype=np.float32,
         )
         smoke_x = np.array(
-            [rocket_x + self._rng.uniform(-tail_half_width, tail_half_width) for _ in range(smoke_count)],
+            [
+                rocket_x + self._rng.uniform(-tail_half_width, tail_half_width)
+                for _ in range(smoke_count)
+            ],
             dtype=np.float32,
         )
         self.firework_manager.emit_scene_effect(
@@ -1421,9 +1505,7 @@ class RocketScene:
         camera_shift = self._ease(self.scene_progress) * 280.0 * SCALE_Y
         launch_activity = self.launch_cosmos_strength()
         earth_star_strength = (
-            self._earth_return_stars
-            if self.phase is MissionPhase.ATTRACT
-            else 0.0
+            self._earth_return_stars if self.phase is MissionPhase.ATTRACT else 0.0
         )
         earth_star_angle = self._star_field_angle
         # Keep the field nearly stationary; the luminous curved trails carry
@@ -1432,8 +1514,7 @@ class RocketScene:
         orbit_sin = math.sin(earth_star_angle)
         orbit_center_x, orbit_center_y = self._earth_return_screen_center()
         successful_return = (
-            self.phase is MissionPhase.RETURN
-            and self._return_camera_start > 0.0
+            self.phase is MissionPhase.RETURN and self._return_camera_start > 0.0
         )
         return_progress = (
             max(0.0, 1.0 - self.scene_progress) if successful_return else 0.0
@@ -1447,20 +1528,18 @@ class RocketScene:
             ),
         )
         for x, y, size, alpha, depth, phase, blink_speed, blink_strength in self._stars:
-            draw_y = (y - camera_shift * depth + self.camera_y * depth * 0.055) % SCREEN_HEIGHT
+            draw_y = (
+                y - camera_shift * depth + self.camera_y * depth * 0.055
+            ) % SCREEN_HEIGHT
             draw_x = x
             if abs(earth_star_angle) > 0.0001:
                 relative_x = x - orbit_center_x
                 relative_y = draw_y - orbit_center_y
                 draw_x = (
-                    orbit_center_x
-                    + relative_x * orbit_cos
-                    - relative_y * orbit_sin
+                    orbit_center_x + relative_x * orbit_cos - relative_y * orbit_sin
                 )
                 draw_y = (
-                    orbit_center_y
-                    + relative_x * orbit_sin
-                    + relative_y * orbit_cos
+                    orbit_center_y + relative_x * orbit_sin + relative_y * orbit_cos
                 )
             activity_speed = blink_speed * (1.0 + launch_activity * 2.4)
             wave = 0.5 + 0.5 * math.sin(frame_count * activity_speed + phase)
@@ -1472,7 +1551,9 @@ class RocketScene:
             blink_size = size * (
                 1.0 + blink_strength * blink * 0.68 + reactive_flash * 0.72
             )
-            rows.append((draw_x, draw_y, blink_size, 0.68, 0.78, 1.0, min(1.0, twinkle)))
+            rows.append(
+                (draw_x, draw_y, blink_size, 0.68, 0.78, 1.0, min(1.0, twinkle))
+            )
             if earth_star_strength > 0.01:
                 radial_x = draw_x - orbit_center_x
                 radial_y = draw_y - orbit_center_y
@@ -1480,35 +1561,23 @@ class RocketScene:
                 # quadratic ease-out, so trails naturally contract as the sky
                 # settles around Earth.
                 trail_velocity = earth_star_strength
-                arc_angle = (
-                    0.28
-                    * trail_velocity**1.10
-                    * (0.82 + depth * 0.34)
-                )
+                arc_angle = 0.28 * trail_velocity**1.10 * (0.82 + depth * 0.34)
                 previous_x = draw_x
                 previous_y = draw_y
                 for segment in range(1, self.EARTH_RETURN_TRAIL_SEGMENTS + 1):
                     segment_angle = (
-                        -arc_angle
-                        * segment
-                        / self.EARTH_RETURN_TRAIL_SEGMENTS
+                        -arc_angle * segment / self.EARTH_RETURN_TRAIL_SEGMENTS
                     )
                     segment_cos = math.cos(segment_angle)
                     segment_sin = math.sin(segment_angle)
                     tail_x = (
-                        orbit_center_x
-                        + radial_x * segment_cos
-                        - radial_y * segment_sin
+                        orbit_center_x + radial_x * segment_cos - radial_y * segment_sin
                     )
                     tail_y = (
-                        orbit_center_y
-                        + radial_x * segment_sin
-                        + radial_y * segment_cos
+                        orbit_center_y + radial_x * segment_sin + radial_y * segment_cos
                     )
-                    segment_fade = (
-                        1.0
-                        - (segment - 1)
-                        / (self.EARTH_RETURN_TRAIL_SEGMENTS + 1.0)
+                    segment_fade = 1.0 - (segment - 1) / (
+                        self.EARTH_RETURN_TRAIL_SEGMENTS + 1.0
                     )
                     streaks.append(
                         (
@@ -1592,7 +1661,13 @@ class RocketScene:
                     pulse = 0.64 + 0.36 * math.sin(frame_count * 0.18 + phase)
                     color = (0.72, 0.62, 1.0) if index % 3 else (0.48, 0.86, 1.0)
                     rows.append(
-                        (x, y, (3.0 + pulse * 5.0) * SCALE_X, *color, envelope * pulse * 0.76)
+                        (
+                            x,
+                            y,
+                            (3.0 + pulse * 5.0) * SCALE_X,
+                            *color,
+                            envelope * pulse * 0.76,
+                        )
                     )
         if self._comet is not None:
             comet = self._comet
@@ -1620,8 +1695,13 @@ class RocketScene:
                 )
             rows.append(
                 (
-                    comet["x"], comet["y"], 12.0 * SCALE_X * boost,
-                    0.92, 0.98, 1.0, comet_alpha,
+                    comet["x"],
+                    comet["y"],
+                    12.0 * SCALE_X * boost,
+                    0.92,
+                    0.98,
+                    1.0,
+                    comet_alpha,
                 )
             )
         renderer.set_blend_mode("additive")
@@ -1698,8 +1778,7 @@ class RocketScene:
 
     def draw_far_city(self, renderer, firework_lights=None):
         resumed_reveal = (
-            self.phase is MissionPhase.REVEAL
-            and not self._logo_hidden_for_reveal
+            self.phase is MissionPhase.REVEAL and not self._logo_hidden_for_reveal
         )
         attract_alpha = (
             0.78
@@ -1709,8 +1788,7 @@ class RocketScene:
                 or resumed_reveal
             )
             and not (
-                self.phase is MissionPhase.RETURN
-                and self._return_camera_start > 0.0
+                self.phase is MissionPhase.RETURN and self._return_camera_start > 0.0
             )
             else 0.0
         )
@@ -1718,7 +1796,9 @@ class RocketScene:
         if alpha <= 0.001:
             return
         eased_scene = self._ease(self.scene_progress)
-        firework_lights = firework_lights if firework_lights is not None else np.empty((0, 8))
+        firework_lights = (
+            firework_lights if firework_lights is not None else np.empty((0, 8))
+        )
         base_y = (
             820 * SCALE_Y
             + (1.0 - eased_scene) * (SCREEN_HEIGHT - 820 * SCALE_Y)
@@ -1756,9 +1836,13 @@ class RocketScene:
             near=False,
         )
 
-    def draw_world(self, renderer, frame_count, firework_lights=None, launch_lights=None):
+    def draw_world(
+        self, renderer, frame_count, firework_lights=None, launch_lights=None
+    ):
         alpha = self.scene_alpha
-        firework_lights = firework_lights if firework_lights is not None else np.empty((0, 8))
+        firework_lights = (
+            firework_lights if firework_lights is not None else np.empty((0, 8))
+        )
         launch_lights = launch_lights if launch_lights is not None else np.empty((0, 8))
         eased_scene = self._ease(self.scene_progress)
         reveal_offset = (1.0 - eased_scene) * self.REVEAL_CAMERA_TRAVEL
@@ -1777,8 +1861,12 @@ class RocketScene:
 
         ground_y = 820 * SCALE_Y + reveal_offset + self.camera_y
         renderer.set_blend_mode("alpha")
-        self._draw_ground(renderer, ground_y, frame_count, alpha, firework_lights, launch_lights)
-        self._draw_launch_base(renderer, ground_y, alpha, firework_lights, launch_lights)
+        self._draw_ground(
+            renderer, ground_y, frame_count, alpha, firework_lights, launch_lights
+        )
+        self._draw_launch_base(
+            renderer, ground_y, alpha, firework_lights, launch_lights
+        )
 
         rocket_y = self._rocket_screen_offset_y()
         shake_x, shake_y = self.charge_shake(frame_count)
@@ -1817,15 +1905,9 @@ class RocketScene:
         if alpha <= 0.001:
             return
         firework_lights = (
-            firework_lights
-            if firework_lights is not None
-            else np.empty((0, 8))
+            firework_lights if firework_lights is not None else np.empty((0, 8))
         )
-        launch_lights = (
-            launch_lights
-            if launch_lights is not None
-            else np.empty((0, 8))
-        )
+        launch_lights = launch_lights if launch_lights is not None else np.empty((0, 8))
         rocket_y = self._rocket_screen_offset_y()
         shake_x = 0.0
         shake_y = 0.0
@@ -1840,8 +1922,9 @@ class RocketScene:
         )
         renderer.set_blend_mode("additive")
 
-
-    def _draw_city_layer(self, renderer, buildings, base_y, parallax_x, alpha, lights, near):
+    def _draw_city_layer(
+        self, renderer, buildings, base_y, parallax_x, alpha, lights, near
+    ):
         renderer.set_blend_mode("alpha")
         texture, asset_width, asset_height = self._ensure_city_texture(renderer, near)
         renderer.draw_static_texture(
@@ -1857,12 +1940,25 @@ class RocketScene:
         # light response is drawn per building.
         renderer.set_blend_mode("additive")
         visible = []
-        for source_x, width, height, cols, rows, lit_windows, roof, variation in buildings:
+        for (
+            source_x,
+            width,
+            height,
+            cols,
+            rows,
+            lit_windows,
+            roof,
+            variation,
+        ) in buildings:
             x = source_x
             y = base_y - height
             if y > SCREEN_HEIGHT or base_y < 0.0:
                 continue
-            if near and x < SCREEN_WIDTH / 2 + 310 * SCALE_X and x + width > SCREEN_WIDTH / 2 - 310 * SCALE_X:
+            if (
+                near
+                and x < SCREEN_WIDTH / 2 + 310 * SCALE_X
+                and x + width > SCREEN_WIDTH / 2 - 310 * SCALE_X
+            ):
                 continue
             visible.append((x, y, width, height))
 
@@ -1883,7 +1979,9 @@ class RocketScene:
                 light_rects.append((x, y, width, height, *light, alpha * 0.035))
                 light_lines.append((x, y, x + width, y, *light, alpha * 0.52))
                 light_lines.append((x, y, x, y + height, *light, alpha * 0.24))
-                light_lines.append((x + width, y, x + width, y + height, *light, alpha * 0.24))
+                light_lines.append(
+                    (x + width, y, x + width, y + height, *light, alpha * 0.24)
+                )
             else:
                 # The far skyline faces the firework plane and receives a broad,
                 # subdued color wash.
@@ -1901,10 +1999,19 @@ class RocketScene:
         renderer.draw_colored_lines(light_lines)
         renderer.set_blend_mode("alpha")
 
-    def _draw_ground(self, renderer, ground_y, frame_count, alpha, firework_lights, launch_lights):
+    def _draw_ground(
+        self, renderer, ground_y, frame_count, alpha, firework_lights, launch_lights
+    ):
         if ground_y >= SCREEN_HEIGHT:
             return
-        renderer.draw_rect(0, ground_y, SCREEN_WIDTH, SCREEN_HEIGHT - ground_y, (0.025, 0.022, 0.026, alpha), fill=True)
+        renderer.draw_rect(
+            0,
+            ground_y,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT - ground_y,
+            (0.025, 0.022, 0.026, alpha),
+            fill=True,
+        )
         segment_width = SCREEN_WIDTH / 20.0
         segment_points = [
             (index * segment_width + segment_width / 2, max(ground_y, 0))
@@ -1917,11 +2024,24 @@ class RocketScene:
             x = index * segment_width
             fire = segment_fire[index]
             launch = segment_launch[index]
-            light = tuple(min(1.0, launch[channel] + fire[channel] * 0.22) for channel in range(3))
+            light = tuple(
+                min(1.0, launch[channel] + fire[channel] * 0.22) for channel in range(3)
+            )
             surface = self._lit((0.022, 0.055, 0.035), light, 0.34)
             soil = self._lit((0.025, 0.022, 0.026), light, 0.19)
-            ground_rects.append((x, ground_y, segment_width + 1.0, SCREEN_HEIGHT - ground_y, *soil, alpha))
-            ground_rects.append((x, ground_y, segment_width + 1.0, 18 * SCALE_Y, *surface, alpha))
+            ground_rects.append(
+                (
+                    x,
+                    ground_y,
+                    segment_width + 1.0,
+                    SCREEN_HEIGHT - ground_y,
+                    *soil,
+                    alpha,
+                )
+            )
+            ground_rects.append(
+                (x, ground_y, segment_width + 1.0, 18 * SCALE_Y, *surface, alpha)
+            )
 
         visible_marks = []
         for x, depth, width, shade in self._ground_marks:
@@ -1938,11 +2058,21 @@ class RocketScene:
             mark_fire,
             mark_launch,
         ):
-            local = tuple(min(1.0, launch[channel] + fire[channel] * 0.20) for channel in range(3))
+            local = tuple(
+                min(1.0, launch[channel] + fire[channel] * 0.20) for channel in range(3)
+            )
             color = self._lit(bases[shade], local, 0.25)
-            ground_rects.append((x, y, width, max(2.0, 3 * SCALE_Y), *color, alpha * 0.72))
+            ground_rects.append(
+                (x, y, width, max(2.0, 3 * SCALE_Y), *color, alpha * 0.72)
+            )
         renderer.draw_colored_rects(ground_rects)
-        renderer.draw_line(0, ground_y + 20 * SCALE_Y, SCREEN_WIDTH, ground_y + 20 * SCALE_Y, (0.08, 0.10, 0.075, alpha * 0.72))
+        renderer.draw_line(
+            0,
+            ground_y + 20 * SCALE_Y,
+            SCREEN_WIDTH,
+            ground_y + 20 * SCALE_Y,
+            (0.08, 0.10, 0.075, alpha * 0.72),
+        )
 
         if ground_y < -60 * SCALE_Y:
             return
@@ -1956,7 +2086,9 @@ class RocketScene:
         ) = self.grass_propulsion_profile()
         rocket_x = SCREEN_WIDTH / 2
         for center, phase, speed, gust_response, blades in self._grass:
-            cluster_gust = 0.58 + 0.42 * math.sin(frame_count * 0.013 * speed + phase * 0.43)
+            cluster_gust = 0.58 + 0.42 * math.sin(
+                frame_count * 0.013 * speed + phase * 0.43
+            )
             slow_push = math.sin(frame_count * 0.021 + phase) * 1.8 * SCALE_X
             distance_from_rocket = abs(center - rocket_x)
             propulsion_falloff = max(
@@ -2005,33 +2137,81 @@ class RocketScene:
         grass_lines = []
         for row, fire, launch in zip(blade_geometry, blade_fire, blade_launch):
             x, base_y, mid_x, mid_y, tip_x, tip_y, _, blade_phase = row
-            local = tuple(min(1.0, launch[channel] + fire[channel] * 0.30) for channel in range(3))
+            local = tuple(
+                min(1.0, launch[channel] + fire[channel] * 0.30) for channel in range(3)
+            )
             base_green = (0.064, 0.19 + blade_phase * 0.035, 0.088)
             color = (*self._lit(base_green, local, 0.62), alpha)
             grass_lines.append((x, base_y, mid_x, mid_y, *color))
             grass_lines.append((mid_x, mid_y, tip_x, tip_y, *color))
         renderer.draw_colored_lines(grass_lines)
 
-    def _draw_launch_base(self, renderer, ground_y, alpha, firework_lights, launch_lights):
+    def _draw_launch_base(
+        self, renderer, ground_y, alpha, firework_lights, launch_lights
+    ):
         if ground_y > SCREEN_HEIGHT + 90 * SCALE_Y or ground_y < -130 * SCALE_Y:
             return
         cx = SCREEN_WIDTH / 2
         fire = self._sample_light(cx, ground_y - 25 * SCALE_Y, firework_lights)
         launch = self._sample_light(cx, ground_y - 25 * SCALE_Y, launch_lights)
-        light = tuple(min(1.0, launch[channel] + fire[channel] * 0.24) for channel in range(3))
+        light = tuple(
+            min(1.0, launch[channel] + fire[channel] * 0.24) for channel in range(3)
+        )
         steel = self._lit((0.105, 0.13, 0.15), light, 0.35)
         edge = self._lit((0.28, 0.32, 0.34), light, 0.45)
 
         renderer.set_blend_mode("alpha")
-        renderer.draw_rect(cx - 220 * SCALE_X, ground_y - 10 * SCALE_Y, 440 * SCALE_X, 24 * SCALE_Y, (*steel, alpha), fill=True)
-        renderer.draw_rect(cx - 180 * SCALE_X, ground_y - 24 * SCALE_Y, 360 * SCALE_X, 16 * SCALE_Y, (*edge, alpha), fill=True)
-        renderer.draw_rect(cx - 68 * SCALE_X, ground_y - 27 * SCALE_Y, 136 * SCALE_X, 24 * SCALE_Y, (0.008, 0.009, 0.012, alpha), fill=True)
-        renderer.draw_rect(cx - 220 * SCALE_X, ground_y - 10 * SCALE_Y, 440 * SCALE_X, 24 * SCALE_Y, (*edge, alpha * 0.9), fill=False)
+        renderer.draw_rect(
+            cx - 220 * SCALE_X,
+            ground_y - 10 * SCALE_Y,
+            440 * SCALE_X,
+            24 * SCALE_Y,
+            (*steel, alpha),
+            fill=True,
+        )
+        renderer.draw_rect(
+            cx - 180 * SCALE_X,
+            ground_y - 24 * SCALE_Y,
+            360 * SCALE_X,
+            16 * SCALE_Y,
+            (*edge, alpha),
+            fill=True,
+        )
+        renderer.draw_rect(
+            cx - 68 * SCALE_X,
+            ground_y - 27 * SCALE_Y,
+            136 * SCALE_X,
+            24 * SCALE_Y,
+            (0.008, 0.009, 0.012, alpha),
+            fill=True,
+        )
+        renderer.draw_rect(
+            cx - 220 * SCALE_X,
+            ground_y - 10 * SCALE_Y,
+            440 * SCALE_X,
+            24 * SCALE_Y,
+            (*edge, alpha * 0.9),
+            fill=False,
+        )
 
         for side in (-1, 1):
             support_x = cx + side * 112 * SCALE_X
-            renderer.draw_rect(support_x - 8 * SCALE_X, ground_y - 82 * SCALE_Y, 16 * SCALE_X, 72 * SCALE_Y, (*steel, alpha), fill=True)
-            renderer.draw_rect(support_x - 8 * SCALE_X, ground_y - 82 * SCALE_Y, 16 * SCALE_X, 72 * SCALE_Y, (*edge, alpha * 0.85), fill=False)
+            renderer.draw_rect(
+                support_x - 8 * SCALE_X,
+                ground_y - 82 * SCALE_Y,
+                16 * SCALE_X,
+                72 * SCALE_Y,
+                (*steel, alpha),
+                fill=True,
+            )
+            renderer.draw_rect(
+                support_x - 8 * SCALE_X,
+                ground_y - 82 * SCALE_Y,
+                16 * SCALE_X,
+                72 * SCALE_Y,
+                (*edge, alpha * 0.85),
+                fill=False,
+            )
             renderer.draw_line(
                 support_x,
                 ground_y - 67 * SCALE_Y,
@@ -2058,15 +2238,38 @@ class RocketScene:
             (cx - 2 * block, top + block, 4 * block, 2 * block, (0.96, 0.93, 0.88)),
             (cx - 3 * block, top + 3 * block, 6 * block, 3 * block, (0.92, 0.94, 0.96)),
             (cx - 3 * block, top + 6 * block, 6 * block, 4 * block, (0.98, 0.97, 0.93)),
-            (cx - 3 * block, top + 10 * block, 6 * block, 3 * block, (0.88, 0.91, 0.94)),
-            (cx - 5 * block, top + 9 * block, 2 * block, 4 * block, (0.90, 0.045, 0.035)),
-            (cx + 3 * block, top + 9 * block, 2 * block, 4 * block, (0.90, 0.045, 0.035)),
-            (cx - 1.5 * block, top + 13 * block, 3 * block, 1.45 * block, (0.12, 0.13, 0.145)),
+            (
+                cx - 3 * block,
+                top + 10 * block,
+                6 * block,
+                3 * block,
+                (0.88, 0.91, 0.94),
+            ),
+            (
+                cx - 5 * block,
+                top + 9 * block,
+                2 * block,
+                4 * block,
+                (0.90, 0.045, 0.035),
+            ),
+            (
+                cx + 3 * block,
+                top + 9 * block,
+                2 * block,
+                4 * block,
+                (0.90, 0.045, 0.035),
+            ),
+            (
+                cx - 1.5 * block,
+                top + 13 * block,
+                3 * block,
+                1.45 * block,
+                (0.12, 0.13, 0.145),
+            ),
         )
         renderer.set_blend_mode("alpha")
         panel_points = [
-            (x + width / 2, y + height / 2)
-            for x, y, width, height, base in panels
+            (x + width / 2, y + height / 2) for x, y, width, height, base in panels
         ]
         panel_fire = self._sample_lights(panel_points, firework_lights)
         panel_launch = self._sample_lights(panel_points, launch_lights)
@@ -2075,8 +2278,12 @@ class RocketScene:
             panel_fire,
             panel_launch,
         ):
-            diffuse = tuple(min(1.0, launch[channel] + fire[channel] * 0.12) for channel in range(3))
-            rim = tuple(min(1.0, launch[channel] + fire[channel] * 0.62) for channel in range(3))
+            diffuse = tuple(
+                min(1.0, launch[channel] + fire[channel] * 0.12) for channel in range(3)
+            )
+            rim = tuple(
+                min(1.0, launch[channel] + fire[channel] * 0.62) for channel in range(3)
+            )
             color = self._lit(base, diffuse, 0.50)
             edge = self._lit((0.24, 0.27, 0.30), rim, 0.62)
             renderer.draw_rect(x, y, width, height, (*color, alpha), fill=True)
@@ -2086,20 +2293,44 @@ class RocketScene:
         # without turning it into a character or changing its silhouette.
         seam_fire = self._sample_light(cx, top + 8 * block, firework_lights)
         seam_launch = self._sample_light(cx, top + 8 * block, launch_lights)
-        seam_light = tuple(min(1.0, seam_launch[channel] + seam_fire[channel] * 0.38) for channel in range(3))
+        seam_light = tuple(
+            min(1.0, seam_launch[channel] + seam_fire[channel] * 0.38)
+            for channel in range(3)
+        )
         seam = (*self._lit((0.25, 0.28, 0.31), seam_light, 0.8), alpha * 0.82)
         renderer.draw_line(cx, top + 3 * block, cx, top + 13 * block, seam)
-        renderer.draw_line(cx - 3 * block, top + 6 * block, cx + 3 * block, top + 6 * block, seam)
-        renderer.draw_line(cx - 3 * block, top + 10 * block, cx + 3 * block, top + 10 * block, seam)
+        renderer.draw_line(
+            cx - 3 * block, top + 6 * block, cx + 3 * block, top + 6 * block, seam
+        )
+        renderer.draw_line(
+            cx - 3 * block, top + 10 * block, cx + 3 * block, top + 10 * block, seam
+        )
         accent_fire = self._sample_light(cx, top + 7.6 * block, firework_lights)
         accent_launch = self._sample_light(cx, top + 7.6 * block, launch_lights)
-        accent_light = tuple(min(1.0, accent_launch[channel] + accent_fire[channel] * 0.20) for channel in range(3))
+        accent_light = tuple(
+            min(1.0, accent_launch[channel] + accent_fire[channel] * 0.20)
+            for channel in range(3)
+        )
         accent = self._lit((0.92, 0.045, 0.035), accent_light, 0.42)
-        renderer.draw_rect(cx - 3 * block, top + 7.45 * block, 6 * block, 0.42 * block, (*accent, alpha), fill=True)
+        renderer.draw_rect(
+            cx - 3 * block,
+            top + 7.45 * block,
+            6 * block,
+            0.42 * block,
+            (*accent, alpha),
+            fill=True,
+        )
         rivet = self._lit((0.42, 0.46, 0.50), seam_light, 1.0)
         for dx in (-2.45, 2.45):
             for row in (4.0, 7.5, 11.5):
-                renderer.draw_rect(cx + dx * block - 2 * SCALE_X, top + row * block, 4 * SCALE_X, 4 * SCALE_Y, (*rivet, alpha), fill=True)
+                renderer.draw_rect(
+                    cx + dx * block - 2 * SCALE_X,
+                    top + row * block,
+                    4 * SCALE_X,
+                    4 * SCALE_Y,
+                    (*rivet, alpha),
+                    fill=True,
+                )
 
         self._draw_charge_ports(renderer, cx, top, block, alpha, frame_count)
 
@@ -2170,7 +2401,10 @@ class RocketScene:
         renderer.set_blend_mode("alpha")
 
     def _draw_ground_impact(self, renderer, ground_y, alpha):
-        if not self.launch_tier or self.phase not in (MissionPhase.IGNITION, MissionPhase.ASCENT):
+        if not self.launch_tier or self.phase not in (
+            MissionPhase.IGNITION,
+            MissionPhase.ASCENT,
+        ):
             return
         if self.phase is MissionPhase.IGNITION:
             strength = min(1.0, self.phase_elapsed / self.launch_tier.ignition_seconds)
@@ -2209,8 +2443,15 @@ class RocketScene:
         if self.phase in (MissionPhase.ASCENT, MissionPhase.DEPARTURE):
             return "LIFT OFF!", "HAVE A SAFE TRIP HOME, SOT-KUN!"
         if self._cell_message_time > 0.0 and self._cell_message is not None:
-            name = "CRANK" if self._cell_message is GeneratorType.HAND_CRANK else self._cell_message.name
-            return f"{name} CELL READY!", "GREAT JOB! SOT-KUN IS ONE STEP CLOSER TO HOME."
+            name = (
+                "CRANK"
+                if self._cell_message is GeneratorType.HAND_CRANK
+                else self._cell_message.name
+            )
+            return (
+                f"{name} CELL READY!",
+                "GREAT JOB! SOT-KUN IS ONE STEP CLOSER TO HOME.",
+            )
         if snapshot.launch_ready:
             cell_count = len(snapshot.filled_generators)
             seconds = max(1, math.ceil(snapshot.launch_wait_remaining))
@@ -2222,9 +2463,15 @@ class RocketScene:
         if len(selected) == 1:
             level = snapshot.energy_levels.get(selected[0], 0.0)
             if level >= MAX_ENERGY_GAUGE:
-                return "CELL ENERGY RESERVED!", "HELP SOT-KUN MOVE TO ANOTHER ENERGY SOURCE."
+                return (
+                    "CELL ENERGY RESERVED!",
+                    "HELP SOT-KUN MOVE TO ANOTHER ENERGY SOURCE.",
+                )
             return "POWER UP THE ENERGY CELL!", "SOT-KUN'S TRIP HOME STARTS WITH YOU."
-        return "POWER UP THE ACTIVE CELL!", "EACH FULL CELL KEEPS ITS ENERGY WHEN SOT-KUN MOVES."
+        return (
+            "POWER UP THE ACTIVE CELL!",
+            "EACH FULL CELL KEEPS ITS ENERGY WHEN SOT-KUN MOVES.",
+        )
 
     def draw_message(self, renderer, pixel_font, snapshot):
         message = self.message(snapshot)
@@ -2238,8 +2485,40 @@ class RocketScene:
             primary_y = 130 * SCALE_Y
             secondary_y = 205 * SCALE_Y
         renderer.set_blend_mode("alpha")
-        renderer.draw_pixel_text(SCREEN_WIDTH / 2 + 4, primary_y + 4, primary, pixel_font, 8, (0.0, 0.0, 0.0, 0.72), centered=True)
-        renderer.draw_pixel_text(SCREEN_WIDTH / 2, primary_y, primary, pixel_font, 8, (1.0, 0.92, 0.45, 1.0), centered=True)
-        renderer.draw_pixel_text(SCREEN_WIDTH / 2 + 3, secondary_y + 3, secondary, pixel_font, 4, (0.0, 0.0, 0.0, 0.7), centered=True)
-        renderer.draw_pixel_text(SCREEN_WIDTH / 2, secondary_y, secondary, pixel_font, 4, (0.78, 0.88, 1.0, 0.95), centered=True)
+        renderer.draw_pixel_text(
+            SCREEN_WIDTH / 2 + 4,
+            primary_y + 4,
+            primary,
+            pixel_font,
+            8,
+            (0.0, 0.0, 0.0, 0.72),
+            centered=True,
+        )
+        renderer.draw_pixel_text(
+            SCREEN_WIDTH / 2,
+            primary_y,
+            primary,
+            pixel_font,
+            8,
+            (1.0, 0.92, 0.45, 1.0),
+            centered=True,
+        )
+        renderer.draw_pixel_text(
+            SCREEN_WIDTH / 2 + 3,
+            secondary_y + 3,
+            secondary,
+            pixel_font,
+            4,
+            (0.0, 0.0, 0.0, 0.7),
+            centered=True,
+        )
+        renderer.draw_pixel_text(
+            SCREEN_WIDTH / 2,
+            secondary_y,
+            secondary,
+            pixel_font,
+            4,
+            (0.78, 0.88, 1.0, 0.95),
+            centered=True,
+        )
         renderer.set_blend_mode("additive")

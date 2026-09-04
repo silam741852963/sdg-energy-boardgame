@@ -580,19 +580,32 @@ class AudioSystem:
         sample_rate = 44100
         count = int(sample_rate * duration)
         rng = np.random.default_rng(7300 + cells)
-        time_axis = np.arange(count, dtype=np.float32) / sample_rate
         noise = rng.uniform(-1.0, 1.0, count).astype(np.float32)
-        kernel = np.ones(48, dtype=np.float32) / 48.0
-        rumble = np.convolve(noise, kernel, mode="same")
-        tones = (
-            np.sin(2 * np.pi * (34.0 + cells * 3.0) * time_axis)
-            + 0.45 * np.sin(2 * np.pi * 67.0 * time_axis)
+
+        # Use a circular moving average so the filtered noise is continuous at
+        # the loop boundary instead of fading or padding toward silence.
+        filter_width = 48
+        wrapped_noise = np.concatenate((noise[-(filter_width - 1):], noise))
+        cumulative = np.concatenate(
+            (
+                np.zeros(1, dtype=np.float32),
+                np.cumsum(wrapped_noise, dtype=np.float32),
+            )
         )
-        build_seconds = float(cells)
-        build = np.minimum(1.0, time_axis / build_seconds)
-        end_fade = np.minimum(1.0, np.maximum(0.0, (duration - time_axis) / 0.35))
-        envelope = (0.16 + 0.84 * build) * end_fade
-        mono = np.clip((rumble * 2.4 + tones * 0.28) * envelope, -1.0, 1.0)
+        rumble = (
+            cumulative[filter_width:] - cumulative[:-filter_width]
+        ) / filter_width
+
+        # Integer cycle counts make both tonal layers periodic over the exact
+        # sample length, preventing a phase jump when Pygame repeats the sound.
+        loop_phase = np.arange(count, dtype=np.float32) / count
+        low_cycles = round((34.0 + cells * 3.0) * duration)
+        high_cycles = round(67.0 * duration)
+        tones = (
+            np.sin(2 * np.pi * low_cycles * loop_phase)
+            + 0.45 * np.sin(2 * np.pi * high_cycles * loop_phase)
+        )
+        mono = np.clip(rumble * 2.4 + tones * 0.28, -1.0, 1.0)
         mono = (mono * (0.32 + cells * 0.05) * 32767).astype(np.int16)
         return np.column_stack((mono, mono))
 
@@ -606,7 +619,7 @@ class AudioSystem:
         self.rocket_channel = pygame.mixer.find_channel()
         if self.rocket_channel:
             self.rocket_channel.set_volume(0.72)
-            self.rocket_channel.play(sound, loops=-1)
+            self.rocket_channel.play(sound, loops=-1, fade_ms=250)
 
     def stop_rocket_thrust(self):
         if self.rocket_channel:

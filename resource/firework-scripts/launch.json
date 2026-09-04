@@ -10,10 +10,10 @@
             "particle_count": 170,
             "radius": 1.7,
             "intensity": 1.9,
-            "life_span": 110
+            "life_span": 55
         },
         {
-            "time": 0.35,
+            "time": 0.175,
             "type": "Comet",
             "colors": ["silver", "yellow", "blue"],
             "x": 1490,
@@ -21,10 +21,10 @@
             "particle_count": 170,
             "radius": 1.7,
             "intensity": 1.9,
-            "life_span": 110
+            "life_span": 55
         },
         {
-            "time": 0.8,
+            "time": 0.4,
             "type": "Crossette",
             "colors": ["cyan", "orange", "silver"],
             "x": 700,
@@ -32,10 +32,10 @@
             "particle_count": 205,
             "radius": 2.0,
             "intensity": 2.15,
-            "life_span": 132
+            "life_span": 66
         },
         {
-            "time": 1.25,
+            "time": 0.625,
             "type": "Crossette",
             "colors": ["lime", "gold", "silver"],
             "x": 1220,
@@ -43,10 +43,10 @@
             "particle_count": 205,
             "radius": 2.0,
             "intensity": 2.15,
-            "life_span": 132
+            "life_span": 66
         },
         {
-            "time": 1.85,
+            "time": 0.925,
             "type": "Brocade",
             "colors": ["gold", "orange", "yellow", "silver"],
             "x": 520,
@@ -54,10 +54,10 @@
             "particle_count": 235,
             "radius": 2.2,
             "intensity": 2.3,
-            "life_span": 150
+            "life_span": 75
         },
         {
-            "time": 2.5,
+            "time": 1.25,
             "type": "Palm Tree",
             "colors": ["cyan", "blue", "lime", "silver"],
             "x": 1400,
@@ -65,10 +65,10 @@
             "particle_count": 235,
             "radius": 2.2,
             "intensity": 2.3,
-            "life_span": 150
+            "life_span": 75
         },
         {
-            "time": 3.2,
+            "time": 1.6,
             "type": "Strobe",
             "colors": ["yellow", "cyan", "orange", "lime", "silver"],
             "x": 960,
@@ -76,10 +76,10 @@
             "particle_count": 270,
             "radius": 2.35,
             "intensity": 2.45,
-            "life_span": 166
+            "life_span": 83
         },
         {
-            "time": 4.0,
+            "time": 2.0,
             "type": "Peony",
             "colors": ["gold", "cyan", "orange", "lime", "blue", "silver"],
             "x": 960,
@@ -87,7 +87,7 @@
             "particle_count": 300,
             "radius": 2.6,
             "intensity": 2.65,
-            "life_span": 184
+            "life_span": 92
         }
     ]
 }

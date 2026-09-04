@@ -8,9 +8,9 @@ SCALE_Y = SCREEN_HEIGHT / 1080.0
 
 # Ignition and ascent durations are shared with synthesized thrust audio.
 LAUNCH_TIER_TIMINGS = {
-    2: (4.0, 8.0),
-    3: (5.0, 10.0),
-    4: (6.0, 12.0),
+    2: (2.0, 4.0),
+    3: (2.5, 5.0),
+    4: (3.0, 6.0),
 }
 
 FOV = 600 * SCALE_Y
