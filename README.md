@@ -100,8 +100,8 @@ Mock controls:
 
 | Key | Action |
 | --- | --- |
-| `1` / `2` / `3` / `4` | Move Sot-kun to Wind / Solar / Hand Crank / Coil; press the active key again to lift it |
-| `Q` / `W` / `E` / `R` | Add energy to Wind / Solar / Hand Crank / Coil when mock BLE is active |
+| `1` / `2` / `3` / `4` | Move Sot-kun to Solar / Wind / Coil / Hand Crank; press the active key again to lift it |
+| `Q` / `W` / `E` / `R` | Add energy to Solar / Wind / Coil / Hand Crank when mock BLE is active |
 | `0` | Clear the mocked Hall selection |
 | `Backspace` | Reset the mission |
 | `M` | Toggle performance metrics |
@@ -119,10 +119,10 @@ Default BCM Hall sensor pins:
 
 | Generator | BCM pin |
 | --- | ---: |
-| Wind | 17 |
-| Solar | 27 |
-| Hand Crank | 22 |
-| Coil | 23 |
+| Solar | 17 |
+| Wind | 27 |
+| Coil | 22 |
+| Hand Crank | 23 |
 
 Hall inputs currently use gpiozero `Button` objects with internal pull-ups,
 50 ms debounce, and active detection through `is_pressed`. Pin mapping and
@@ -153,7 +153,9 @@ external level conversion is required for 5 V hardware.
    to a new unfinished cell cancels it; four full cells commit immediately.
 8. On commitment the battery locks. Two-, three-, and four-cell launches use
    progressively longer and richer ignition/ascent tiers, followed by a
-   3.6-second departure.
+   1.8-second departure. Flying, launch fireworks, liftoff sky effects, rocket
+   escape, and the subsequent Earth/star transition run at half their former
+   durations.
 9. The result overlay accepts or skips a player name and shows rankings for the
    exact cell loadout. The return then reverses the scene back to Earth and
    restores a fresh mission. A selector held through reset must be removed and
