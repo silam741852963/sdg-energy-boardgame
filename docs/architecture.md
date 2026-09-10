@@ -97,6 +97,14 @@ The renderer reads immutable `GameSnapshot` objects and consumes ordered
 `MissionEvent` objects. Gauge animation and visual completion never determine
 gameplay state.
 
+Raw Hall presence remains observable for safe input re-arming, but gameplay
+selection and BLE/mock energy are accepted only in settled `ATTRACT` and
+`CHARGING`. They are rejected during `CRASH`, `REVEAL`, ignition, ascent,
+departure, ranking hold, return, and the post-launch Earth/star transition.
+Entering a cutscene also discards any in-progress smooth fill, preventing a BLE
+advertisement accepted just before the transition from continuing to move the
+gauge under the cutscene.
+
 ## Presentation state machine
 
 `RocketScene` currently has nine phases:

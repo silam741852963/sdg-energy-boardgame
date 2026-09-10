@@ -109,6 +109,8 @@ Mock controls:
 | `Esc` | Close an overlay or quit |
 
 Mock energy is manual and deterministic; it is not generated randomly.
+Hall changes and energy input are ignored while a cutscene or ranking screen is
+active. Input becomes available only in the settled attract and charging views.
 
 ## Hardware configuration
 

@@ -334,6 +334,26 @@ class FireworkEngine:
             self.mock_selected[:] = [generator]
         self.game_state.set_active_sensors(list(self.mock_selected))
 
+    def _sync_gameplay_input_gate(self):
+        if not self.game_state:
+            return
+        phase = self.rocket_scene.phase
+        enabled = phase is MissionPhase.CHARGING or (
+            phase is MissionPhase.ATTRACT
+            and not any(
+                value > 0.0
+                for value in (
+                    self.rocket_scene._earth_return_fade,
+                    self.rocket_scene._earth_return_focus_hold,
+                    self.rocket_scene._earth_return_zoom,
+                    self.rocket_scene._earth_return_stars,
+                )
+            )
+        )
+        changed = self.game_state.set_gameplay_inputs_enabled(enabled)
+        if changed and enabled and self.rocket_scene.phase is MissionPhase.ATTRACT:
+            self.audio.play_mission_ready()
+
     def _update_name_suggestion(self):
         if not self.name_input:
             self.name_suggestion = ""
@@ -352,6 +372,7 @@ class FireworkEngine:
         now = time.monotonic()
         dt = min(0.1, now - self.last_frame_time)
         self.last_frame_time = now
+        self._sync_gameplay_input_gate()
 
         mouse_clicked = False
         mouse_position = pygame.mouse.get_pos()
@@ -434,9 +455,11 @@ class FireworkEngine:
                 self._play_cell_firework(mission_event.generator)
             elif mission_event.kind is MissionEventKind.LAUNCH_COMMITTED:
                 self.rocket_scene.start_launch(mission_event.generators)
+                self._sync_gameplay_input_gate()
                 self._play_launch_fireworks(len(mission_event.generators))
 
         actions = self.rocket_scene.update(self.snapshot, dt, fps or 60.0)
+        self._sync_gameplay_input_gate()
         self.audio.update_mission_audio(
             self.rocket_scene.phase.name,
             self.rocket_scene.crash_progress,
@@ -460,7 +483,7 @@ class FireworkEngine:
             self.snapshot = self.game_state.snapshot()
             self.prev_selected_generators = tuple(self.snapshot.selected_generators)
             self.prev_energy_levels = dict(self.snapshot.energy_levels)
-            self.audio.play_mission_ready()
+            self._sync_gameplay_input_gate()
 
         self.lighting.update()
         self.script_manager.update()

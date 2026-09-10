@@ -61,6 +61,7 @@ class GameState:
         self.selected_generators: list[GeneratorType] = []
         self.active_sensors: list[GeneratorType] = []
         self.filled_generators: set[GeneratorType] = set()
+        self._gameplay_inputs_enabled = True
         self._sensor_rearm_blocked: set[GeneratorType] = set()
         self._mission_events: deque[MissionEvent] = deque()
         self.launch_wait_seconds = max(0.0, float(launch_wait_seconds))
@@ -124,6 +125,21 @@ class GameState:
         """Legacy single-selector adapter used by old ranking/debug callers."""
         self.set_active_sensors([gen_type] if gen_type else [])
 
+    @property
+    def gameplay_inputs_enabled(self) -> bool:
+        with self._lock:
+            return self._gameplay_inputs_enabled
+
+    def set_gameplay_inputs_enabled(self, enabled: bool) -> bool:
+        """Gate Hall selection and energy while presentation owns the screen."""
+        with self._lock:
+            enabled = bool(enabled)
+            changed = enabled != self._gameplay_inputs_enabled
+            self._gameplay_inputs_enabled = enabled
+            if not enabled:
+                self.smooth_filler.active_fills.clear()
+            return changed
+
     def set_active_sensors(self, sensors: List[GeneratorType]):
         with self._lock:
             unique = []
@@ -137,6 +153,8 @@ class GameState:
             # prevents an old battery from selecting itself again while allowing
             # every new Hall edge to respond immediately at the attract screen.
             self._sensor_rearm_blocked.intersection_update(unique)
+            if not self._gameplay_inputs_enabled:
+                return
             eligible = [
                 generator
                 for generator in unique
@@ -205,7 +223,7 @@ class GameState:
         self, gen_type, amount: float, is_clean_boost: bool = False, smooth: bool = True
     ):
         with self._lock:
-            if not self.current_session:
+            if not self.current_session or not self._gameplay_inputs_enabled:
                 return
             if (
                 gen_type not in self.selected_generators
@@ -234,6 +252,7 @@ class GameState:
         with self._lock:
             if (
                 not self.current_session
+                or not self._gameplay_inputs_enabled
                 or gen_type not in self.selected_generators
                 or self.current_session.launch_committed
                 or self.current_session.completed
@@ -252,7 +271,12 @@ class GameState:
 
     def _apply_energy_delta_locked(self, gen_type: GeneratorType, amount: float):
         session = self.current_session
-        if not session or session.launch_committed or gen_type not in self.selected_generators:
+        if (
+            not session
+            or not self._gameplay_inputs_enabled
+            or session.launch_committed
+            or gen_type not in self.selected_generators
+        ):
             return
         old_value = session.energy_levels.get(gen_type, 0.0)
         new_value = min(MAX_ENERGY_GAUGE, max(0.0, old_value + amount))
