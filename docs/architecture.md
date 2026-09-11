@@ -97,13 +97,14 @@ The renderer reads immutable `GameSnapshot` objects and consumes ordered
 `MissionEvent` objects. Gauge animation and visual completion never determine
 gameplay state.
 
-Raw Hall presence remains observable for safe input re-arming, but gameplay
-selection and BLE/mock energy are accepted only in settled `ATTRACT` and
-`CHARGING`. They are rejected during `CRASH`, `REVEAL`, ignition, ascent,
-departure, ranking hold, return, and the post-launch Earth/star transition.
-Entering a cutscene also discards any in-progress smooth fill, preventing a BLE
+Raw Hall presence remains observable for safe input re-arming. The explicit
+presentation input gate rejects Hall selection and BLE/mock energy only during
+`CRASH`, `IGNITION`, `ASCENT`, and `DEPARTURE`; reveal, ranking hold, return, and
+the post-launch Earth/star transition leave the gate open. Normal mission rules
+still reject battery and energy changes after launch commitment. Entering a
+blocked phase also discards any in-progress smooth fill, preventing a BLE
 advertisement accepted just before the transition from continuing to move the
-gauge under the cutscene.
+gauge during the crash or active launch.
 
 ## Presentation state machine
 

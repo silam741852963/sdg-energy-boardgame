@@ -109,8 +109,10 @@ Mock controls:
 | `Esc` | Close an overlay or quit |
 
 Mock energy is manual and deterministic; it is not generated randomly.
-Hall changes and energy input are ignored while a cutscene or ranking screen is
-active. Input becomes available only in the settled attract and charging views.
+Hall changes and energy input are ignored during the cockpit crash and active
+rocket launch (`IGNITION`, `ASCENT`, and `DEPARTURE`). Other presentation phases
+leave input enabled, subject to the normal rule that a committed launch cannot
+change its battery or accept more energy.
 
 ## Hardware configuration
 

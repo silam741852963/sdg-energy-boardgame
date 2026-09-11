@@ -338,20 +338,14 @@ class FireworkEngine:
         if not self.game_state:
             return
         phase = self.rocket_scene.phase
-        enabled = phase is MissionPhase.CHARGING or (
-            phase is MissionPhase.ATTRACT
-            and not any(
-                value > 0.0
-                for value in (
-                    self.rocket_scene._earth_return_fade,
-                    self.rocket_scene._earth_return_focus_hold,
-                    self.rocket_scene._earth_return_zoom,
-                    self.rocket_scene._earth_return_stars,
-                )
-            )
+        input_blocked = phase in (
+            MissionPhase.CRASH,
+            MissionPhase.IGNITION,
+            MissionPhase.ASCENT,
+            MissionPhase.DEPARTURE,
         )
-        changed = self.game_state.set_gameplay_inputs_enabled(enabled)
-        if changed and enabled and self.rocket_scene.phase is MissionPhase.ATTRACT:
+        changed = self.game_state.set_gameplay_inputs_enabled(not input_blocked)
+        if changed and not input_blocked and phase is MissionPhase.ATTRACT:
             self.audio.play_mission_ready()
 
     def _update_name_suggestion(self):
