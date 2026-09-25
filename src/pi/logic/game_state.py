@@ -21,6 +21,10 @@ from .smooth_fill import SmoothFiller
 class MissionEventKind(Enum):
     CELL_FILLED = auto()
     LAUNCH_COMMITTED = auto()
+    BIRTHDAY_COMMAND = auto()
+    SECRET_STOP = auto()
+    SUPER_COMMAND = auto()
+    PAIR_COMMAND = auto()
 
 
 @dataclass(frozen=True)
@@ -44,17 +48,33 @@ class GameSnapshot:
 
 
 class GameState:
+    _PAIR_HOLD_SECONDS = 0.25
+    _BIRTHDAY_SEQUENCE = (
+        GeneratorType.SOLAR,
+        GeneratorType.WIND,
+        GeneratorType.SOLAR,
+        GeneratorType.WIND,
+    )
+    _SUPER_SEQUENCE = (
+        GeneratorType.SOLAR,
+        GeneratorType.WIND,
+        GeneratorType.COIL,
+        GeneratorType.HAND_CRANK,
+    )
+
     def __init__(
         self,
         rankings_enabled: bool = RANKINGS_ENABLED,
         launch_wait_seconds: float = LAUNCH_CONTINUE_SECONDS,
         mission_clock=None,
         record_clock=None,
+        secrets_enabled: bool = False,
     ):
         self._lock = threading.RLock()
         self.current_session: PlayerSession | None = None
         self.rankings: Dict[tuple[GeneratorType, ...], List[RankingEntry]] = {}
         self.rankings_enabled = rankings_enabled
+        self.secrets_enabled = bool(secrets_enabled)
         # Compatibility for the dormant ranking implementation. Gameplay must
         # use selected_generators and never collapse the battery to this value.
         self.active_generator: GeneratorType | None = None
@@ -64,6 +84,14 @@ class GameState:
         self._gameplay_inputs_enabled = True
         self._sensor_rearm_blocked: set[GeneratorType] = set()
         self._mission_events: deque[MissionEvent] = deque()
+        self._secret_choices: deque[GeneratorType] = deque(maxlen=4)
+        self._secret_showing = False
+        self._active_secret_pair: tuple[GeneratorType, ...] | None = None
+        self._secret_charge_seen = False
+        self._last_hall_choice: GeneratorType | None = None
+        self._pair_candidate: tuple[GeneratorType, ...] | None = None
+        self._pair_since: float | None = None
+        self._pair_rearm_blocked: tuple[GeneratorType, ...] | None = None
         self.launch_wait_seconds = max(0.0, float(launch_wait_seconds))
         self._mission_clock = mission_clock or time.monotonic
         self._record_clock = record_clock or time.time
@@ -117,6 +145,14 @@ class GameState:
         self.filled_generators.clear()
         self._sensor_rearm_blocked.clear()
         self._mission_events.clear()
+        self._secret_choices.clear()
+        self._secret_showing = False
+        self._active_secret_pair = None
+        self._secret_charge_seen = False
+        self._last_hall_choice = None
+        self._pair_candidate = None
+        self._pair_since = None
+        self._pair_rearm_blocked = None
         self._launch_deadline = None
         self.active_generator = None
         self.smooth_filler.active_fills.clear()
@@ -148,6 +184,8 @@ class GameState:
                     unique.append(generator)
             self.active_sensors = unique
             self.last_activity_time = time.time()
+            if self.secrets_enabled:
+                self._observe_secret_choice(unique)
 
             # Sensors held through an automatic reset must first go low. This
             # prevents an old battery from selecting itself again while allowing
@@ -208,11 +246,111 @@ class GameState:
 
             self._evaluate_launch_locked()
 
+    def _observe_secret_choice(self, sensors: list[GeneratorType]):
+        # Sole positions advance four-choice sequences. A stable two-sensor
+        # position starts a pair show; short overlaps remain transitional.
+        pair = self.canonical_loadout(sensors) if len(sensors) == 2 else None
+        if pair != self._pair_rearm_blocked:
+            self._pair_rearm_blocked = None
+        if self._active_secret_pair is not None:
+            if pair != self._active_secret_pair:
+                self._stop_secret_show_locked()
+        elif self._secret_showing and len(sensors) >= 2:
+            self._stop_secret_show_locked()
+
+        if pair is not None and pair == self._active_secret_pair:
+            return
+
+        if pair != self._pair_candidate:
+            self._pair_candidate = pair if pair != self._pair_rearm_blocked else None
+            self._pair_since = self._mission_clock() if self._pair_candidate else None
+
+        # Empty and overlapping scans are not new choices in a sequence.
+        if len(sensors) != 1 or sensors[0] == self._last_hall_choice:
+            return
+        choice = sensors[0]
+        self._last_hall_choice = choice
+        if self._secret_showing:
+            self._stop_secret_show_locked()
+        if not self._secrets_available_locked():
+            self._secret_choices.clear()
+            return
+        self._secret_choices.append(choice)
+        choices = tuple(self._secret_choices)
+        if choices == self._BIRTHDAY_SEQUENCE:
+            self._mission_events.append(MissionEvent(MissionEventKind.BIRTHDAY_COMMAND))
+        elif choices == self._SUPER_SEQUENCE:
+            self._mission_events.append(MissionEvent(MissionEventKind.SUPER_COMMAND))
+        else:
+            return
+        self._secret_showing = True
+        self._secret_choices.clear()
+
+    def _secrets_available_locked(self) -> bool:
+        session = self.current_session
+        if not session:
+            return False
+        if any(level > 0.0 for level in session.energy_levels.values()) or any(
+            fill["total"] > fill["added"] for fill in self.smooth_filler.active_fills
+        ):
+            self._mark_secret_charge_seen()
+        return not self._secret_charge_seen
+
+    def _evaluate_secret_pair_locked(self):
+        pair = self._pair_candidate
+        if pair is None or self._pair_since is None:
+            return
+        if self._mission_clock() - self._pair_since < self._PAIR_HOLD_SECONDS:
+            return
+        if not self._secrets_available_locked():
+            self._pair_candidate = None
+            self._pair_since = None
+            return
+        if self._secret_showing:
+            self._stop_secret_show_locked()
+        self._mission_events.append(
+            MissionEvent(MissionEventKind.PAIR_COMMAND, generators=pair)
+        )
+        self._secret_showing = True
+        self._active_secret_pair = pair
+        self._secret_choices.clear()
+        self._pair_candidate = None
+        self._pair_since = None
+
+    def _stop_secret_show_locked(self):
+        if self._secret_showing:
+            self._mission_events.append(MissionEvent(MissionEventKind.SECRET_STOP))
+        self._secret_showing = False
+        self._active_secret_pair = None
+
+    def _mark_secret_charge_seen(self):
+        if not self.secrets_enabled:
+            return
+        if self._secret_charge_seen:
+            return
+        self._secret_charge_seen = True
+        self._secret_choices.clear()
+        self._pair_candidate = None
+        self._pair_since = None
+        # Energy can arrive between Hall recognition and the next render frame.
+        # Drop an unconsumed activation so it cannot start after charging.
+        starts = {
+            MissionEventKind.BIRTHDAY_COMMAND,
+            MissionEventKind.SUPER_COMMAND,
+            MissionEventKind.PAIR_COMMAND,
+        }
+        self._mission_events = deque(
+            event for event in self._mission_events if event.kind not in starts
+        )
+        self._stop_secret_show_locked()
+
     def check_inactivity(self):
         # Engine tick hook: energy never drains and selectors never expire, but
         # a ready battery's visible continuation deadline must advance.
         with self._lock:
             self.smooth_filler.update()
+            if self.secrets_enabled:
+                self._evaluate_secret_pair_locked()
             self._evaluate_launch_locked()
 
     def force_immediate_drain(self, gen_type):
@@ -247,7 +385,7 @@ class GameState:
             else:
                 fill_amount = ENERGY_PER_BEACON_BY_TYPE.get(gen_type, amount)
         else:
-            fill_amount = amount
+            fill_amount = amount * 0.5 if gen_type is GeneratorType.SOLAR else amount
 
         with self._lock:
             if (
@@ -260,6 +398,9 @@ class GameState:
                 return
             if CLEANBOOST_TEST_MODE and is_clean_boost:
                 self._log_clean_boost_signal(gen_type, fill_amount)
+
+            if fill_amount > 0.0:
+                self._mark_secret_charge_seen()
 
             self.last_activity_time = time.time()
             self.current_session.last_energy_time[gen_type] = time.time()
@@ -278,6 +419,8 @@ class GameState:
             or gen_type not in self.selected_generators
         ):
             return
+        if amount > 0.0:
+            self._mark_secret_charge_seen()
         old_value = session.energy_levels.get(gen_type, 0.0)
         new_value = min(MAX_ENERGY_GAUGE, max(0.0, old_value + amount))
         session.energy_levels[gen_type] = new_value
@@ -393,6 +536,12 @@ class GameState:
                 blocked = set(present)
             self.start_new_session()
             self._sensor_rearm_blocked = blocked
+            # A selector carried through reset is the old position, not the
+            # first choice of a fresh secret sequence.
+            self._last_hall_choice = present[0] if len(present) == 1 else None
+            self._pair_rearm_blocked = (
+                self.canonical_loadout(present) if len(present) == 2 else None
+            )
             # Re-apply the latest physical state. Inputs released and activated
             # during the return animation are selected immediately instead of
             # being swallowed by the reset frame.

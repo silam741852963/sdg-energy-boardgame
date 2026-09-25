@@ -83,7 +83,7 @@ class ParticleSystem:
         self.glitter = np.zeros(max_particles, dtype=bool)
         self.is_scene_effect = np.zeros(max_particles, dtype=bool)
 
-        # Behavior type (0=None, 1=Swim, 2=Spin, 3=Waterfall)
+        # Motion flags: Swim=1, Spin=2, Waterfall=4. Multiple can coexist.
         self.behavior_type = np.zeros(max_particles, dtype=np.int8)
 
         # Spin angle (for SpinBehavior)
@@ -217,11 +217,11 @@ class ParticleSystem:
         b_code = 0
         if not is_shell:
             if spec.swim:
-                b_code = 1
-            elif spec.spin:
-                b_code = 2
-            elif spec.waterfall:
-                b_code = 3
+                b_code |= 1
+            if spec.spin:
+                b_code |= 2
+            if spec.waterfall:
+                b_code |= 4
         self.behavior_type[idxs_arr] = b_code
         self.spin_angle[idxs_arr] = np.random.uniform(0, math.pi * 2, count)
 
@@ -535,7 +535,7 @@ class ParticleSystem:
 
         # 4. Apply update behaviors
         # Swim behavior (behavior_type == 1)
-        swim_mask = active_mask & (self.behavior_type == 1)
+        swim_mask = active_mask & ((self.behavior_type & 1) != 0)
         n_swim = np.count_nonzero(swim_mask)
         if n_swim > 0:
             self.vx[swim_mask] += np.random.uniform(-3.0, 3.0, n_swim)
@@ -543,7 +543,7 @@ class ParticleSystem:
             self.vy[swim_mask] += np.random.uniform(-1.0, 1.0, n_swim)
 
         # Spin behavior (behavior_type == 2)
-        spin_mask = active_mask & (self.behavior_type == 2)
+        spin_mask = active_mask & ((self.behavior_type & 2) != 0)
         n_spin = np.count_nonzero(spin_mask)
         if n_spin > 0:
             self.spin_angle[spin_mask] += 1.2
@@ -552,7 +552,7 @@ class ParticleSystem:
             self.vy[spin_mask] += np.random.uniform(-0.5, 0.5, n_spin)
 
         # Waterfall behavior (behavior_type == 3)
-        waterfall_mask = active_mask & (self.behavior_type == 3)
+        waterfall_mask = active_mask & ((self.behavior_type & 4) != 0)
         if np.any(waterfall_mask):
             self.gravity[waterfall_mask] = np.minimum(
                 0.3, self.gravity[waterfall_mask] + 0.005

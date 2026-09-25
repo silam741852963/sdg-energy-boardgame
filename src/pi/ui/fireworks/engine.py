@@ -1,9 +1,7 @@
 import pygame
 import moderngl
-import random
 import copy
 import time
-import os
 
 from .config import (
     SCREEN_WIDTH,
@@ -16,9 +14,15 @@ from .drones import DroneManager
 from .lighting import LightingSystem
 from .gui import ControlPanel
 from .audio import AudioSystem
+from .firework_shows import (
+    BirthdayFireworkShow,
+    CellCelebration,
+    LaunchCelebration,
+    PairFireworkShow,
+    SuperFireworkShow,
+)
 from .firework import FireworkManager
 from .gauges import GaugeManager
-from .scripting import ScriptManager
 from .renderer import Renderer
 from .pixel_font import PixelFont
 from .rocket_scene import MissionPhase, RocketScene
@@ -61,14 +65,6 @@ class CPUUsageTracker:
             self.last_time = now
             self.last_cpu_time = now_cpu
         return self.cpu_usage
-
-
-LAUNCH_FIREWORK_SCALES = {
-    # The two-cell celebration starts at the previous four-cell intensity.
-    2: (1.16, 1.12, 1.10),
-    3: (1.35, 1.28, 1.18),
-    4: (1.58, 1.46, 1.28),
-}
 
 
 class FireworkEngine:
@@ -175,10 +171,19 @@ class FireworkEngine:
 
         self.firework_manager = FireworkManager(self.audio, self.lighting)
         self.gauge_manager = GaugeManager(self.game_state)
-        self.script_manager = ScriptManager(self.firework_manager)
+        self.cell_celebrations = {
+            generator: CellCelebration(self.firework_manager, generator)
+            for generator in GeneratorType
+        }
+        self.birthday_show = BirthdayFireworkShow(self.firework_manager)
+        self.super_show = SuperFireworkShow(self.firework_manager)
+        self.pair_show = None
+        self.launch_celebration = LaunchCelebration(self.firework_manager)
         self.rocket_scene = RocketScene(self.firework_manager, self.audio)
         self.last_frame_time = time.monotonic()
         self.mock_selected = []
+        self.mock_keys_down = set()
+        self.mock_chord_mode = False
         self.snapshot = self.game_state.snapshot() if self.game_state else None
         self.prev_selected_generators = (
             tuple(self.snapshot.selected_generators) if self.snapshot else ()
@@ -225,12 +230,14 @@ class FireworkEngine:
         return 0.0
 
     def _restart_game(self):
+        self._stop_secret_shows()
+        self.launch_celebration.stop()
+        self._stop_cell_celebrations()
         self.audio.play_restart_sound()
         if self.game_state:
             self._reset_mission_input()
             self.firework_manager.particles.clear()
             self.firework_manager.shells.clear()
-            self.script_manager.active_scripts.clear()
             self.rocket_scene.reset()
             self.gauge_manager.reset()
             self.drone_manager.transition_to_pattern(0, self.gui)
@@ -328,6 +335,8 @@ class FireworkEngine:
         """Reset mission state without leaving stale or swallowed selectors."""
         self.game_state.reset_mission()
         if self.mock_hall:
+            self.mock_keys_down.clear()
+            self.mock_chord_mode = False
             # Keep only inputs that the state accepted as genuinely rearmed.
             # Old launch keys otherwise remain toggled on, making the first
             # post-reset keypress remove them instead of selecting them.
@@ -335,13 +344,43 @@ class FireworkEngine:
             self.mock_selected[:] = accepted
             self.game_state.set_active_sensors(accepted)
 
-    def _toggle_mock_hall_sensor(self, generator):
-        """Move the debug Sot-kun selector to a generator, or lift it off."""
-        if self.mock_selected == [generator]:
+    def _toggle_mock_hall_sensor(self, generator, additive=False):
+        """Move the mock selector; Shift toggles another held Hall sensor."""
+        if additive:
+            if generator in self.mock_selected:
+                self.mock_selected.remove(generator)
+            else:
+                self.mock_selected.append(generator)
+        elif self.mock_selected == [generator]:
             self.mock_selected.clear()
         else:
             self.mock_selected[:] = [generator]
         self.game_state.set_active_sensors(list(self.mock_selected))
+
+    def _press_mock_hall_sensor(self, generator, additive=False):
+        if generator in self.mock_keys_down:
+            return
+        self.mock_keys_down.add(generator)
+        if additive:
+            self._toggle_mock_hall_sensor(generator, additive=True)
+        elif len(self.mock_keys_down) >= 2:
+            self.mock_chord_mode = True
+            self.mock_selected[:] = [
+                choice for choice in GeneratorType if choice in self.mock_keys_down
+            ]
+            self.game_state.set_active_sensors(list(self.mock_selected))
+        else:
+            self._toggle_mock_hall_sensor(generator)
+
+    def _release_mock_hall_sensor(self, generator):
+        self.mock_keys_down.discard(generator)
+        if self.mock_chord_mode:
+            self.mock_selected[:] = [
+                choice for choice in GeneratorType if choice in self.mock_keys_down
+            ]
+            self.game_state.set_active_sensors(list(self.mock_selected))
+            if not self.mock_keys_down:
+                self.mock_chord_mode = False
 
     def _sync_gameplay_input_gate(self):
         if not self.game_state:
@@ -356,6 +395,13 @@ class FireworkEngine:
         changed = self.game_state.set_gameplay_inputs_enabled(not input_blocked)
         if changed and not input_blocked and phase is MissionPhase.ATTRACT:
             self.audio.play_mission_ready()
+
+    def _stop_secret_shows(self):
+        self.birthday_show.stop()
+        self.super_show.stop()
+        if self.pair_show is not None:
+            self.pair_show.stop()
+            self.pair_show = None
 
     def _update_name_suggestion(self):
         if not self.name_input:
@@ -410,15 +456,23 @@ class FireworkEngine:
                     self.gui.export_current_spec()
                 elif event.key == pygame.K_0 and self.mock_hall:
                     self.mock_selected.clear()
+                    self.mock_keys_down.clear()
+                    self.mock_chord_mode = False
                     self.game_state.set_active_sensors([])
                 elif event.key in selector_keys and self.mock_hall:
-                    self._toggle_mock_hall_sensor(selector_keys[event.key])
+                    self._press_mock_hall_sensor(
+                        selector_keys[event.key],
+                        additive=bool(getattr(event, "mod", 0) & pygame.KMOD_SHIFT),
+                    )
                 elif event.key in charge_keys and self.mock_ble:
                     self.game_state.add_energy(
                         charge_keys[event.key],
-                        10.0,
+                        5.0 if event.key == pygame.K_q else 10.0,
                         is_clean_boost=True,
                     )
+            elif event.type == pygame.KEYUP and self.mock_hall:
+                if event.key in selector_keys:
+                    self._release_mock_hall_sensor(selector_keys[event.key])
 
         if self.is_mock:
             captured = self.gui.update(events, mouse_position, mouse_clicked)
@@ -430,7 +484,6 @@ class FireworkEngine:
 
         if not self.game_state:
             self.lighting.update()
-            self.script_manager.update()
             self.firework_manager.update()
             self.drone_manager.update(self.frame_count, 1.0)
             return
@@ -443,7 +496,6 @@ class FireworkEngine:
                 self.rocket_scene.crash_progress,
             )
             self.lighting.update()
-            self.script_manager.update()
             self.firework_manager.update()
             self.drone_manager.update(self.frame_count, 1.0)
             return
@@ -452,14 +504,39 @@ class FireworkEngine:
         self.snapshot = self.game_state.snapshot()
         self._play_selection_feedback(self.snapshot)
         for mission_event in self.game_state.consume_mission_events():
-            if mission_event.kind is MissionEventKind.CELL_FILLED:
+            if mission_event.kind is MissionEventKind.BIRTHDAY_COMMAND:
+                self._stop_secret_shows()
+                self.audio.play_secret_activation()
+                self.birthday_show.start(now)
+            elif mission_event.kind is MissionEventKind.SUPER_COMMAND:
+                self._stop_secret_shows()
+                self.audio.play_secret_activation()
+                self.super_show.start(now)
+            elif mission_event.kind is MissionEventKind.PAIR_COMMAND:
+                self._stop_secret_shows()
+                self.audio.play_secret_activation()
+                self.pair_show = PairFireworkShow(
+                    self.firework_manager, mission_event.generators
+                )
+                self.pair_show.start(now)
+            elif mission_event.kind is MissionEventKind.SECRET_STOP:
+                self._stop_secret_shows()
+            elif mission_event.kind is MissionEventKind.CELL_FILLED:
                 self.audio.play_success_chime()
                 self.rocket_scene.show_cell_ready(mission_event.generator)
-                self._play_cell_firework(mission_event.generator)
+                self.cell_celebrations[mission_event.generator].start(now)
             elif mission_event.kind is MissionEventKind.LAUNCH_COMMITTED:
                 self.rocket_scene.start_launch(mission_event.generators)
                 self._sync_gameplay_input_gate()
-                self._play_launch_fireworks(len(mission_event.generators))
+                self._play_launch_fireworks(len(mission_event.generators), now)
+
+        self.birthday_show.update(now)
+        self.super_show.update(now)
+        if self.pair_show is not None:
+            self.pair_show.update(now)
+        self.launch_celebration.update(now)
+        for celebration in self.cell_celebrations.values():
+            celebration.update(now)
 
         actions = self.rocket_scene.update(self.snapshot, dt, fps or 60.0)
         self._sync_gameplay_input_gate()
@@ -469,6 +546,9 @@ class FireworkEngine:
         )
         self.renderer.screen_shake = self.rocket_scene.screen_shake()
         if actions.launch_completed:
+            self._stop_secret_shows()
+            self.launch_celebration.stop()
+            self._stop_cell_celebrations()
             self.game_state.mark_launch_complete()
             self.audio.play_end_chime()
             self.snapshot = self.game_state.snapshot()
@@ -480,6 +560,9 @@ class FireworkEngine:
             if not (self.show_name_entry or self.show_leaderboard):
                 self.rocket_scene.release_record_hold()
         if actions.reset_requested:
+            self._stop_secret_shows()
+            self.launch_celebration.stop()
+            self._stop_cell_celebrations()
             self._reset_mission_input()
             self.rocket_scene.reset()
             self.gauge_manager.reset()
@@ -489,7 +572,6 @@ class FireworkEngine:
             self._sync_gameplay_input_gate()
 
         self.lighting.update()
-        self.script_manager.update()
         self.firework_manager.update()
         self.drone_manager.update(self.frame_count, 1.0)
         self.gauge_manager.update(self.snapshot, dt)
@@ -513,50 +595,12 @@ class FireworkEngine:
                 self.audio.play_hall_sensor(generator, selected=True)
         self.prev_selected_generators = current
 
-    def _play_cell_firework(self, generator):
-        script_names = {
-            GeneratorType.WIND: "wind.json",
-            GeneratorType.SOLAR: "solar.json",
-            GeneratorType.HAND_CRANK: "hand_crank.json",
-            GeneratorType.COIL: "coil.json",
-        }
-        script_name = script_names[generator]
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        script_path = os.path.join(
-            current_dir,
-            "..",
-            "..",
-            "..",
-            "..",
-            "resource",
-            "firework-scripts",
-            script_name,
-        )
-        self.script_manager.play_sequence(script_path, variation=random.choice((0, 1)))
+    def _stop_cell_celebrations(self):
+        for celebration in self.cell_celebrations.values():
+            celebration.stop()
 
-    def _play_launch_fireworks(self, cell_count):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        script_path = os.path.join(
-            current_dir,
-            "..",
-            "..",
-            "..",
-            "..",
-            "resource",
-            "firework-scripts",
-            "launch.json",
-        )
-        count_scale, intensity_scale, life_scale = LAUNCH_FIREWORK_SCALES.get(
-            cell_count,
-            (1.0, 1.0, 1.0),
-        )
-        self.script_manager.play_sequence(
-            script_path,
-            variation=random.choice((0, 1)),
-            count_scale=count_scale,
-            intensity_scale=intensity_scale,
-            life_scale=life_scale,
-        )
+    def _play_launch_fireworks(self, cell_count, now):
+        self.launch_celebration.start(now, cell_count)
 
     @staticmethod
     def _ranking_generator_label(generator):
@@ -837,7 +881,7 @@ class FireworkEngine:
             label = (
                 "DEBUG "
                 + "+".join(modes)
-                + "  1-4 MOVE SOT-KUN  Q-W-E-R CHARGE  0 LIFT"
+                + "  1-4 MOVE / HOLD TWO TO PAIR  Q-W-E-R CHARGE  0 LIFT"
             )
             self.renderer.draw_pixel_text(
                 24 * SCALE_X,

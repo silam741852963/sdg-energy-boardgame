@@ -69,6 +69,9 @@ Run without physical input hardware:
 ./run.sh --debug
 ```
 
+Hidden Hall firework shows are off by default. Add `--enable-secrets` in real or
+debug mode to enable them (for example, `./run.sh --debug --enable-secrets`).
+
 The launcher resolves the repository root, prefers `.venv/bin/python`, then
 `venv/bin/python`, and finally `python3` on `PATH`. Set `SDG_PYTHON` to select an
 explicit interpreter:
@@ -101,6 +104,8 @@ Mock controls:
 | Key | Action |
 | --- | --- |
 | `1` / `2` / `3` / `4` | Move Sot-kun to Solar / Wind / Coil / Hand Crank; press the active key again to lift it |
+| Hold two of `1` / `2` / `3` / `4` | Select both mocked Hall sensors until the keys are released |
+| `Shift` + `1` / `2` / `3` / `4` | Toggle an additional mocked Hall sensor without holding both keys |
 | `Q` / `W` / `E` / `R` | Add energy to Solar / Wind / Coil / Hand Crank when mock BLE is active |
 | `0` | Clear the mocked Hall selection |
 | `Backspace` | Reset the mission |
@@ -109,6 +114,7 @@ Mock controls:
 | `Esc` | Close an overlay or quit |
 
 Mock energy is manual and deterministic; it is not generated randomly.
+The mock Solar charge key adds 5 units per press; the other charge keys add 10.
 Hall changes and energy input are ignored during the cockpit crash and active
 rocket launch (`IGNITION`, `ASCENT`, and `DEPARTURE`). Other presentation phases
 leave input enabled, subject to the normal rule that a committed launch cannot
@@ -203,9 +209,9 @@ suggestions remain available.
   startup.
 - `resource/images/` contains the NASA-derived Earth texture used by the opening
   and return cutscenes.
-- `resource/firework-scripts/` contains four six-event cell shows and one
-  eight-event launch show.
 - `resource/firework-settings/` contains reusable firework specifications.
+  Generator-specific cell shows and tiered launch celebrations are generated
+  from these settings in code.
 - `resource/drone-pattern/` contains metadata and ASCII drone formations.
 
 Resource paths are resolved relative to the installed source tree. Deploy

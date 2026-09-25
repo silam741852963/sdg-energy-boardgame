@@ -64,6 +64,9 @@ class AudioSystem:
                 self.sounds["mission_ready"] = pygame.mixer.Sound(
                     array=self._generate_mission_ready_samples()
                 )
+                self.sounds["secret_activation"] = pygame.mixer.Sound(
+                    array=self._generate_secret_activation_samples()
+                )
                 self.sounds["cockpit_zoom"] = pygame.mixer.Sound(
                     array=self._generate_cockpit_zoom_samples()
                 )
@@ -337,6 +340,28 @@ class AudioSystem:
         mono = np.concatenate(chunks)
         return np.column_stack((mono, mono))
 
+    def _generate_secret_activation_samples(self):
+        """Distinct ascending unlock cue with a bright final shimmer."""
+        import numpy as np
+
+        sample_rate = 44100
+        chunks = []
+        for frequency, duration in (
+            (392.0, 0.10),
+            (523.25, 0.10),
+            (783.99, 0.12),
+            (1174.66, 0.42),
+        ):
+            axis = np.arange(int(sample_rate * duration), dtype=np.float32) / sample_rate
+            phase = 2.0 * np.pi * frequency * axis
+            shimmer = np.sin(phase) + 0.24 * np.sin(2.0 * phase)
+            envelope = np.minimum(1.0, axis / 0.008) * np.exp(-5.0 * axis)
+            chunks.append(shimmer * envelope)
+        mono = np.clip(np.concatenate(chunks) * 0.34, -1.0, 1.0)
+        left = (mono * 32767).astype(np.int16)
+        right = (np.roll(mono, 9) * 32767).astype(np.int16)
+        return np.column_stack((left, right))
+
     def _generate_cockpit_zoom_samples(self):
         import numpy as np
 
@@ -496,6 +521,17 @@ class AudioSystem:
         channel = pygame.mixer.find_channel()
         if channel:
             channel.set_volume(0.68)
+            channel.play(sound)
+
+    def play_secret_activation(self):
+        if not self.enabled:
+            return
+        sound = self.sounds.get("secret_activation")
+        if sound is None:
+            return
+        channel = pygame.mixer.find_channel()
+        if channel:
+            channel.set_volume(0.85)
             channel.play(sound)
 
     def play_tick_sound(self):

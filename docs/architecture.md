@@ -43,7 +43,7 @@ second competing simulation clock.
 `BLEReceiver` uses Bleak. Advertisements from the four exact MAC addresses in
 `pi.config.CLEANBOOST_MACS` map to `GeneratorType`; unknown addresses are
 ignored. With `CLEANBOOST_TEST_MODE = True`, generator-specific fill values are
-used: Solar 10, Wind 20, Coil 5.1, and Hand Crank 5.1 units per accepted beacon.
+used: Solar 5, Wind 20, Coil 5.1, and Hand Crank 5.1 units per accepted beacon.
 
 `WireReceiver` owns four gpiozero `Button` inputs:
 
@@ -171,9 +171,10 @@ texture; the opening targets Ōmagari at 39.453083 N, 140.475444 E.
 
 Fireworks use an independent high-luminance palette and additive blending.
 Invalid/black color indices resolve to white. Burst centers add a broad white
-bloom and crisp core. Four generator scripts contain six events over 3.15
-seconds, while `launch.json` contains eight events over two seconds. Concurrent
-shows are allowed; a full pool safely drops new particles.
+bloom and crisp core. Each generator has a short, varied show when its cell
+reaches 100%. Launch celebrations vary firework types, colors, and formations
+by battery tier. Concurrent shows are allowed; a full pool safely drops new
+particles.
 
 The adaptive Pi budget monitors measured FPS. One sustained second below 55 FPS
 reduces decorative rocket emission in 10% steps down to 50%. Three sustained
@@ -535,7 +536,6 @@ working directory:
 
 - `resource/audio/` — ambient loop and firework recordings
 - `resource/images/` — NASA-derived 2048×1024 Earth map
-- `resource/firework-scripts/` — timed cell and launch shows
 - `resource/firework-settings/` — reusable firework definitions
 - `resource/drone-pattern/` — metadata plus ASCII formations
 

@@ -57,6 +57,11 @@ def main():
         choices=['ble', 'hall-ic', 'all'],
         help="Run in debug mode. Option: 'ble', 'hall-ic', or 'all' (default if --debug is set)"
     )
+    parser.add_argument(
+        '--enable-secrets',
+        action='store_true',
+        help='Enable hidden Hall choice and two-sensor firework shows',
+    )
     args = parser.parse_args()
 
     mock_ble = False
@@ -89,7 +94,7 @@ def main():
             mock_hall = True
 
     # 1. Initialize State
-    state = GameState()
+    state = GameState(secrets_enabled=args.enable_secrets)
 
     # Start a test session immediately
     state.start_new_session()
