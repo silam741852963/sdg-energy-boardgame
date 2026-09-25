@@ -185,6 +185,17 @@ the affected file to avoid destroying recoverable data. The process user needs
 write permission in the deployment root; back up the JSON files if rankings
 must survive redeployment.
 
+To clear every ranking while preserving the version 2 database schema, stop the
+running game and execute:
+
+```bash
+./scripts/reset_rankings.sh
+```
+
+The script atomically replaces `leaderboard.json` with an empty `records`
+object. It does not clear `players_database.json`, so existing player-name
+suggestions remain available.
+
 ## Resources
 
 - `resource/audio/` contains the ambient loop and prerecorded firework WAVs.
