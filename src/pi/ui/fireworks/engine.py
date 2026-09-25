@@ -393,6 +393,10 @@ class FireworkEngine:
             MissionPhase.DEPARTURE,
         )
         changed = self.game_state.set_gameplay_inputs_enabled(not input_blocked)
+        on_rocket_screen = phase is MissionPhase.CHARGING
+        self.game_state.set_secret_screen_active(on_rocket_screen)
+        if not on_rocket_screen:
+            self._stop_secret_shows()
         if changed and not input_blocked and phase is MissionPhase.ATTRACT:
             self.audio.play_mission_ready()
 

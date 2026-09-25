@@ -106,6 +106,15 @@ blocked phase also discards any in-progress smooth fill, preventing a BLE
 advertisement accepted just before the transition from continuing to move the
 gauge during the crash or active launch.
 
+When `--enable-secrets` is set, secret Hall recognition and BLE charging wait
+for the `CHARGING` phase. A Hall position held through the reveal seeds the
+first secret choice when that phase begins. Solar BLE input has a four-second
+settling window after the phase begins or Solar is selected, so room light
+cannot immediately close the required zero-charge window. Solar input remains
+paused during an active secret show. Other accepted energy closes the secret
+window for the mission; leaving `CHARGING` clears pending activations and stops
+the show.
+
 ## Presentation state machine
 
 `RocketScene` currently has nine phases:

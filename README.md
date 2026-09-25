@@ -71,6 +71,12 @@ Run without physical input hardware:
 
 Hidden Hall firework shows are off by default. Add `--enable-secrets` in real or
 debug mode to enable them (for example, `./run.sh --debug --enable-secrets`).
+Secrets respond only on the grounded rocket charging screen. With secrets
+enabled, BLE energy is held until that screen appears. Solar energy then waits
+four seconds after the screen opens or a Hall change selects Solar, leaving a
+zero-charge window for the Hall sequence. Ambient Solar energy stays paused
+while a secret show is active. Keep Solar selected for four seconds to charge
+normally; any accepted charge closes the secret window for that mission.
 
 The launcher resolves the repository root, prefers `.venv/bin/python`, then
 `venv/bin/python`, and finally `python3` on `PATH`. Set `SDG_PYTHON` to select an

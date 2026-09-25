@@ -49,6 +49,7 @@ class GameSnapshot:
 
 class GameState:
     _PAIR_HOLD_SECONDS = 0.25
+    _SOLAR_SECRET_GRACE_SECONDS = 4.0
     _BIRTHDAY_SEQUENCE = (
         GeneratorType.SOLAR,
         GeneratorType.WIND,
@@ -88,6 +89,8 @@ class GameState:
         self._secret_showing = False
         self._active_secret_pair: tuple[GeneratorType, ...] | None = None
         self._secret_charge_seen = False
+        self._secret_screen_active = False
+        self._solar_charge_after = 0.0
         self._last_hall_choice: GeneratorType | None = None
         self._pair_candidate: tuple[GeneratorType, ...] | None = None
         self._pair_since: float | None = None
@@ -149,6 +152,8 @@ class GameState:
         self._secret_showing = False
         self._active_secret_pair = None
         self._secret_charge_seen = False
+        self._secret_screen_active = False
+        self._solar_charge_after = 0.0
         self._last_hall_choice = None
         self._pair_candidate = None
         self._pair_since = None
@@ -176,15 +181,56 @@ class GameState:
                 self.smooth_filler.active_fills.clear()
             return changed
 
+    def set_secret_screen_active(self, active: bool):
+        """Recognize secrets only on the grounded rocket charging screen."""
+        with self._lock:
+            active = bool(active) and self.secrets_enabled
+            if active == self._secret_screen_active:
+                return
+            self._secret_screen_active = active
+            self._secret_choices.clear()
+            self._last_hall_choice = None
+            self._pair_candidate = None
+            self._pair_since = None
+            if not active:
+                self._discard_pending_secret_starts_locked()
+                self._stop_secret_show_locked()
+                return
+            self._defer_solar_charge_locked()
+            # A Hall position held through the reveal is the first choice on
+            # the rocket screen, where secret input is finally available.
+            self._observe_secret_choice(self.active_sensors)
+
+    def _defer_solar_charge_locked(self):
+        if not self._secret_charge_seen:
+            self._solar_charge_after = (
+                self._mission_clock() + self._SOLAR_SECRET_GRACE_SECONDS
+            )
+
+    def _secret_energy_input_allowed_locked(self, generator):
+        if not self.secrets_enabled:
+            return True
+        if not self._secret_screen_active:
+            return False
+        # Ambient light can send Solar advertisements without a player action.
+        # Keep the zero-charge secret window open while Hall choices are made.
+        return generator is not GeneratorType.SOLAR or (
+            not self._secret_showing
+            and self._mission_clock() >= self._solar_charge_after
+        )
+
     def set_active_sensors(self, sensors: List[GeneratorType]):
         with self._lock:
+            previous_sensors = self.active_sensors
             unique = []
             for generator in sensors:
                 if isinstance(generator, GeneratorType) and generator not in unique:
                     unique.append(generator)
             self.active_sensors = unique
             self.last_activity_time = time.time()
-            if self.secrets_enabled:
+            if self._secret_screen_active:
+                if GeneratorType.SOLAR in unique and unique != previous_sensors:
+                    self._defer_solar_charge_locked()
                 self._observe_secret_choice(unique)
 
             # Sensors held through an automatic reset must first go low. This
@@ -288,7 +334,7 @@ class GameState:
 
     def _secrets_available_locked(self) -> bool:
         session = self.current_session
-        if not session:
+        if not self._secret_screen_active or not session:
             return False
         if any(level > 0.0 for level in session.energy_levels.values()) or any(
             fill["total"] > fill["added"] for fill in self.smooth_filler.active_fills
@@ -334,6 +380,10 @@ class GameState:
         self._pair_since = None
         # Energy can arrive between Hall recognition and the next render frame.
         # Drop an unconsumed activation so it cannot start after charging.
+        self._discard_pending_secret_starts_locked()
+        self._stop_secret_show_locked()
+
+    def _discard_pending_secret_starts_locked(self):
         starts = {
             MissionEventKind.BIRTHDAY_COMMAND,
             MissionEventKind.SUPER_COMMAND,
@@ -342,14 +392,13 @@ class GameState:
         self._mission_events = deque(
             event for event in self._mission_events if event.kind not in starts
         )
-        self._stop_secret_show_locked()
 
     def check_inactivity(self):
         # Engine tick hook: energy never drains and selectors never expire, but
         # a ready battery's visible continuation deadline must advance.
         with self._lock:
             self.smooth_filler.update()
-            if self.secrets_enabled:
+            if self._secret_screen_active:
                 self._evaluate_secret_pair_locked()
             self._evaluate_launch_locked()
 
@@ -362,6 +411,8 @@ class GameState:
     ):
         with self._lock:
             if not self.current_session or not self._gameplay_inputs_enabled:
+                return
+            if not self._secret_energy_input_allowed_locked(gen_type):
                 return
             if (
                 gen_type not in self.selected_generators
@@ -395,6 +446,8 @@ class GameState:
                 or self.current_session.launch_committed
                 or self.current_session.completed
             ):
+                return
+            if not self._secret_energy_input_allowed_locked(gen_type):
                 return
             if CLEANBOOST_TEST_MODE and is_clean_boost:
                 self._log_clean_boost_signal(gen_type, fill_amount)
