@@ -137,6 +137,11 @@ the show.
 9. `RETURN` — reverses the scene, transitions through the Earth/star return, and
    requests a fresh mission once the restored attract state is ready.
 
+`Space` skips the active intro, launch, or return cinematic in real and debug
+modes. Launch skipping finishes through the usual `launch_completed` action, so
+timing, ranking, and record entry still run. It does not dismiss ranking input
+or change the battery during `CHARGING`.
+
 Two-, three-, and four-cell launch tiers use 2+4, 2.5+5, and 3+6 seconds of
 ignition plus ascent, respectively, followed by the shared 1.8-second departure.
 The departure, rocket escape, launch firework schedule and lifetime, liftoff

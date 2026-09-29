@@ -114,10 +114,17 @@ Mock controls:
 | `Shift` + `1` / `2` / `3` / `4` | Toggle an additional mocked Hall sensor without holding both keys |
 | `Q` / `W` / `E` / `R` | Add energy to Solar / Wind / Coil / Hand Crank when mock BLE is active |
 | `0` | Clear the mocked Hall selection |
+| `X` | Reset all charge and filled cells while staying on the grounded rocket screen |
+| `Space` | Skip the current cutscene; mission results and ranking entry still run |
 | `Backspace` | Reset the mission |
 | `M` | Toggle performance metrics |
 | `F5` | Export the current firework specification in fully mocked mode |
 | `Esc` | Close an overlay or quit |
+
+`X` works in both real and debug modes while the grounded rocket screen is
+active. It clears all charge and filled cells, keeps the current Hall selection,
+and leaves the rocket on screen. `Space` also works in both modes and skips
+intro, launch, and return animations. `Backspace` still restarts the full mission.
 
 Mock energy is manual and deterministic; it is not generated randomly.
 The mock Solar charge key adds 5 units per press; the other charge keys add 10.

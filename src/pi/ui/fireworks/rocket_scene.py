@@ -600,6 +600,57 @@ class RocketScene:
         self._cell_message = generator
         self._cell_message_time = 1.6
 
+    def reset_charge_feedback(self):
+        """Clear battery cues while preserving the grounded rocket scene."""
+        self.reserved_generators = ()
+        self._prelaunch_emission_accumulator = 0.0
+        self._cell_message = None
+        self._cell_message_time = 0.0
+        self.firework_manager.clear_scene_effects()
+
+    def skip_cutscene(self, snapshot):
+        """Advance a cinematic phase without bypassing mission completion."""
+        has_selection = bool(snapshot and snapshot.selected_generators)
+        if self.phase is MissionPhase.ATTRACT:
+            if self._intro_played and self._earth_return_fade <= 0.0:
+                return False
+            self._intro_played = True
+            self._earth_return_fade = 0.0
+            self._earth_return_zoom = 0.0
+            self._earth_return_stars = 0.0
+            self._earth_return_focus_hold = 0.0
+            if has_selection and not snapshot.launch_committed:
+                self.phase = MissionPhase.CHARGING
+                self.scene_progress = 1.0
+            return True
+        if self.phase in (MissionPhase.CRASH, MissionPhase.REVEAL):
+            self._intro_played = True
+            self._logo_hidden_for_reveal = True
+            self.phase = MissionPhase.CHARGING if has_selection else MissionPhase.ATTRACT
+            self.phase_elapsed = 0.0
+            self.scene_progress = 1.0 if has_selection else 0.0
+            self.camera_y = 0.0
+            self.rocket_offset_y = 0.0
+            return True
+        if self.phase in (
+            MissionPhase.IGNITION,
+            MissionPhase.ASCENT,
+            MissionPhase.DEPARTURE,
+        ):
+            # The next update emits launch_completed and enters RECORD_HOLD,
+            # preserving ranking and audio handling in FireworkEngine.
+            self.phase = MissionPhase.DEPARTURE
+            self.phase_elapsed = self.DEPARTURE_SECONDS
+            return True
+        if self.phase is MissionPhase.RETURN:
+            if has_selection and not snapshot.launch_committed:
+                self.phase = MissionPhase.CHARGING
+                self.scene_progress = 1.0
+            else:
+                self.scene_progress = 0.0
+            return True
+        return False
+
     def start_launch(self, generators):
         count = min(4, max(2, len(generators)))
         self.launch_tier = TIERS[count]

@@ -600,6 +600,18 @@ class GameState:
             # being swallowed by the reset frame.
             self.set_active_sensors(present)
 
+    def reset_charge_stage(self) -> bool:
+        """Start a fresh charge attempt without moving the Hall selector."""
+        with self._lock:
+            session = self.current_session
+            if not session or session.launch_committed:
+                return False
+            present = list(self.active_sensors)
+            self.start_new_session(session.player_name)
+            self.set_active_sensors(present)
+            self.set_secret_screen_active(True)
+            return True
+
     def _log_clean_boost_signal(self, gen_type, fill_amount):
         self.clean_boost_signals.append(
             {

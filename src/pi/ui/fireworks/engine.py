@@ -259,6 +259,25 @@ class FireworkEngine:
         self.name_entry_completed = False
         self.ranking_display_entry = None
 
+    def _reset_charge_stage(self):
+        if (
+            not self.game_state
+            or self.rocket_scene.phase is not MissionPhase.CHARGING
+            or not self.game_state.reset_charge_stage()
+        ):
+            return
+        self._stop_secret_shows()
+        self._stop_cell_celebrations()
+        self.launch_celebration.stop()
+        self.firework_manager.particles.clear()
+        self.firework_manager.shells.clear()
+        self.rocket_scene.reset_charge_feedback()
+        self.gauge_manager.reset()
+        self.audio.play_restart_sound()
+        self.snapshot = self.game_state.snapshot()
+        self.prev_selected_generators = tuple(self.snapshot.selected_generators)
+        self.prev_energy_levels = dict(self.snapshot.energy_levels)
+
     def _begin_ranking_flow(self):
         entry = self.game_state.current_ranking_entry
         if entry is None:
@@ -456,6 +475,12 @@ class FireworkEngine:
                     self.show_metrics = not self.show_metrics
                 elif event.key == pygame.K_BACKSPACE:
                     self._restart_game()
+                elif event.key == pygame.K_SPACE and not getattr(event, "repeat", False):
+                    if self.game_state:
+                        self.rocket_scene.skip_cutscene(self.game_state.snapshot())
+                        self._sync_gameplay_input_gate()
+                elif event.key == pygame.K_x:
+                    self._reset_charge_stage()
                 elif event.key == pygame.K_F5 and self.is_mock:
                     self.gui.export_current_spec()
                 elif event.key == pygame.K_0 and self.mock_hall:
@@ -885,7 +910,7 @@ class FireworkEngine:
             label = (
                 "DEBUG "
                 + "+".join(modes)
-                + "  1-4 MOVE / HOLD TWO TO PAIR  Q-W-E-R CHARGE  0 LIFT"
+                + "  1-4 MOVE / HOLD TWO TO PAIR  Q-W-E-R CHARGE  X RESET  SPACE SKIP  0 LIFT"
             )
             self.renderer.draw_pixel_text(
                 24 * SCALE_X,
